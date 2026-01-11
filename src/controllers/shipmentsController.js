@@ -1,7 +1,7 @@
 const { Op } = require('sequelize');
 const crypto = require('crypto');
 const db = require('../models/db');
-
+const nodemailer = require('../mailer/nodemailer'); // hypothetical email module
 // Helper functions (not using 'this')
 const validateShipmentPayload = (payload) => {
     const errors = [];
@@ -121,7 +121,75 @@ const updateOrderStatus = async (shipmentId) => {
         console.error('Error updating order status:', error);
     }
 };
+/**
+ * Send email notification for new internal shipment
+ */
+const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) => {
+    try {
+        
+        const emailData = {
+            shipment_reference: shipment.shipment_reference,
+            order_reference: shipment.order_reference,
+            customer_name: deliveryAddress.name || 'Customer',
+            vendor_name: shipment.vendor_name,
+            total_items: shipment.total_items,
+            total_weight: shipment.total_weight,
+            product_value: shipment.product_value,
+            shipping_fee: shipment.shipping_fee,
+            currency: shipment.currency,
+            pickup_contact_name: pickupAddress.name || 'Vendor',
+            pickup_address_line: `${pickupAddress.line1}${pickupAddress.line2 ? ', ' + pickupAddress.line2 : ''}`,
+            pickup_city: pickupAddress.city,
+            pickup_state: pickupAddress.state,
+            pickup_country: pickupAddress.country,
+            pickup_phone: pickupAddress.phone,
+            pickup_instructions: pickupAddress.instructions || '',
+            
+            
+            delivery_contact_name: deliveryAddress.name || 'Customer',
+            delivery_address_line: `${deliveryAddress.line1}${deliveryAddress.line2 ? ', ' + deliveryAddress.line2 : ''}`,
+            delivery_city: deliveryAddress.city,
+            delivery_state: deliveryAddress.state,
+            delivery_country: deliveryAddress.country,
+            delivery_phone: deliveryAddress.phone,
+            delivery_instructions: deliveryAddress.instructions || '',
+            
+            
+            is_insured: shipment.is_insured,
+            insurance_amount: shipment.insurance_amount,
+            
+            
+            notes: shipment.notes || '',
+            
+            // Dashboard URL
+            dashboard_url: process.env.DASHBOARD_URL || 'https://dashboard.obana.africa'
+        };
 
+        
+        await nodemailer.sendMail({
+            email: 'obanaafrica@gmail.com', 
+            subject: `New Shipment: ${shipment.shipment_reference} - ${shipment.vendor_name}`,
+            content: emailData,
+            template: 'newShipment'
+        });
+
+        
+        if (process.env.LOGISTICS_TEAM_EMAIL) {
+            await nodemailer.sendMail({
+                email: process.env.LOGISTICS_TEAM_EMAIL,
+                subject: `New Shipment: ${shipment.shipment_reference} - ${shipment.vendor_name}`,
+                content: emailData,
+                template: 'newShipment'
+            });
+        }
+
+        console.log(`📧 Email sent for shipment ${shipment.shipment_reference}`);
+
+    } catch (error) {
+        console.error('Error sending shipment email:', error);
+        // Don't throw error, just log it
+    }
+}
 // Controller object
 const shipmentController = {
     /**
@@ -183,7 +251,7 @@ const shipmentController = {
                         metadata: payload.pickup_address.metadata || {}
                     };
                 } else if (payload.dispatcher?.metadata?.address_payload?.pickup_address) {
-                    // Try to get pickup address from dispatcher metadata
+                    
                     const pickupAddr = payload.dispatcher.metadata.address_payload.pickup_address;
                     pickupAddressData = {
                         address_type: 'pickup',
@@ -201,14 +269,14 @@ const shipmentController = {
                         metadata: { source: 'dispatcher_metadata' }
                     };
                 } else {
-                    // Default fallback
+                    
                     pickupAddressData = {
                         address_type: 'pickup',
                         name: payload.vendor_name || 'Vendor',
                         phone: payload.delivery_address.phone,
                         contact_email: '',
                         line1: 'Vendor Warehouse',
-                        city: payload.delivery_address.city, // Same as delivery for now
+                        city: payload.delivery_address.city, 
                         state: payload.delivery_address.state,
                         country: payload.delivery_address.country,
                         is_residential: false,
@@ -296,7 +364,7 @@ const shipmentController = {
                         carrier_type: isInternal ? 'internal' : 'external'
                     }
                 }, { transaction });
-
+                await sendNewShipmentEmail(shipment, deliveryAddress, pickupAddress);
                 // 9. If external, log the external carrier request
                 if (!isInternal) {
                     console.log(`[EXTERNAL CARRIER] Shipment ${shipmentReference} assigned to ${payload.dispatcher?.carrier_name || 'External Carrier'}`);
