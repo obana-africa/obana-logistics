@@ -1,24 +1,26 @@
 const express = require('express');
 const router = express.Router();
+const db = require('../models/db.js')
+const shipmentController = require('../controllers/shipmentsController');
+const controller =  shipmentController
+    
+    
+    router.post('', controller.createShipment);
+    
+    
+    router.get('/:shipment_reference', controller.getShipment);
+    
+    
+    router.get('/users/:user_id', controller.getUserShipments);
+    
+    
+    router.put('/status/:shipment_id', controller.updateShipmentStatus);
 
-module.exports = (db) => {
-    const ShipmentController = require('./shipmentController');
-    const controller = new ShipmentController(db);
+
+    router.post('/cancel/:shipment_id', controller.cancelShipment);
     
-    router.post('/shipments', controller.createShipment.bind(controller));
-    
-    
-    router.get('/shipments/:shipment_reference/status', controller.getShipmentStatus.bind(controller));
+router.get('', controller.getAllShipments);
+    // router.post('/webhooks/:carrier', controller.handleCarrierWebhook);
     
     
-    router.post('/shipments/:shipment_id/cancel', controller.cancelShipment.bind(controller));
-    
-    
-    router.post('/webhooks/:carrier/updates', (req, res) => {
-       
-        console.log(`Webhook from ${req.params.carrier}:`, req.body);
-        res.status(200).json({ received: true });
-    });
-    
-    return router;
-};
+module.exports = router;

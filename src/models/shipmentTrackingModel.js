@@ -1,3 +1,4 @@
+// shipmentTrackingModel.js
 module.exports = (sequelize, DataTypes) => {
     const ShipmentTracking = sequelize.define("shipment_tracking", {
         id: {
@@ -10,27 +11,14 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.INTEGER,
             allowNull: false
         },
-        vendor_group_id: {
-            type: DataTypes.INTEGER,
-            allowNull: true,
-            comment: 'For multi-vendor tracking per leg'
-        },
         status: {
             type: DataTypes.ENUM(
-                'pickup_scheduled',
-                'driver_assigned',
-                'en_route_pickup',
-                'arrived_pickup',
-                'package_collected',
-                'in_transit',
-                'arrived_hub',
-                'departed_hub',
-                'out_for_delivery',
-                'delivery_attempted',
-                'delivered',
-                'failed',
-                'exception',
-                'returned'
+                'created',              // Shipment created
+                'in_transit',           // Package in transit
+                'delivered',            // Successfully delivered
+                'failed',               // Delivery failed
+                'cancelled',            // Shipment cancelled
+                'returned'              // Returned to vendor
             ),
             allowNull: false
         },
@@ -38,25 +26,28 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING(255),
             allowNull: true
         },
-        latitude: {
-            type: DataTypes.DECIMAL(10, 8),
-            allowNull: true
-        },
-        longitude: {
-            type: DataTypes.DECIMAL(11, 8),
-            allowNull: true
-        },
         description: {
             type: DataTypes.TEXT,
-            allowNull: true
+            allowNull: true,
+            comment: 'Human-readable status description'
+        },
+        notes: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            comment: 'Internal notes'
+        },
+        // Who triggered this status (system, driver, admin, carrier API)
+        source: {
+            type: DataTypes.ENUM('system', 'driver', 'admin', 'carrier_api', 'customer'),
+            defaultValue: 'system'
         },
         performed_by: {
             type: DataTypes.STRING(100),
             allowNull: true,
-            comment: 'Driver ID, system, or admin'
+            comment: 'Driver ID, admin username, etc.'
         },
         metadata: {
-            type: DataTypes.JSONB,
+            type: DataTypes.JSON,
             allowNull: true
         },
         createdAt: {

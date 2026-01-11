@@ -1,28 +1,139 @@
-// shipmentController.js
 const { Op } = require('sequelize');
 const crypto = require('crypto');
+const db = require('../models/db');
 
-class ShipmentController {
-    constructor(db) {
-        this.db = db;
-        this.externalCarrierAPIs = {
-            'gigl': this.callGiglAPI,
-            'fedex': this.callFedExAPI,
-            'ups': this.callUPSAPI,
-            'dhl': this.callDHLAPI
-        };
+// Helper functions (not using 'this')
+const validateShipmentPayload = (payload) => {
+    const errors = [];
+
+    if (!payload.customer_id) {
+        errors.push('customer_id is required');
+    }
+    if (!payload.delivery_address) {
+        errors.push('delivery_address is required');
+    } else {
+        const addr = payload.delivery_address;
+        if (!addr.line1) errors.push('delivery_address.line1 is required');
+        if (!addr.city) errors.push('delivery_address.city is required');
+        if (!addr.state) errors.push('delivery_address.state is required');
+        if (!addr.country) errors.push('delivery_address.country is required');
+        if (!addr.phone) errors.push('delivery_address.phone is required');
+    }
+    if (!payload.items || !Array.isArray(payload.items) || payload.items.length === 0) {
+        errors.push('items array is required with at least one item');
     }
 
+    return {
+        valid: errors.length === 0,
+        errors
+    };
+};
+
+const generateShipmentReference = (isInternal = true) => {
+    const date = new Date();
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    const random = Math.random().toString(36).substring(2, 10).toUpperCase();
+    const prefix = isInternal ? 'OBANA' : 'EXT';
+    return `${prefix}-${dateStr}-${random}`;
+};
+
+const calculateShipmentTotals = (items) => {
+    let totalWeight = 0;
+    let totalValue = 0;
+    let itemCount = 0;
+
+    if (items && Array.isArray(items)) {
+        items.forEach(item => {
+            const weight = parseFloat(item.weight) || 0;
+            const value = parseFloat(item.total_price) || parseFloat(item.value) || parseFloat(item.price) || 0;
+            const quantity = parseInt(item.quantity) || 1;
+            
+            totalWeight += weight * quantity;
+            totalValue += value;
+            itemCount += quantity;
+        });
+    }
+
+    return { totalWeight, totalValue, itemCount };
+};
+
+const triggerPostCreationProcesses = async (shipmentId, isInternal) => {
+    setImmediate(async () => {
+        try {
+            // 1. Send confirmation email/SMS
+            await sendShipmentConfirmation(shipmentId);
+            
+            // 2. Notify drivers if internal shipment
+            if (isInternal) {
+                await notifyPickupTeam(shipmentId);
+            }
+            
+            // 3. Update order status if linked
+            await updateOrderStatus(shipmentId);
+            
+        } catch (error) {
+            console.error('Error in post-creation processes:', error);
+            // Log but don't fail the main request
+        }
+    });
+};
+
+const sendShipmentConfirmation = async (shipmentId) => {
+    try {
+        const shipment = await db.shippings.findByPk(shipmentId, {
+            include: [
+                { model: db.addresses, as: 'delivery_address' }
+            ]
+        });
+        
+        if (shipment && shipment.delivery_address?.contact_email) {
+            console.log(`[NOTIFICATION] Sending confirmation email to ${shipment.delivery_address.contact_email} for shipment ${shipment.shipment_reference}`);
+            // TODO: Implement email service
+        }
+    } catch (error) {
+        console.error('Error sending confirmation:', error);
+    }
+};
+
+const notifyPickupTeam = async (shipmentId) => {
+    try {
+        const shipment = await db.shippings.findByPk(shipmentId, {
+            include: [
+                { model: db.addresses, as: 'pickup_address' }
+            ]
+        });
+        
+        if (shipment && shipment.carrier_type === 'internal') {
+            console.log(`[DRIVER NOTIFICATION] New internal shipment ${shipment.shipment_reference} needs pickup from ${shipment.pickup_address?.line1}`);
+            // TODO: Notify drivers via push notification or SMS
+        }
+    } catch (error) {
+        console.error('Error notifying pickup team:', error);
+    }
+};
+
+const updateOrderStatus = async (shipmentId) => {
+    try {
+        // This would update your orders table if you have one
+        // For now, just log
+        console.log(`[ORDER SYNC] Would update order status for shipment ${shipmentId}`);
+    } catch (error) {
+        console.error('Error updating order status:', error);
+    }
+};
+
+// Controller object
+const shipmentController = {
     /**
      * Main endpoint to create shipments
      * Handles both internal and external shipments
      */
-    async createShipment(req, res) {
+    createShipment: async (req, res) => {
         try {
             const payload = req.body;
             
             // Validate payload
-            const validation = this.validateShipmentPayload(payload);
+            const validation = validateShipmentPayload(payload);
             if (!validation.valid) {
                 return res.status(400).json({
                     success: false,
@@ -31,615 +142,441 @@ class ShipmentController {
                 });
             }
 
-            // Determine carrier type
-            const carrierType = this.determineCarrierType(payload);
+            const transaction = await db.sequelize.transaction();
             
-            if (carrierType === 'internal') {
-                // Handle internally with Obana Logistics
-                return await this.handleInternalShipment(payload, res);
-            } else {
-                // Handle externally - call external carrier API
-                return await this.handleExternalShipment(payload, res);
+            try {
+                // 1. Create delivery address
+                const deliveryAddress = await db.addresses.create({
+                    address_type: 'delivery',
+                    name: `${payload.delivery_address.first_name || ''} ${payload.delivery_address.last_name || ''}`.trim(),
+                    phone: payload.delivery_address.phone,
+                    contact_email: payload.delivery_address.email,
+                    line1: payload.delivery_address.line1,
+                    line2: payload.delivery_address.line2 || '',
+                    city: payload.delivery_address.city,
+                    state: payload.delivery_address.state,
+                    country: payload.delivery_address.country,
+                    zip_code: payload.delivery_address.zip || '',
+                    is_residential: payload.delivery_address.is_residential || false,
+                    instructions: payload.delivery_address.instructions || '',
+                    metadata: payload.delivery_address.metadata || {}
+                }, { transaction });
+
+                // 2. Create pickup address - handle different payload structures
+                let pickupAddressData = {};
+                
+                // Check if pickup_address exists in payload
+                if (payload.pickup_address) {
+                    pickupAddressData = {
+                        address_type: 'pickup',
+                        name: payload.vendor_name || payload.pickup_address.contact_name || 'Vendor',
+                        phone: payload.pickup_address.phone || payload.delivery_address.phone,
+                        contact_email: payload.pickup_address.email || '',
+                        line1: payload.pickup_address.line1,
+                        line2: payload.pickup_address.line2 || '',
+                        city: payload.pickup_address.city,
+                        state: payload.pickup_address.state,
+                        country: payload.pickup_address.country,
+                        zip_code: payload.pickup_address.zip || '',
+                        is_residential: false,
+                        instructions: payload.pickup_address.instructions || '',
+                        metadata: payload.pickup_address.metadata || {}
+                    };
+                } else if (payload.dispatcher?.metadata?.address_payload?.pickup_address) {
+                    // Try to get pickup address from dispatcher metadata
+                    const pickupAddr = payload.dispatcher.metadata.address_payload.pickup_address;
+                    pickupAddressData = {
+                        address_type: 'pickup',
+                        name: payload.vendor_name || 'Vendor',
+                        phone: payload.delivery_address.phone,
+                        contact_email: '',
+                        line1: pickupAddr.line1 || 'Vendor Warehouse',
+                        line2: '',
+                        city: pickupAddr.city,
+                        state: pickupAddr.state,
+                        country: pickupAddr.country,
+                        zip_code: pickupAddr.zip || '',
+                        is_residential: false,
+                        instructions: '',
+                        metadata: { source: 'dispatcher_metadata' }
+                    };
+                } else {
+                    // Default fallback
+                    pickupAddressData = {
+                        address_type: 'pickup',
+                        name: payload.vendor_name || 'Vendor',
+                        phone: payload.delivery_address.phone,
+                        contact_email: '',
+                        line1: 'Vendor Warehouse',
+                        city: payload.delivery_address.city, // Same as delivery for now
+                        state: payload.delivery_address.state,
+                        country: payload.delivery_address.country,
+                        is_residential: false,
+                        instructions: ''
+                    };
+                }
+
+                const pickupAddress = await db.addresses.create(pickupAddressData, { transaction });
+
+                // 3. Determine carrier type
+                const isInternal = payload.carrier_slug === 'obana' || 
+                                 (payload.dispatcher && payload.dispatcher.carrier_slug === 'obana');
+                
+                // 4. Generate shipment reference
+                const shipmentReference = generateShipmentReference(isInternal);
+                
+                // 5. Calculate total weight and value
+                const { totalWeight, totalValue, itemCount } = calculateShipmentTotals(payload.items);
+
+                // 6. Create shipment
+                const shipment = await db.shippings.create({
+                    shipment_reference: shipmentReference,
+                    order_reference: payload.order_id || `ORDER-${Date.now()}`,
+                    user_id: payload.user_id,
+                    vendor_name: payload.vendor_name || 'Unknown Vendor',
+                    carrier_type: isInternal ? 'internal' : 'external',
+                    carrier_name: isInternal ? 'Obana Logistics' : (payload.dispatcher?.carrier_name || 'External Carrier'),
+                    carrier_slug: isInternal ? 'obana' : (payload.dispatcher?.carrier_slug || 'external'),
+                    external_carrier_reference: isInternal ? null : payload.carrier_reference,
+                    external_rate_id: isInternal ? null : payload.rate_id,
+                    delivery_address_id: deliveryAddress.id,
+                    pickup_address_id: pickupAddress.id,
+                    product_value: totalValue,
+                    shipping_fee: payload.shipping_fee || 0,
+                    currency: payload.currency?.symbol || 'NGN',
+                    total_weight: totalWeight,
+                    total_items: itemCount,
+                    status: 'pending',
+                    is_insured: payload.is_insured || false,
+                    insurance_amount: payload.insurance_amount || 0,
+                    metadata: {
+                        original_payload: payload,
+                        dispatcher: payload.dispatcher,
+                        carrier_details: {
+                            carrier_name: payload.dispatcher?.carrier_name,
+                            carrier_logo: payload.dispatcher?.carrier_logo,
+                            delivery_time: payload.dispatcher?.delivery_time,
+                            delivery_eta: payload.dispatcher?.delivery_eta,
+                            pickup_time: payload.dispatcher?.pickup_time,
+                            pickup_eta: payload.dispatcher?.pickup_eta
+                        }
+                    },
+                    notes: payload.notes || ''
+                }, { transaction });
+
+                // 7. Create shipment items
+                if (payload.items && Array.isArray(payload.items) && payload.items.length > 0) {
+                    await db.shipment_items.bulkCreate(
+                        payload.items.map(item => ({
+                            shipment_id: shipment.id,
+                            item_id: item.item_id,
+                            name: item.name,
+                            description: item.description || '',
+                            quantity: parseInt(item.quantity) || 1,
+                            unit_price: parseFloat(item.price) || parseFloat(item.value) || 0,
+                            total_price: parseFloat(item.total_price) || parseFloat(item.value) || 0,
+                            weight: parseFloat(item.weight) || 0,
+                            dimensions: item.dimensions || null,
+                            currency: item.currency || 'NGN',
+                            metadata: { original_item: item }
+                        })),
+                        { transaction }
+                    );
+                }
+
+                // 8. Create initial tracking event
+                await db.shipment_tracking.create({
+                    shipment_id: shipment.id,
+                    status: 'created',
+                    description: 'Shipment created successfully',
+                    source: 'system',
+                    performed_by: 'system',
+                    metadata: {
+                        action: 'shipment_creation',
+                        carrier_type: isInternal ? 'internal' : 'external'
+                    }
+                }, { transaction });
+
+                // 9. If external, log the external carrier request
+                if (!isInternal) {
+                    console.log(`[EXTERNAL CARRIER] Shipment ${shipmentReference} assigned to ${payload.dispatcher?.carrier_name || 'External Carrier'}`);
+                    console.log(`[EXTERNAL CARRIER] Reference: ${payload.carrier_reference}, Rate ID: ${payload.rate_id}`);
+                    
+                    // TODO: Implement actual API call to Terminal Africa or other external carriers
+                    // await callExternalCarrierAPI(payload, shipment);
+                }
+
+                await transaction.commit();
+
+                // 10. Trigger async post-creation processes
+                triggerPostCreationProcesses(shipment.id, isInternal);
+
+                return res.status(201).json({
+                    success: true,
+                    message: 'Shipment created successfully',
+                    data: {
+                        shipment_id: shipment.id,
+                        shipment_reference: shipment.shipment_reference,
+                        tracking_url: `${process.env.BASE_URL || 'http://localhost:3000'}/track/${shipment.shipment_reference}`,
+                        carrier: shipment.carrier_name,
+                        status: shipment.status,
+                        estimated_delivery: shipment.metadata?.carrier_details?.delivery_time || 'To be determined',
+                        external_reference: shipment.external_carrier_reference
+                    }
+                });
+
+            } catch (error) {
+                await transaction.rollback();
+                console.error('Transaction error:', error);
+                throw error;
             }
         } catch (error) {
             console.error('Error creating shipment:', error);
             return res.status(500).json({
                 success: false,
-                message: 'Internal server error',
+                message: 'Error creating shipment',
                 error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         }
-    }
+    },
+   /**
+ * Get all shipments for admin overview/monitoring
+ */
+getAllShipments: async (req, res) => {
+    try {
+        const {
+            page = 1,
+            limit = 50,
+            status,
+            carrier_type,
+            start_date,
+            end_date,
+            search,
+            sort_by = 'createdAt',
+            sort_order = 'DESC'
+        } = req.query;
 
-    /**
-     * Validate shipment payload
-     */
-    validateShipmentPayload(payload) {
-        const errors = [];
+        // Build where clause
+        const where = {};
 
-        // Basic validation
-        if (!payload.customer_id) {
-            errors.push('customer_id is required');
+        // Filter by status
+        if (status) {
+            if (status === 'active') {
+                // Active shipments are those not completed/cancelled
+                where.status = {
+                    [Op.notIn]: ['delivered', 'cancelled', 'returned']
+                };
+            } else {
+                where.status = status;
+            }
         }
-        if (!payload.delivery_address) {
-            errors.push('delivery_address is required');
-        }
-        if (!payload.items || !Array.isArray(payload.items) || payload.items.length === 0) {
-            errors.push('items array is required with at least one item');
-        }
-        if (!payload.currency) {
-            errors.push('currency is required');
-        }
+
         
-        // Delivery address validation
-        if (payload.delivery_address) {
-            const addr = payload.delivery_address;
-            if (!addr.line1 || !addr.city || !addr.state || !addr.country) {
-                errors.push('delivery_address requires line1, city, state, and country');
-            }
-            if (!addr.phone) {
-                errors.push('delivery_address.phone is required');
-            }
+        if (carrier_type) {
+            where.carrier_type = carrier_type;
         }
 
-        // Validate multi-vendor structure if applicable
-        if (payload.isMultiVendor || payload.delivery_type === 'per-vendor' || payload.delivery_type === 'aggregated') {
-            if (!payload.vendor_groups && !payload.vendor_selections) {
-                errors.push('vendor_groups or vendor_selections required for multi-vendor orders');
-            }
-        }
-
-        return {
-            valid: errors.length === 0,
-            errors
-        };
-    }
-
-    /**
-     * Determine if shipment should be handled internally or externally
-     */
-    determineCarrierType(payload) {
-        // Check if dispatcher info indicates external carrier
-        if (payload.dispatcher && payload.dispatcher.carrier_slug) {
-            const externalCarriers = ['gigl', 'fedex', 'ups', 'dhl', 'usps'];
-            if (externalCarriers.includes(payload.dispatcher.carrier_slug)) {
-                return 'external';
-            }
-        }
-
-        // Check if any vendor selection has external carrier
-        if (payload.vendor_selections) {
-            for (const vendor of payload.vendor_selections) {
-                if (vendor.carrier_reference && vendor.carrier_reference.startsWith('CA-')) {
-                    // External carrier reference format
-                    return 'external';
-                }
-            }
-        }
-
-        // Default to internal (Obana Logistics)
-        return 'internal';
-    }
-
-    /**
-     * Handle shipments for Obana Logistics (internal)
-     */
-    async handleInternalShipment(payload, res) {
-        const transaction = await this.db.sequelize.transaction();
         
-        try {
-            // 1. Generate unique shipment reference
-            const shipmentReference = this.generateShipmentReference();
+        if (start_date || end_date) {
+            where.createdAt = {};
             
-            // 2. Create delivery address record
-            const deliveryAddress = await this.db.addresses.create({
-                address_type: 'delivery',
-                first_name: payload.delivery_address.first_name || '',
-                last_name: payload.delivery_address.last_name || '',
-                email: payload.delivery_address.email || '',
-                phone: payload.delivery_address.phone || '',
-                line1: payload.delivery_address.line1,
-                line2: payload.delivery_address.line2 || '',
-                city: payload.delivery_address.city,
-                state: payload.delivery_address.state,
-                country: payload.delivery_address.country,
-                zip_code: payload.delivery_address.zip || '',
-                is_residential: payload.delivery_address.is_residential || false,
-                metadata: payload.delivery_address.metadata || {}
-            }, { transaction });
-
-            
-            const { totalWeight, itemCount } = this.calculateShipmentTotals(payload);
-
-            
-            const shipment = await this.db.shipments.create({
-                shipment_reference: shipmentReference,
-                order_reference: payload.order_id || `ORDER-${Date.now()}`,
-                customer_id: payload.customer_id,
-                delivery_address_id: deliveryAddress.id,
-                delivery_type: payload.delivery_type || 'single',
-                is_multi_vendor: payload.isMultiVendor || false,
-                dispatch_type: payload.dispatchType || 'delivery',
-                pickup_method: payload.pickUpMethod || 'delivery',
-                total_amount: payload.amount || 0,
-                shipping_fee: payload.shipping_fee || 0,
-                currency: payload.currency?.symbol || 'NGN',
-                total_weight: totalWeight,
-                total_items: itemCount,
-                status: 'pending',
-                carrier_type: 'internal',
-                metadata: {
-                    original_payload: payload,
-                    platform_order_id: payload.order_id,
-                    external_references: {
-                        rate_id: payload.rate_id,
-                        carrier_reference: payload.carrier_reference
-                    }
-                }
-            }, { transaction });
-
-            
-            if (!payload.isMultiVendor && payload.delivery_type === 'single') {
-                await this.handleSingleVendorShipment(shipment, payload, transaction);
+            if (start_date) {
+                where.createdAt[Op.gte] = new Date(start_date);
             }
             
-            else if (payload.delivery_type === 'aggregated' && payload.vendor_groups) {
-                await this.handleAggregatedShipment(shipment, payload, transaction);
-            }
-            
-            else if (payload.delivery_type === 'per-vendor' && payload.vendor_selections) {
-                await this.handlePerVendorShipment(shipment, payload, transaction);
-            }
-
-            
-            await this.db.shipment_tracking.create({
-                shipment_id: shipment.id,
-                status: 'pending',
-                description: 'Shipment created and awaiting pickup scheduling',
-                performed_by: 'system',
-                metadata: { source: 'api_creation' }
-            }, { transaction });
-
-            
-            await transaction.commit();
-
-            
-            this.triggerPostCreationProcesses(shipment.id);
-
-            return res.status(201).json({
-                success: true,
-                message: 'Shipment created successfully for Obana Logistics',
-                data: {
-                    shipment_id: shipment.id,
-                    shipment_reference: shipment.shipment_reference,
-                    tracking_url: `${process.env.BASE_URL}/track/${shipment.shipment_reference}`,
-                    estimated_delivery: shipment.estimated_delivery_at,
-                    status: shipment.status
-                }
-            });
-
-        } catch (error) {
-            await transaction.rollback();
-            console.error('Error creating internal shipment:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Handle single vendor shipment
-     */
-    async handleSingleVendorShipment(shipment, payload, transaction) {
-        // Create pickup address if provided in dispatcher metadata
-        let pickupAddressId = null;
-        if (payload.dispatcher?.metadata?.address_payload?.pickup_address) {
-            const pickupAddr = payload.dispatcher.metadata.address_payload.pickup_address;
-            const pickupAddress = await this.db.addresses.create({
-                address_type: 'pickup',
-                line1: pickupAddr.line1 || 'Vendor Warehouse',
-                city: pickupAddr.city,
-                state: pickupAddr.state,
-                country: pickupAddr.country,
-                zip_code: pickupAddr.zip || '',
-                phone: payload.delivery_address.phone || '',
-                metadata: { source: 'dispatcher_metadata' }
-            }, { transaction });
-            pickupAddressId = pickupAddress.id;
-        }
-
-        // Update shipment with pickup address
-        if (pickupAddressId) {
-            await shipment.update({ pickup_address_id: pickupAddressId }, { transaction });
-        }
-
-        // Create shipment items
-        await this.createShipmentItems(shipment.id, null, payload.items, transaction);
-
-        // Schedule pickup if dispatcher has pickup date
-        if (payload.dispatcher?.pickup_date) {
-            await shipment.update({
-                pickup_scheduled_at: new Date(payload.dispatcher.pickup_date),
-                estimated_delivery_at: new Date(payload.dispatcher.delivery_date),
-                status: 'pickup_scheduled'
-            }, { transaction });
-
-            // Add tracking event
-            await this.db.shipment_tracking.create({
-                shipment_id: shipment.id,
-                status: 'pickup_scheduled',
-                description: `Pickup scheduled for ${new Date(payload.dispatcher.pickup_date).toLocaleDateString()}`,
-                performed_by: 'system'
-            }, { transaction });
-        }
-    }
-
-    /**
-     * Handle aggregated multi-vendor shipment (single carrier, multiple pickups)
-     */
-    async handleAggregatedShipment(shipment, payload, transaction) {
-        for (const vendorGroup of payload.vendor_groups) {
-            // Create or find vendor
-            const vendor = await this.findOrCreateVendor(vendorGroup.vendor_id, transaction);
-            
-            // Create pickup address for vendor
-            const pickupAddress = await this.db.addresses.create({
-                address_type: 'vendor',
-                line1: vendorGroup.pickup_address.line1,
-                city: vendorGroup.pickup_address.city,
-                state: vendorGroup.pickup_address.state,
-                country: vendorGroup.pickup_address.country,
-                phone: vendorGroup.pickup_address.phone || '',
-                metadata: { vendor_id: vendorGroup.vendor_id }
-            }, { transaction });
-
-            // Create vendor group
-            const vendorGroupRecord = await this.db.shipment_vendor_groups.create({
-                vendor_id: vendorGroup.vendor_id,
-                vendor_db_id: vendor.id,
-                shipment_id: shipment.id,
-                pickup_address_id: pickupAddress.id,
-                shipping_fee: this.calculateVendorShippingFee(vendorGroup, payload),
-                weight: this.calculateVendorWeight(vendorGroup.items),
-                item_count: vendorGroup.items.length,
-                status: 'pending',
-                carrier_type: 'internal',
-                metadata: {
-                    actual_rate_id: vendorGroup.actual_rate_id,
-                    vendor_pickup_time: payload.dispatcher?.pickup_time,
-                    vendor_delivery_time: payload.dispatcher?.delivery_time
-                }
-            }, { transaction });
-
-            // Create shipment items for this vendor
-            await this.createShipmentItems(shipment.id, vendorGroupRecord.id, vendorGroup.items, transaction);
-        }
-    }
-
-    /**
-     * Handle per-vendor shipment (each vendor may have different carrier)
-     */
-    async handlePerVendorShipment(shipment, payload, transaction) {
-        for (const vendorSelection of payload.vendor_selections) {
-            // Create or find vendor
-            const vendor = await this.findOrCreateVendor(vendorSelection.vendor_id, transaction);
-            
-            // Create pickup address for vendor
-            const pickupAddress = await this.db.addresses.create({
-                address_type: 'vendor',
-                line1: vendorSelection.pickup_address.line1,
-                city: vendorSelection.pickup_address.city,
-                state: vendorSelection.pickup_address.state,
-                country: vendorSelection.pickup_address.country,
-                phone: vendorSelection.pickup_address.phone || '',
-                metadata: { vendor_id: vendorSelection.vendor_id }
-            }, { transaction });
-
-            // Determine if this vendor uses internal or external carrier
-            const carrierType = vendorSelection.carrier_reference?.startsWith('CA-') ? 'external' : 'internal';
-            
-            // Create vendor group
-            const vendorGroupRecord = await this.db.shipment_vendor_groups.create({
-                vendor_id: vendorSelection.vendor_id,
-                vendor_db_id: vendor.id,
-                shipment_id: shipment.id,
-                pickup_address_id: pickupAddress.id,
-                shipping_fee: vendorSelection.cost || 0,
-                weight: this.calculateVendorWeight(vendorSelection.items),
-                item_count: vendorSelection.items.length,
-                status: 'pending',
-                carrier_type: carrierType,
-                external_carrier_name: carrierType === 'external' ? this.getCarrierName(vendorSelection.carrier_reference) : null,
-                external_rate_id: vendorSelection.rate_id,
-                metadata: {
-                    actual_rate_id: vendorSelection.actual_rate_id,
-                    carrier_reference: vendorSelection.carrier_reference
-                }
-            }, { transaction });
-
-            // Create shipment items
-            await this.createShipmentItems(shipment.id, vendorGroupRecord.id, vendorSelection.items, transaction);
-
-            // If external carrier, create external shipment record
-            if (carrierType === 'external') {
-                await this.createExternalShipmentRecord(vendorGroupRecord, vendorSelection, transaction);
+            if (end_date) {
+                where.createdAt[Op.lte] = new Date(end_date);
             }
         }
-    }
 
-    /**
-     * Handle shipments for external carriers
-     */
-    async handleExternalShipment(payload, res) {
-        try {
-            // Extract carrier information
-            const carrierSlug = payload.dispatcher?.carrier_slug || this.detectCarrierFromReference(payload);
-            
-            if (!carrierSlug) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Unable to determine external carrier'
-                });
-            }
+        // Search filter (by reference, order reference, vendor name, customer)
+        if (search) {
+            where[Op.or] = [
+                { shipment_reference: { [Op.like]: `%${search}%` } },
+                { order_reference: { [Op.like]: `%${search}%` } },
+                { vendor_name: { [Op.like]: `%${search}%` } },
+                { user_id: { [Op.like]: `%${search}%` } }
+            ];
+        }
 
-            // Create a minimal record for tracking
-            const shipmentReference = `EXT-${this.generateShipmentReference()}`;
-            
-            const externalShipment = await this.db.shipments.create({
-                shipment_reference: shipmentReference,
-                order_reference: payload.order_id || `ORDER-${Date.now()}`,
-                customer_id: payload.customer_id,
-                delivery_type: payload.delivery_type || 'single',
-                is_multi_vendor: payload.isMultiVendor || false,
-                total_amount: payload.amount || 0,
-                shipping_fee: payload.shipping_fee || 0,
-                currency: payload.currency?.symbol || 'NGN',
-                status: 'pending',
-                carrier_type: 'external',
-                external_carrier_name: payload.dispatcher?.carrier_name || carrierSlug,
-                external_carrier_reference: payload.carrier_reference,
-                external_rate_id: payload.rate_id,
-                metadata: {
-                    original_payload: payload,
-                    carrier_slug: carrierSlug,
-                    dispatcher_info: payload.dispatcher
+        // Pagination
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        
+        // Sorting
+        const order = [];
+        if (sort_by) {
+            order.push([sort_by, sort_order.toUpperCase()]);
+        }
+
+        // Get shipments with pagination and includes
+        const shipments = await db.shippings.findAndCountAll({
+            where,
+            include: [
+                {
+                    model: db.addresses,
+                    as: 'delivery_address',
+                    attributes: ['city', 'state', 'country', 'phone']
                 },
-                notes: 'External carrier shipment - tracking via carrier API'
-            });
-
-
-            // PLACEHOLDER: External Carrier API Integration
-            
-
-
-
-            // Log the external shipment request (for monitoring)
-            console.log(`External shipment requested for carrier: ${carrierSlug}`, {
-                shipment_id: externalShipment.id,
-                carrier_reference: payload.carrier_reference,
-                rate_id: payload.rate_id,
-                shipping_fee: payload.shipping_fee
-            });
-
-            return res.status(200).json({
-                success: true,
-                message: 'External shipment request processed',
-                data: {
-                    shipment_id: externalShipment.id,
-                    shipment_reference: externalShipment.shipment_reference,
-                    carrier: payload.dispatcher?.carrier_name || carrierSlug,
-                    note: 'External carrier will handle shipment tracking',
-                    tracking_instruction: `Track your shipment using carrier reference: ${payload.carrier_reference}`,
-                    
-                    // Placeholder response - would be replaced with actual carrier response
-                    placeholder_api_response: {
-                        message: `API call to ${carrierSlug.toUpperCase()} would be implemented here`,
-                        endpoints: this.getCarrierEndpoints(carrierSlug),
-                        payload_schema: this.getCarrierPayloadSchema(carrierSlug),
-                        authentication: 'API Key or OAuth would be configured',
-                        webhook_url: `${process.env.BASE_URL}/webhooks/${carrierSlug}/updates`
-                    }
+                {
+                    model: db.addresses,
+                    as: 'pickup_address',
+                    attributes: ['city', 'state', 'country']
+                },
+                {
+                    model: db.drivers,
+                    as: 'driver',
+                    // attributes: ['driver_code', 'first_name', 'last_name', 'phone']
+                    attributes: ['driver_code', 'user_id'] 
+                },
+                {
+                    model: db.shipment_tracking,
+                    as: 'tracking_events',
+                    attributes: ['status', 'createdAt'],
+                    order: [['createdAt', 'DESC']],
+                    limit: 1
                 }
-            });
-
-        } catch (error) {
-            console.error('Error processing external shipment:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Error processing external shipment',
-                error: process.env.NODE_ENV === 'development' ? error.message : undefined
-            });
-        }
-    }
-
-    /**
-     * Helper Methods
-     */
-
-    generateShipmentReference() {
-        const date = new Date();
-        const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-        const random = crypto.randomBytes(4).toString('hex').toUpperCase();
-        return `OBANA-${dateStr}-${random}`;
-    }
-
-    calculateShipmentTotals(payload) {
-        let totalWeight = 0;
-        let itemCount = 0;
-
-        if (payload.items) {
-            payload.items.forEach(item => {
-                totalWeight += parseFloat(item.weight) || 0;
-                itemCount += parseInt(item.quantity) || 1;
-            });
-        }
-
-        if (payload.vendor_groups) {
-            payload.vendor_groups.forEach(group => {
-                group.items.forEach(item => {
-                    totalWeight += parseFloat(item.weight) || 0;
-                    itemCount += parseInt(item.quantity) || 1;
-                });
-            });
-        }
-
-        if (payload.vendor_selections) {
-            payload.vendor_selections.forEach(selection => {
-                selection.items.forEach(item => {
-                    totalWeight += parseFloat(item.weight) || 0;
-                    itemCount += parseInt(item.quantity) || 1;
-                });
-            });
-        }
-
-        return { totalWeight, itemCount };
-    }
-
-    calculateVendorShippingFee(vendorGroup, payload) {
-        // Logic to calculate vendor-specific shipping fee
-        // Could be based on weight, distance, or from dispatcher metadata
-        if (payload.dispatcher?.metadata?.vendor_breakdown) {
-            const vendorBreakdown = payload.dispatcher.metadata.vendor_breakdown.find(
-                v => v.vendor_id === vendorGroup.vendor_id
-            );
-            if (vendorBreakdown?.cost) {
-                return vendorBreakdown.cost;
-            }
-        }
-        
-        // Fallback: divide total shipping fee equally among vendors
-        if (payload.shipping_fee && payload.vendor_groups) {
-            return payload.shipping_fee / payload.vendor_groups.length;
-        }
-        
-        return 0;
-    }
-
-    calculateVendorWeight(items) {
-        return items.reduce((total, item) => total + (parseFloat(item.weight) || 0), 0);
-    }
-
-    async findOrCreateVendor(vendorId, transaction) {
-        let vendor = await this.db.vendors.findOne({
-            where: { vendor_id: vendorId },
-            transaction
+            ],
+            attributes: [
+                'id',
+                'shipment_reference',
+                'order_reference',
+                'user_id',
+                'vendor_name',
+                'carrier_type',
+                'carrier_name',
+                'status',
+                'product_value',
+                'shipping_fee',
+                'currency',
+                'total_weight',
+                'total_items',
+                'actual_delivery_at',
+                'createdAt',
+                'updatedAt'
+            ],
+            order,
+            limit: parseInt(limit),
+            offset: offset,
+            distinct: true // Important for count with includes
         });
 
-        if (!vendor) {
-            vendor = await this.db.vendors.create({
-                vendor_id: vendorId,
-                name: `Vendor ${vendorId}`,
-                status: 'active'
-            }, { transaction });
-        }
+        // Calculate statistics
+        const statistics = {
+            total: shipments.count,
+            by_status: {},
+            by_carrier: {},
+            by_day: {}
+        };
 
-        return vendor;
-    }
+        // Get status counts
+        const statusCounts = await db.shippings.findAll({
+            attributes: [
+                'status',
+                [db.sequelize.fn('COUNT', db.sequelize.col('id')), 'count']
+            ],
+            group: ['status']
+        });
 
-    async createShipmentItems(shipmentId, vendorGroupId, items, transaction) {
-        const shipmentItems = items.map(item => ({
-            shipment_id: shipmentId,
-            vendor_group_id: vendorGroupId,
-            item_id: item.item_id,
-            name: item.name,
-            description: item.description || '',
-            quantity: parseInt(item.quantity) || 1,
-            price: parseFloat(item.price) || parseFloat(item.value) || 0,
-            total_price: parseFloat(item.total_price) || parseFloat(item.value) || 0,
-            weight: parseFloat(item.weight) || 0,
-            currency: item.currency || 'NGN',
-            metadata: {
-                original_item: item
-            }
-        }));
+        statusCounts.forEach(item => {
+            statistics.by_status[item.status] = parseInt(item.dataValues.count);
+        });
 
-        return await this.db.shipment_items.bulkCreate(shipmentItems, { transaction });
-    }
+        // Get carrier type counts
+        const carrierCounts = await db.shippings.findAll({
+            attributes: [
+                'carrier_type',
+                [db.sequelize.fn('COUNT', db.sequelize.col('id')), 'count']
+            ],
+            group: ['carrier_type']
+        });
 
-    async createExternalShipmentRecord(vendorGroupRecord, vendorSelection, transaction) {
-        // Creates record linking our vendor group to external shipment
-        await this.db.sequelize.query(
-            `INSERT INTO external_shipment_mappings 
-             (vendor_group_id, external_carrier, external_reference, rate_id, created_at) 
-             VALUES (?, ?, ?, ?, NOW())`,
-            {
-                replacements: [
-                    vendorGroupRecord.id,
-                    vendorSelection.carrier_reference?.startsWith('CA-') ? 'external' : 'unknown',
-                    vendorSelection.carrier_reference,
-                    vendorSelection.rate_id
-                ],
-                transaction
-            }
-        );
-    }
+        carrierCounts.forEach(item => {
+            statistics.by_carrier[item.carrier_type] = parseInt(item.dataValues.count);
+        });
 
+        // Get daily counts for last 7 days
+        const last7Days = new Date();
+        last7Days.setDate(last7Days.getDate() - 7);
 
+        const dailyCounts = await db.shippings.findAll({
+            attributes: [
+                [db.sequelize.fn('DATE', db.sequelize.col('createdAt')), 'date'],
+                [db.sequelize.fn('COUNT', db.sequelize.col('id')), 'count']
+            ],
+            where: {
+                createdAt: {
+                    [Op.gte]: last7Days
+                }
+            },
+            group: [db.sequelize.fn('DATE', db.sequelize.col('createdAt'))],
+            order: [[db.sequelize.fn('DATE', db.sequelize.col('createdAt')), 'ASC']]
+        });
 
+        dailyCounts.forEach(item => {
+            statistics.by_day[item.dataValues.date] = parseInt(item.dataValues.count);
+        });
 
-
-
-
-
-    triggerPostCreationProcesses(shipmentId) {
-        
-        setImmediate(async () => {
-            try {
-                // 1. Send confirmation email
-                await this.sendShipmentConfirmation(shipmentId);
-                
-                // 2. Notify warehouse/drivers if pickup is scheduled
-                await this.notifyPickupTeam(shipmentId);
-                
-                
-            } catch (error) {
-                console.error('Error in post-creation processes:', error);
-                
+        return res.status(200).json({
+            success: true,
+            data: {
+                shipments: shipments.rows,
+                pagination: {
+                    total: shipments.count,
+                    page: parseInt(page),
+                    pages: Math.ceil(shipments.count / parseInt(limit)),
+                    limit: parseInt(limit)
+                },
+                statistics: statistics,
+                filters: {
+                    status,
+                    carrier_type,
+                    start_date,
+                    end_date,
+                    search
+                }
             }
         });
-    }
 
-    async sendShipmentConfirmation(shipmentId) {
-        
-        console.log(`Sending confirmation for shipment ${shipmentId}`);
+    } catch (error) {
+        console.error('Error getting all shipments:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error fetching shipments',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
-
-    async notifyPickupTeam(shipmentId) {
-        
-        console.log(`Notifying pickup team for shipment ${shipmentId}`);
-    }
-
-    async updateInventory(shipmentId) {
-        
-        console.log(`Updating inventory for shipment ${shipmentId}`);
-    }
-
-    async sendPlatformWebhook(shipmentId) {
-        
-        console.log(`Sending webhook for shipment ${shipmentId}`);
-    }
-
-    
+},
     /**
      * Get shipment status
      */
-    async getShipmentStatus(req, res) {
-        const { shipment_reference } = req.params;
-        
+    getShipment: async (req, res) => {
         try {
-            const shipment = await this.db.shipments.findOne({
+            const { shipment_reference } = req.params;
+            
+            const shipment = await db.shippings.findOne({
                 where: { shipment_reference },
                 include: [
                     { 
-                        model: this.db.addresses, 
+                        model: db.addresses, 
                         as: 'delivery_address' 
                     },
                     { 
-                        model: this.db.shipment_items, 
+                        model: db.addresses, 
+                        as: 'pickup_address' 
+                    },
+                    { 
+                        model: db.shipment_items, 
                         as: 'items' 
                     },
                     { 
-                        model: this.db.shipment_tracking, 
+                        model: db.shipment_tracking, 
                         as: 'tracking_events',
                         order: [['createdAt', 'DESC']]
+                    },
+                    {
+                        model: db.drivers,
+                        as: 'driver',
+                        required: false 
                     }
                 ]
             });
@@ -659,20 +596,29 @@ class ShipmentController {
             console.error('Error fetching shipment:', error);
             return res.status(500).json({
                 success: false,
-                message: 'Internal server error'
+                message: 'Error fetching shipment'
             });
         }
-    }
+    },
 
     /**
-     * Cancel shipment
-     * */
-    async cancelShipment(req, res) {
-        const { shipment_id } = req.params;
-        const { reason } = req.body;
-
+     * Update shipment status
+     */
+    updateShipmentStatus: async (req, res) => {
         try {
-            const shipment = await this.db.shipments.findByPk(shipment_id);
+            const { shipment_id } = req.params;
+            const { status, description, location, notes, source = 'system', performed_by } = req.body;
+            
+            // Validate status
+            const validStatuses = ['pending', 'in_transit', 'delivered', 'failed', 'cancelled', 'returned'];
+            if (!validStatuses.includes(status)) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
+                });
+            }
+
+            const shipment = await db.shippings.findByPk(shipment_id);
             
             if (!shipment) {
                 return res.status(404).json({
@@ -681,8 +627,67 @@ class ShipmentController {
                 });
             }
 
+            // Update shipment status
+            const updateData = { status };
             
-            const cancellableStatuses = ['pending', 'pickup_scheduled'];
+            if (status === 'delivered') {
+                updateData.actual_delivery_at = new Date();
+            }
+            
+            await shipment.update(updateData);
+
+            // Create tracking event
+            await db.shipment_tracking.create({
+                shipment_id: shipment.id,
+                status,
+                location: location || '',
+                description: description || `Status updated to ${status}`,
+                notes: notes || '',
+                source,
+                performed_by: performed_by || (req.user ? `user_${req.user.id}` : 'system'),
+                metadata: {
+                    updated_by: performed_by || 'system',
+                    previous_status: shipment.status
+                }
+            });
+
+            return res.status(200).json({
+                success: true,
+                message: 'Shipment status updated',
+                data: {
+                    shipment_id: shipment.id,
+                    status: shipment.status,
+                    updated_at: shipment.updatedAt
+                }
+            });
+        } catch (error) {
+            console.error('Error updating shipment:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Error updating shipment'
+            });
+        }
+    },
+
+    /**
+     * Cancel shipment
+     */
+    cancelShipment: async (req, res) => {
+        const { shipment_id } = req.params;
+        const { reason } = req.body;
+
+        try {
+            const shipment = await db.shippings.findByPk(shipment_id);
+            
+            if (!shipment) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Shipment not found'
+                });
+            }
+
+            // Check if shipment can be cancelled
+            const cancellableStatuses = ['pending'];
             if (!cancellableStatuses.includes(shipment.status)) {
                 return res.status(400).json({
                     success: false,
@@ -690,23 +695,25 @@ class ShipmentController {
                 });
             }
 
-            
+            // If external carrier, log cancellation request
             if (shipment.carrier_type === 'external') {
-                console.log(`Would call cancellation API for external carrier: ${shipment.external_carrier_name}`);
+                console.log(`[EXTERNAL CANCELLATION] Would cancel external shipment: ${shipment.external_carrier_reference} with ${shipment.carrier_name}`);
+                // TODO: Call external carrier cancellation API
             }
 
-            
+            // Update shipment status
             await shipment.update({
                 status: 'cancelled',
                 notes: `Cancelled: ${reason || 'No reason provided'}`
-                
             });
 
-            await this.db.shipment_tracking.create({
+            // Add tracking event
+            await db.shipment_tracking.create({
                 shipment_id: shipment.id,
                 status: 'cancelled',
                 description: `Shipment cancelled: ${reason || 'No reason provided'}`,
-                performed_by: req.user?.id ? `user_${req.user.id}` : 'system'
+                performed_by: req.user?.id ? `user_${req.user.id}` : 'system',
+                source: 'system'
             });
 
             return res.status(200).json({
@@ -720,7 +727,149 @@ class ShipmentController {
                 message: 'Internal server error'
             });
         }
-    }
-}
+    },
 
-module.exports = ShipmentController;
+    /**
+     * Get all shipments for a user
+     */
+    getUserShipments: async (req, res) => {
+        
+        try {
+            const { user_id } = req.params;
+            const { status, carrier_type, page = 1, limit = 20 } = req.query;
+            
+            const where = { user_id };
+            
+            if (status) where.status = status;
+            if (carrier_type) where.carrier_type = carrier_type;
+            
+            const offset = (page - 1) * limit;
+            
+            const shipments = await db.shippings.findAndCountAll({
+                where,
+                include: [
+                    { model: db.addresses, as: 'delivery_address' },
+                    { model: db.addresses, as: 'pickup_address' },
+                    { 
+                        model: db.shipment_tracking, 
+                        as: 'tracking_events',
+                        order: [['createdAt', 'DESC']],
+                        limit: 1 
+                    }
+                ],
+                order: [['createdAt', 'DESC']],
+                limit: parseInt(limit),
+                offset: offset
+            });
+
+            return res.status(200).json({
+                success: true,
+                data: {
+                    shipments: shipments.rows,
+                    pagination: {
+                        total: shipments.count,
+                        page: parseInt(page),
+                        pages: Math.ceil(shipments.count / limit),
+                        limit: parseInt(limit)
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching user shipments:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Error fetching shipments'
+            });
+        }
+    },
+
+    /**
+     * Webhook handler for external carriers
+     */
+    handleCarrierWebhook: async (req, res) => {
+        try {
+            const { carrier } = req.params;
+            const webhookData = req.body;
+            
+            console.log(`[WEBHOOK] Received from ${carrier}:`, JSON.stringify(webhookData, null, 2));
+            
+            // Look for external reference in webhook data
+            let externalReference = webhookData.tracking_number || 
+                                   webhookData.reference || 
+                                   webhookData.carrier_reference;
+            
+            if (!externalReference) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'No tracking reference found in webhook'
+                });
+            }
+            
+            // Find shipment by external reference
+            const shipment = await db.shippings.findOne({
+                where: { 
+                    external_carrier_reference: externalReference,
+                    carrier_type: 'external'
+                }
+            });
+            
+            if (!shipment) {
+                console.log(`[WEBHOOK] No shipment found for external reference: ${externalReference}`);
+                return res.status(404).json({
+                    success: false,
+                    message: 'Shipment not found'
+                });
+            }
+            
+            // Map carrier status to our status
+            const statusMapping = {
+                'in_transit': 'in_transit',
+                'delivered': 'delivered',
+                'failed': 'failed',
+                'exception': 'failed',
+                'cancelled': 'cancelled'
+            };
+            
+            const carrierStatus = webhookData.status || webhookData.tracking_status;
+            const ourStatus = statusMapping[carrierStatus] || 'in_transit';
+            
+            // Update shipment status
+            await shipment.update({
+                status: ourStatus,
+                metadata: {
+                    ...shipment.metadata,
+                    last_webhook: {
+                        carrier: carrier,
+                        data: webhookData,
+                        received_at: new Date()
+                    }
+                }
+            });
+            
+            // Create tracking event
+            await db.shipment_tracking.create({
+                shipment_id: shipment.id,
+                status: ourStatus,
+                location: webhookData.location || webhookData.city || '',
+                description: `Carrier update: ${carrierStatus || 'Status update'}`,
+                source: 'carrier_api',
+                performed_by: carrier,
+                metadata: { webhook_data: webhookData }
+            });
+            
+            return res.status(200).json({
+                success: true,
+                message: 'Webhook processed successfully'
+            });
+            
+        } catch (error) {
+            console.error('Error processing webhook:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Error processing webhook'
+            });
+        }
+    }
+};
+
+module.exports = shipmentController;

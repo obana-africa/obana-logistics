@@ -18,7 +18,7 @@ const orderRoute = require('./src/routes/orders');
 const zohoRoute = require('./src/routes/zoho');
 const notificationRoute = require('./src/routes/notification');
 const shipmentRoute = require('./src/routes/shipment');
-const shipmentRoutes = require('./routes/shipments')
+const shipmentRoutes = require('./src/routes/shipments')
 
 
 const PORT = process.env.PORT;

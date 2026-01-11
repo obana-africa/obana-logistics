@@ -1,91 +1,129 @@
 module.exports = (sequelize, DataTypes) => {
-    const Shipment = sequelize.define("shipment", {
+    const Shipment = sequelize.define("shippings", {
         id: {
             type: DataTypes.INTEGER,
             allowNull: false,
             autoIncrement: true,
             primaryKey: true
         },
+        
         shipment_reference: {
             type: DataTypes.STRING(50),
             allowNull: false,
             unique: true,
-            comment: 'Internal tracking number'
+            comment: 'OBANA-20250108-ABC123 or EXT-20250108-XYZ789'
         },
+        
         order_reference: {
             type: DataTypes.STRING(50),
             allowNull: false,
-            comment: 'Platform order ID'
+            comment: 'Platform order ID that groups multiple vendor shipments'
         },
-        customer_id: {
+        
+        user_id: {
             type: DataTypes.STRING(50),
             allowNull: false
         },
-        delivery_type: {
-            type: DataTypes.ENUM('single', 'aggregated', 'per-vendor'),
+        
+        
+        vendor_name: {
+            type: DataTypes.STRING(255),
+            allowNull: true
+        },
+        
+        carrier_type: {
+            type: DataTypes.ENUM('internal', 'external'),
+            allowNull: false,
+            defaultValue: 'internal'
+        },
+        // If external carrier
+        carrier_name: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            comment: 'Obana Logistics, FedEx, DHL, UPS, etc.'
+        },
+        carrier_slug: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            comment: 'obana, fedex, dhl, ups'
+        },
+        
+        external_carrier_reference: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            comment: 'CA-71017347351 (from Terminal Africa)'
+        },
+        
+        external_rate_id: {
+            type: DataTypes.STRING(100),
+            allowNull: true
+        },
+        
+        delivery_address_id: {
+            type: DataTypes.INTEGER,
             allowNull: false
         },
-        is_multi_vendor: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: false
+        
+        pickup_address_id: {
+            type: DataTypes.INTEGER,
+            allowNull: false
         },
-        dispatch_type: {
-            type: DataTypes.ENUM('delivery', 'pickup'),
-            defaultValue: 'delivery'
-        },
-        pickup_method: {
-            type: DataTypes.ENUM('delivery', 'pickup-station'),
-            defaultValue: 'delivery'
-        },
-        total_amount: {
+        // Financial details for THIS shipment
+        product_value: {
             type: DataTypes.DECIMAL(15, 2),
-            allowNull: false
+            allowNull: false,
+            defaultValue: 0.00
         },
         shipping_fee: {
             type: DataTypes.DECIMAL(15, 2),
-            allowNull: false
+            allowNull: false,
+            defaultValue: 0.00
         },
         currency: {
             type: DataTypes.STRING(3),
             defaultValue: 'NGN'
         },
+        
         total_weight: {
             type: DataTypes.DECIMAL(10, 2),
-            allowNull: false
+            allowNull: false,
+            defaultValue: 0.00
         },
         total_items: {
             type: DataTypes.INTEGER,
-            allowNull: false
+            allowNull: false,
+            defaultValue: 0
         },
+        
         status: {
             type: DataTypes.ENUM(
-                'pending',
-                'pickup_scheduled',
-                'in_transit',
-                'out_for_delivery',
-                'delivered',
-                'failed',
-                'cancelled',
-                'returned'
+                'pending',           // Created but not processed
+                'in_transit',        // On the way to hub/customer
+                'delivered',         // Successfully delivered
+                'failed',            // Delivery failed
+                'cancelled',         // Shipment cancelled
+                'returned'           // Returned to vendor
             ),
             defaultValue: 'pending'
         },
-        pickup_scheduled_at: {
-            type: DataTypes.DATE,
-            allowNull: true
-        },
-        actual_pickup_at: {
-            type: DataTypes.DATE,
-            allowNull: true
-        },
-        estimated_delivery_at: {
-            type: DataTypes.DATE,
-            allowNull: true
-        },
+        // // Timestamps for tracking
+        // pickup_scheduled_at: {
+        //     type: DataTypes.DATE,
+        //     allowNull: true
+        // },
+        // actual_pickup_at: {
+        //     type: DataTypes.DATE,
+        //     allowNull: true
+        // },
+        // estimated_delivery_at: {
+        //     type: DataTypes.DATE,
+        //     allowNull: true
+        // },
         actual_delivery_at: {
             type: DataTypes.DATE,
             allowNull: true
         },
+        // Insurance
         is_insured: {
             type: DataTypes.BOOLEAN,
             defaultValue: false
@@ -94,26 +132,16 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.DECIMAL(15, 2),
             defaultValue: 0.00
         },
-        carrier_type: {
-            type: DataTypes.ENUM('internal', 'external'),
-            defaultValue: 'internal'
-        },
-        external_carrier_name: {
-            type: DataTypes.STRING(100),
+        // Driver assignment (for internal logistics)
+        driver_id: {
+            type: DataTypes.INTEGER,
             allowNull: true
         },
-        external_carrier_reference: {
-            type: DataTypes.STRING(100),
-            allowNull: true
-        },
-        external_rate_id: {
-            type: DataTypes.STRING(100),
-            allowNull: true
-        },
+        
         metadata: {
-            type: DataTypes.JSONB,
+            type: DataTypes.JSON,
             allowNull: true,
-            comment: 'Original payload and additional data'
+            comment: 'Original payload, carrier response, etc.'
         },
         notes: {
             type: DataTypes.TEXT,

@@ -74,15 +74,85 @@ db.shipment = require('./shipmentModel.js')(sequelize, DataTypes)
 db.shipment_history = require('./shipmentHistoryModel.js')(sequelize, DataTypes)
 db.webhook_logs = require('./webhookLogsModel.js')(sequelize, DataTypes)
 db.cache = new Cache(redis)
-db.shipment = require('./shipmentModel.js')(sequelize, DataTypes)
-db.shipment_history = require('./shipmentHistoryModel.js')(sequelize, DataTypes)
-db.webhook_logs = require('./webhookLogsModel.js')(sequelize, DataTypes)
+db.drivers = require('./driversModel.js')(sequelize, DataTypes)
+db.addresses = require('./addressModel.js')(sequelize, DataTypes)
+db.shipment_item = require('./shipmentItemsModel.js')(sequelize, DataTypes)
+db.shipment_tracking = require('./shipmentTrackingModel.js')(sequelize, DataTypes)
+// db.driver_assignment = require('./driverAssignmentModel.js')(sequelize, DataTypes)
+db.shipment_items = require('./shipmentItemsModel.js')(sequelize, DataTypes)
+db.shippings = require('./shipmentsModel.js')(sequelize, DataTypes)
 
 db.sequelize.sync({ force: false })
     .then(() => {
         console.log('yes re-sync done!')
     })
 
+    // Address associations
+    db.addresses.hasMany(db.shippings, {
+        foreignKey: 'delivery_address_id',
+        as: 'deliveries'
+    });
+    
+    db.addresses.hasMany(db.shippings, {
+        foreignKey: 'pickup_address_id',
+        as: 'pickups'
+    });
+    
+    // Shipment associations
+    db.shippings.belongsTo(db.addresses, {
+        foreignKey: 'delivery_address_id',
+        as: 'delivery_address'
+    });
+    
+    db.shippings.belongsTo(db.addresses, {
+        foreignKey: 'pickup_address_id',
+        as: 'pickup_address'
+    });
+    
+    db.shippings.hasMany(db.shipment_items, {
+        foreignKey: 'shipment_id',
+        as: 'items'
+    });
+    
+    db.shippings.hasMany(db.shipment_tracking, {
+        foreignKey: 'shipment_id',
+        as: 'tracking_events'
+    });
+    
+    db.shippings.belongsTo(db.drivers, {
+        foreignKey: 'driver_id',
+        as: 'driver',
+        constraints: false // For internal shipments only
+    });
+    
+    // Shipment Item associations
+    db.shipment_items.belongsTo(db.shippings, {
+        foreignKey: 'shipment_id',
+        as: 'shipment'
+    });
+    
+    // Shipment Tracking associations
+    db.shipment_tracking.belongsTo(db.shippings, {
+        foreignKey: 'shipment_id',
+        as: 'shipment'
+    });
+    
+    // Driver associations
+    db.drivers.hasMany(db.shippings, {
+        foreignKey: 'driver_id',
+        as: 'assigned_shipments'
+    });
+    
+    
+        db.drivers.belongsTo(db.users, {
+            foreignKey: 'user_id',
+            as: 'user'
+        });
+        
+        db.users.hasOne(db.drivers, {
+            foreignKey: 'user_id',
+            as: 'driver_profile'
+        });
 
 // Order -> Shipment association
 db.orders.hasMany(db.shipment, {

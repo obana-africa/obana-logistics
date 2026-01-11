@@ -7,24 +7,20 @@ module.exports = (sequelize, DataTypes) => {
             primaryKey: true
         },
         address_type: {
-            type: DataTypes.ENUM('pickup', 'delivery', 'vendor', 'warehouse'),
+            type: DataTypes.ENUM('pickup', 'delivery'),
             allowNull: false
         },
-        first_name: {
-            type: DataTypes.STRING(100),
-            allowNull: true
-        },
-        last_name: {
-            type: DataTypes.STRING(100),
-            allowNull: true
-        },
-        email: {
-            type: DataTypes.STRING(100),
+        name: {
+            type: DataTypes.STRING(200),
             allowNull: true
         },
         phone: {
             type: DataTypes.STRING(20),
             allowNull: false
+        },
+        contact_email: {
+            type: DataTypes.STRING(100),
+            allowNull: true
         },
         line1: {
             type: DataTypes.STRING(255),
@@ -54,13 +50,13 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.BOOLEAN,
             defaultValue: false
         },
-        metadata: {
-            type: DataTypes.JSONB,
+        instructions: {
+            type: DataTypes.TEXT,
             allowNull: true
         },
-        is_active: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: true
+        metadata: {
+            type: DataTypes.JSON,  // Changed from JSONB
+            allowNull: true
         },
         createdAt: {
             type: DataTypes.DATE,
