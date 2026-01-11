@@ -44,7 +44,7 @@ const db = {}
 db.Sequelize = Sequelize
 db.sequelize = sequelize
 
-db.products = require('./productModel.js')(sequelize, DataTypes)
+// db.products = require('./productModel.js')(sequelize, DataTypes)
 db.categories = require('./categoryModel.js')(sequelize, DataTypes)
 db.users = require('./userModel.js')(sequelize, DataTypes)
 db.verifications = require('./verificationModel.js')(sequelize, DataTypes)
