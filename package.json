@@ -10,8 +10,9 @@
     "predev": "npm run migrate:up",
     "migrate:up": "npx sequelize-cli db:migrate",
     "migrate:down": "npx sequelize-cli db:migrate:undo",
-    "migrate:create": "npx sequelize migration:generate --name=$npm_config_name"
-    
+    "migrate:create": "npx sequelize migration:generate --name=$npm_config_name",
+    "seed": "node scripts/seed-database.js",
+    "seed:all": "npm run migrate:up && npm run seed"
   },
   "engines": {
     "node": ">=16.0.0 <=19.0.1"
