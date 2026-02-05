@@ -1,7 +1,7 @@
 "use client";
-import { Card, Button, Badge, Loader } from '@/components/ui';
+import { Card, Button, Badge, Loader, Select, Input } from '@/components/ui';
 import { apiClient } from '@/lib/api';
-import { TrendingUp, Package, MapPin, Clock } from 'lucide-react';
+import { TrendingUp, Package, MapPin, Clock, X } from 'lucide-react';
 import { useAuth } from '@/lib/authContext';
 import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -20,6 +20,9 @@ export default function DriverDashboard() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ active: 0, completed: 0, earnings: 0 });
   const { user } = useAuth();
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
+  const [updateForm, setUpdateForm] = useState({ status: '', location: '', notes: '' });
 
   useEffect(() => {
     if (user?.id) {
@@ -30,6 +33,7 @@ export default function DriverDashboard() {
   const loadShipments = async () => {
     try {
       if (!user?.id) return;
+      // The first argument must be the user's ID (a number), and the second is for filters.
       const response = await apiClient.listShipments(Number(user.id), { role: 'driver', limit: 10 });
       const data = response.data?.shipments || [];
       setShipments(data);
@@ -46,6 +50,31 @@ export default function DriverDashboard() {
     } catch (err) {
       console.error('Error loading shipments:', err);
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateClick = (shipment: Shipment) => {
+    setSelectedShipment(shipment);
+    setUpdateForm({ 
+      status: shipment.status, 
+      location: '', 
+      notes: '' 
+    });
+    setShowUpdateModal(true);
+  };
+
+  const handleUpdateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedShipment) return;
+    
+    try {
+      setLoading(true);
+      await apiClient.updateShipmentStatus(selectedShipment.id.toString(), updateForm.status, updateForm.notes, updateForm.location);
+      setShowUpdateModal(false);
+      loadShipments();
+    } catch (err) {
+      console.error(err);
       setLoading(false);
     }
   };
@@ -130,10 +159,7 @@ export default function DriverDashboard() {
                       <Button
                         variant="primary"
                         size="sm"
-                        onClick={() => {
-                          // Handle update status
-                          alert('Update status modal coming soon!');
-                        }}
+                        onClick={() => handleUpdateClick(shipment)}
                       >
                         Update Status
                       </Button>
@@ -150,6 +176,63 @@ export default function DriverDashboard() {
             </div>
           )}
         </Card>
+
+        {/* Update Status Modal */}
+        {showUpdateModal && selectedShipment && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <Card className="w-full max-w-md">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-gray-900">Update Shipment Status</h2>
+                <button onClick={() => setShowUpdateModal(false)} className="text-gray-500 hover:text-gray-700">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="mb-4">
+                <p className="text-sm text-gray-600">Shipment Ref: <span className="font-medium text-gray-900">{selectedShipment.shipment_reference}</span></p>
+              </div>
+
+              <form onSubmit={handleUpdateSubmit} className="space-y-4">
+                <Select
+                  label="New Status"
+                  value={updateForm.status}
+                  onChange={(e) => setUpdateForm({ ...updateForm, status: e.target.value })}
+                  options={[
+                    { value: 'delivered', label: 'Delivered' },
+                    { value: 'in_transit', label: 'In Transit' },
+                    { value: ' cancelled', label: 'Delivered' },
+                    { value: 'returned', label: 'Returned' },
+                  ]}
+                />
+
+                <Input
+                  label="Current Location"
+                  placeholder="e.g. Ikeja, Lagos"
+                  value={updateForm.location}
+                  onChange={(e) => setUpdateForm({ ...updateForm, location: e.target.value })}
+                  required
+                />
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                  <textarea
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="Optional notes about the delivery..."
+                    value={updateForm.notes}
+                    onChange={(e) => setUpdateForm({ ...updateForm, notes: e.target.value })}
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <Button type="submit" fullWidth variant="primary">
+                    Update Status
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

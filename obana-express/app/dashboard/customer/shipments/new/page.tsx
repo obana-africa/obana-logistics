@@ -45,6 +45,7 @@ export default function CreateShipmentPage() {
       email: '',
       zip_code: ''
     },
+    carrier_slug: 'obana',
     items: [{ name: '', description: '', quantity: '1', weight: '0', price: '' }],
   });
 
@@ -57,7 +58,7 @@ export default function CreateShipmentPage() {
   const serviceLevels = [
     { value: 'Standard', label: 'Standard' },
     { value: 'Express', label: 'Express' },
-    { value: 'Economy', label: 'Express' },
+    { value: 'Economy', label: 'Economy' },
   ];
 
   const resetForm = () => {
@@ -73,6 +74,7 @@ export default function CreateShipmentPage() {
       delivery_address: {
         line1: '', line2: '', city: '', state: '', country: '', phone: '', first_name: '', last_name: '', email: '', zip_code: ''
       },
+    carrier_slug: 'obana',
       items: [{ name: '', description: '', quantity: '1', weight: '0', price: '' }],
     });
     setError('');
@@ -179,6 +181,7 @@ export default function CreateShipmentPage() {
         transport_mode: formData.transport_mode,
         service_level: formData.service_level,
         vendor_name:'obana.africa',
+        carrier_slug: 'obana',
         shipping_fee: matchedRoute.match.price,
         estimated_delivery: matchedRoute.match.estimated_delivery,
         

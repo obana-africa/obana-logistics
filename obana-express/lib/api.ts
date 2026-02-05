@@ -196,7 +196,7 @@ class ApiClient {
     const response = await this.client.get<ApiResponse>('/shipments', { params: filters });
     return response.data;
   }
-
+ 
   async listShipments(userId: number, filters?: any) {
     const response = await this.client.get<ApiResponse>(`/shipments/users/${userId}`, {params: filters });
     return response.data;
@@ -212,10 +212,11 @@ class ApiClient {
     return response.data;
   }
 
-  async updateShipmentStatus(id: string, status: string, notes?: string) {
-    const response = await this.client.put<ApiResponse>(`/shipments/${id}/status`, {
+  async updateShipmentStatus(id: string, status: string, notes?: string, location?: string) {
+    const response = await this.client.put<ApiResponse>(`/shipments/status/${id}`, {
       status,
       notes,
+      location,
     });
     return response.data;
   }

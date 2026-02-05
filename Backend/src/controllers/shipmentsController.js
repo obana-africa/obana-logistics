@@ -741,9 +741,28 @@ getAllShipments: async (req, res) => {
         try {
         const { shipment_reference } = req.params;
             const user_id = String(req.user.id);
-            
+            const user_role = req.user.role;
+
+            let where = { shipment_reference };
+
+            if (user_role === 'admin') {
+                // Admin can view any shipment
+            } else if (user_role === 'driver') {
+                const driver = await db.drivers.findOne({ where: { user_id: req.user.id } });
+                if (driver) {
+                    where[Op.or] = [
+                        { user_id },
+                        { driver_id: driver.id }
+                    ];
+                } else {
+                    where.user_id = user_id;
+                }
+            } else {
+                where.user_id = user_id;
+            }
+
             const shipment = await db.shippings.findOne({
-                where: { shipment_reference, user_id },
+                where,
                 include: [
                     { 
                         model: db.addresses, 
