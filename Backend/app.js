@@ -24,21 +24,9 @@ const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
     origin: [
-		"http://localhost:3005",
-		"http://localhost:4005",
 		"http://localhost:3000",
-		"https://salesforce.obana.africa",
-		"https://salesforce-virid.vercel.app",
-		"https://obana-admin-frontend.vercel.app",
-		"https://shop.obana.africa",
-		"https://www.obana.africa",
-		"https://obana.africa",
-		"https://obana-vendor.vercel.app",
-		"https://admin.obana.africa",
-		"https://staging.obana.africa",
-		"https://staging.shop.obana.africa",
-		"https://staging.salesforce.obana.africa",
-		"https://staging.admin.obana.africa",
+        "https://obana-logistics-psi.vercel.app/"
+		
     ],
     methods: ["GET", "POST"]
   }
