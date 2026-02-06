@@ -65,7 +65,15 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
         } fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 text-white transition-transform duration-300 lg:static lg:translate-x-0`}
       >
         <div className="flex items-center justify-between p-6 border-b border-gray-800">
-          <h1 className="text-2xl font-bold">Obana</h1>
+          <h1 className="text-2xl font-bold">
+              <Link
+                href={'/'}
+                className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                onClick={() => setSidebarOpen(false)}
+              >
+            Obana Logistics
+            </Link>
+            </h1>
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden text-gray-400 hover:text-white"

@@ -38,15 +38,15 @@ export default function Home() {
       {/* Navigation */}
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-blue-600">Obana</h1>
+          <h1 className="text-2xl font-bold text-blue-600">Obana Logistics</h1>
           <div className="space-x-4">
             {isAuthenticated ? (
-              <>
+              <div className='grid md:flex '>
                 <Link href={getDashboardLink()}>
                   <Button variant="primary">Dashboard</Button>
                 </Link>
                 <Button variant="ghost" onClick={() => logout()}>Logout</Button>
-              </>
+              </div>
             ) : (
               <>
                 <Link href="/auth/login">
