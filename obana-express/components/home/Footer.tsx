@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { Package, Facebook, Twitter, Instagram, Linkedin } from "lucide-react";
+import Image from "next/image";
 
 export default function Footer() {
 	return (
@@ -10,16 +11,21 @@ export default function Footer() {
 			{/* This padding-top creates space for the overlapping contact form */}
 			<div className="max-w-7xl mx-auto px-6">
 				<div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
-					<div>
-						<div className="flex items-center space-x-2 mb-4">
-							<div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-400 rounded-lg flex items-center justify-center">
-								<Package className="w-6 h-6 text-white" />
-							</div>
-							<h3 className="text-xl font-bold">Obana Logistics</h3>
-						</div>
-						<p className="text-slate-400 leading-relaxed">
-							Your trusted partner for fast, secure, and reliable shipping
-							across Nigeria.
+					<div className="text-center mb-8">
+						<Link
+							href="/"
+							className="flex items-center justify-center bg-[#f4f4f4] rounded-lg "
+						>
+							<Image
+								src="/logo.svg"
+								alt="Obana Logistics Logo"
+								width={100}
+								height={100}
+								className="ml-2"
+							/>
+						</Link>
+						<p className="text-blue-200 text-lg font-medium">
+							Logistics Made Simple
 						</p>
 					</div>
 

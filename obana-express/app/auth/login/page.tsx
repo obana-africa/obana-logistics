@@ -5,6 +5,8 @@ import { useAuth } from "@/lib/authContext";
 import { useRouter } from "next/navigation";
 import { Button, Input, Card, Alert } from "@/components/ui";
 import { Mail, Lock, Package, Truck } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
 
 export default function LoginPage() {
 	const router = useRouter();
@@ -48,22 +50,27 @@ export default function LoginPage() {
 			</div>
 
 			<div className="w-full max-w-md relative z-10">
-				{/* Logo and Brand Section */}
-				<div className="text-center mb-8">
-					<div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-600 to-blue-800 rounded-2xl shadow-2xl mb-4 transform hover:scale-105 transition-transform">
-						<Package className="w-10 h-10 text-white" />
-					</div>
-					<h1 className="text-4xl font-bold text-white mb-2 tracking-tight">
-						Obana
-					</h1>
-					<p className="text-blue-200 text-lg font-medium">
-						Logistics Made Simple
-					</p>
-				</div>
 
 				{/* Login Card */}
 				<Card className="shadow-2xl border-0 backdrop-blur-sm bg-white/95">
 					<div className="mb-6">
+						<div className="text-center mb-8">
+							<Link
+								href="/"
+								className="flex items-center justify-center bg-[#f4f4f4] rounded-lg "
+							>
+								<Image
+									src="/logo.svg"
+									alt="Obana Logistics Logo"
+									width={100}
+									height={100}
+									className="ml-2"
+								/>
+							</Link>
+							<p className="text-[#1B3E5D] text-lg font-medium">
+								Logistics Made Simple
+							</p>
+						</div>
 						<h2 className="text-2xl font-bold text-gray-900 mb-2">
 							Welcome Back
 						</h2>

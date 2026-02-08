@@ -5,6 +5,8 @@ import { useAuth } from "@/lib/authContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, Alert } from "@/components/ui";
 import { Lock, Mail, Package, CheckCircle, RefreshCw } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
 
 export default function OtpPage() {
 	const router = useRouter();
@@ -111,7 +113,7 @@ export default function OtpPage() {
 	const isComplete = otp.every((digit) => digit !== "");
 
 	return (
-		<div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-800 flex items-center justify-center p-4 relative overflow-hidden">
+		<div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-900 to-slate-800 flex items-center justify-center p-4 relative overflow-hidden">
 			{/* Animated background elements */}
 			<div className="absolute inset-0 overflow-hidden pointer-events-none">
 				<div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
@@ -121,20 +123,27 @@ export default function OtpPage() {
 			</div>
 
 			<div className="w-full max-w-md relative z-10">
-				{/* Logo Section */}
-				<div className="text-center mb-8">
-					<div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-600 to-blue-800 rounded-2xl shadow-2xl mb-4 transform hover:scale-105 transition-transform">
-						<Package className="w-10 h-10 text-white" />
-					</div>
-					<h1 className="text-4xl font-bold text-white mb-2 tracking-tight">
-						Obana
-					</h1>
-				</div>
-
-				{/* OTP Card */}
 				<Card className="shadow-2xl border-0 backdrop-blur-sm bg-white/95">
 					<div className="text-center mb-8">
-						<div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl mb-4">
+						<Link
+							href="/"
+							className="flex items-center justify-center bg-[#f4f4f4] rounded-lg "
+						>
+							<Image
+								src="/logo.svg"
+								alt="Obana Logistics Logo"
+								width={100}
+								height={100}
+								className="ml-2"
+							/>
+						</Link>
+						<p className="text-[#1B3E5D] text-lg font-medium">
+							Logistics Made Simple
+						</p>
+					</div>
+
+					<div className="text-center mb-8">
+						<div className="inline-flex items-center justify-center w-16 h-16 bg-linear-to-br from-blue-100 to-blue-200 rounded-2xl mb-4">
 							<Lock className="w-8 h-8 text-blue-600" />
 						</div>
 						<h2 className="text-2xl font-bold text-gray-900 mb-2">
@@ -219,7 +228,7 @@ export default function OtpPage() {
 							fullWidth
 							variant="primary"
 							disabled={!isComplete}
-							className="h-12 text-base font-semibold bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+							className="h-12 text-base font-semibold bg-linear-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							{loading ? (
 								<span className="flex items-center justify-center space-x-2">
