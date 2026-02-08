@@ -152,6 +152,10 @@ class ApiClient {
       localStorage.removeItem('user');
       this.accessToken = null;
       delete this.client.defaults.headers.common['Authorization'];
+
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/auth/login')) {
+        window.location.href = '/auth/login';
+      }
     }
   }
 
