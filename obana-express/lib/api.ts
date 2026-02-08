@@ -85,8 +85,10 @@ class ApiClient {
   }
 
   // Auth endpoints
-  async signup(email: string, phone: string, password: string, role: string) {
+  async signup(first_name: string, last_name: string, email: string, phone: string, password: string, role: string) {
     const response = await this.client.post<ApiResponse>('/users/signup', {
+      first_name,
+      last_name,
       email,
       phone,
       password,
@@ -202,6 +204,11 @@ class ApiClient {
     return response.data;
   }
 
+  async getAllUsers() {
+    const response = await this.client.get<ApiResponse>('/users');
+    return response.data;
+  }
+
   async getAdminStats() {
     const response = await this.client.get<ApiResponse>('/shipments/admin/stats');
     return response.data;
@@ -218,6 +225,11 @@ class ApiClient {
       notes,
       location,
     });
+    return response.data;
+  }
+
+  async deleteShipment(id: string) {
+    const response = await this.client.delete<ApiResponse>(`/shipments/${id}`);
     return response.data;
   }
 

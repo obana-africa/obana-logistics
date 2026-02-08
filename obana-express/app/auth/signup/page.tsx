@@ -12,7 +12,7 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<'role' | 'info'>('role');
   const [selectedRole, setSelectedRole] = useState<string>('');
-  const [formData, setFormData] = useState({ email: '', phone: '', password: '', confirmPassword: '' });
+  const [formData, setFormData] = useState({ first_name: '', last_name:'', email: '', phone: '', password: '', confirmPassword: '' });
 
   const roles = [
     { id: 'customer', label: 'Customer', description: 'Ship packages & track shipments' },
@@ -35,7 +35,7 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
-      const response = await signup(formData.email, formData.phone, formData.password, selectedRole);
+      const response = await signup(formData.first_name, formData.last_name, formData.email, formData.phone, formData.password, selectedRole);
       if (response?.data?.request_id) {
         router.push(`/auth/otp?request_id=${response.data.request_id}&email=${formData.email}`);
       }
@@ -87,6 +87,25 @@ export default function SignupPage() {
                 Sign up as <span className="text-blue-600">{roles.find(r => r.id === selectedRole)?.label}</span>
               </h2>
             </div>
+           <Input
+              label="First Name"
+              type="text"
+              placeholder="John"
+              required
+              value={formData.first_name}
+              onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
+              icon={<User className="w-5 h-5" />}
+            />
+
+                       <Input
+              label="Last Name"
+              type="text"
+              placeholder="Doe"
+              required
+              value={formData.last_name}
+              onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
+              icon={<User className="w-5 h-5" />}
+            />
 
             <Input
               label="Email Address"
