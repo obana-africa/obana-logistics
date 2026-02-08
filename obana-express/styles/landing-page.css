@@ -1,0 +1,273 @@
+/* Enhanced animations and styles for Obana Logistics landing page */
+
+@keyframes fadeInUp {
+	from {
+		opacity: 0;
+		transform: translateY(30px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+@keyframes slideInFromLeft {
+	from {
+		opacity: 0;
+		transform: translateX(-30px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+@keyframes slideInFromRight {
+	from {
+		opacity: 0;
+		transform: translateX(30px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+@keyframes scaleIn {
+	from {
+		opacity: 0;
+		transform: scale(0.9);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+@keyframes float {
+	0%,
+	100% {
+		transform: translateY(0);
+	}
+	50% {
+		transform: translateY(-20px);
+	}
+}
+
+@keyframes glow {
+	0%,
+	100% {
+		box-shadow: 0 0 20px rgba(251, 191, 36, 0.3);
+	}
+	50% {
+		box-shadow: 0 0 30px rgba(251, 191, 36, 0.6);
+	}
+}
+
+/* Apply animations to elements */
+.animate-fade-in-up {
+	animation: fadeInUp 0.6s ease-out forwards;
+}
+
+.animate-fade-in {
+	animation: fadeIn 0.8s ease-out forwards;
+}
+
+.animate-slide-in-left {
+	animation: slideInFromLeft 0.6s ease-out forwards;
+}
+
+.animate-slide-in-right {
+	animation: slideInFromRight 0.6s ease-out forwards;
+}
+
+.animate-scale-in {
+	animation: scaleIn 0.5s ease-out forwards;
+}
+
+.animate-float {
+	animation: float 3s ease-in-out infinite;
+}
+
+.animate-glow {
+	animation: glow 2s ease-in-out infinite;
+}
+
+/* Stagger animation delays */
+.delay-100 {
+	animation-delay: 0.1s;
+	opacity: 0;
+}
+
+.delay-200 {
+	animation-delay: 0.2s;
+	opacity: 0;
+}
+
+.delay-300 {
+	animation-delay: 0.3s;
+	opacity: 0;
+}
+
+.delay-400 {
+	animation-delay: 0.4s;
+	opacity: 0;
+}
+
+.delay-500 {
+	animation-delay: 0.5s;
+	opacity: 0;
+}
+
+.delay-600 {
+	animation-delay: 0.6s;
+	opacity: 0;
+}
+
+/* Smooth scroll behavior */
+html {
+	scroll-behavior: smooth;
+}
+
+/* Hide scrollbar for horizontal scroll sections */
+.scrollbar-hide {
+	-ms-overflow-style: none; /* IE and Edge */
+	scrollbar-width: none; /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+	display: none; /* Chrome, Safari and Opera */
+}
+
+/* Custom gradients */
+.gradient-text {
+	background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+	background-clip: text;
+}
+
+.gradient-bg-blue {
+	background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+}
+
+.gradient-bg-amber {
+	background: linear-gradient(135deg, #d97706 0%, #fbbf24 100%);
+}
+
+.gradient-bg-purple {
+	background: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
+}
+
+/* Card hover effects */
+.card-hover {
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-hover:hover {
+	transform: translateY(-8px);
+	box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+/* Button effects */
+.btn-glow {
+	position: relative;
+	overflow: hidden;
+}
+
+.btn-glow::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	left: -100%;
+	width: 100%;
+	height: 100%;
+	background: linear-gradient(
+		90deg,
+		transparent,
+		rgba(255, 255, 255, 0.3),
+		transparent
+	);
+	transition: left 0.5s;
+}
+
+.btn-glow:hover::before {
+	left: 100%;
+}
+
+/* Backdrop blur for modal */
+.backdrop-blur-sm {
+	backdrop-filter: blur(8px);
+}
+
+/* Custom focus styles */
+input:focus,
+button:focus {
+	outline: none;
+}
+
+/* Responsive utilities */
+@media (max-width: 768px) {
+	.hero-title {
+		font-size: 2.5rem;
+	}
+
+	.section-title {
+		font-size: 2rem;
+	}
+}
+
+/* Loading spinner */
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.spinner {
+	animation: spin 1s linear infinite;
+}
+
+/* Smooth transitions for all interactive elements */
+button,
+a,
+input {
+	transition: all 0.2s ease-in-out;
+}
+
+/* Image fade-in effect */
+img {
+	transition: opacity 0.3s ease-in-out;
+}
+
+img[data-loaded="false"] {
+	opacity: 0;
+}
+
+img[data-loaded="true"] {
+	opacity: 1;
+}
+
+/* Pulse animation for trust indicators */
+@keyframes pulse-subtle {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.8;
+	}
+}
+
+.pulse-subtle {
+	animation: pulse-subtle 2s ease-in-out infinite;
+}
