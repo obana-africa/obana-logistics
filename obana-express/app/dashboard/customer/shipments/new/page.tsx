@@ -14,6 +14,7 @@ export default function CreateShipmentPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [newShipmentInfo, setNewShipmentInfo] = useState<any>(null);
   const [matchedRoute, setMatchedRoute] = useState<any>(null);
@@ -316,6 +317,7 @@ export default function CreateShipmentPage() {
                       pickup_address: { ...formData.pickup_address, line1: e.target.value }
                     })}
                     required
+                    error={error.includes('pickup') && !formData.pickup_address.line1 ? 'Street address is required' : undefined}
                   />
 
                   <Input
@@ -340,6 +342,7 @@ export default function CreateShipmentPage() {
                     />
                     <Input
                       label="Phone Number *"
+                      aria-required
                       placeholder="+234 801 234 5678"
                       value={formData.pickup_address.phone}
                       onChange={(e) => setFormData({
@@ -347,6 +350,7 @@ export default function CreateShipmentPage() {
                         pickup_address: { ...formData.pickup_address, phone: e.target.value }
                       })}
                       required
+                      error={!formData.pickup_address.phone && error.includes('pickup') ? 'Phone number is required' : undefined}
                     />
                   </div>
 
@@ -411,6 +415,7 @@ export default function CreateShipmentPage() {
                       delivery_address: { ...formData.delivery_address, line1: e.target.value }
                     })}
                     required
+                    error={error.includes('delivery') && !formData.delivery_address.line1 ? 'Street address is required' : undefined}
                   />
 
                   <Input
@@ -442,6 +447,7 @@ export default function CreateShipmentPage() {
                         delivery_address: { ...formData.delivery_address, phone: e.target.value }
                       })}
                       required
+                         error={!formData.delivery_address.phone && error.includes('delivery') ? 'Phone number is required' : undefined}
                     />
                   </div>
 
@@ -483,7 +489,7 @@ export default function CreateShipmentPage() {
               <div className="border-2 border-purple-100 rounded-xl p-6 bg-linear-to-br from-purple-50 to-white">
                 <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
                   <Package className="h-5 w-5 text-purple-600" />
-                  Package Items
+                  Package Descriptionn
                 </h3>
                 <p className="text-sm text-gray-600 mb-5">What are you shipping?</p>
 

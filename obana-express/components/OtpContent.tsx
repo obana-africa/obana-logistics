@@ -95,7 +95,7 @@ export default function OtpPage() {
 				router.replace(dashboardPath);
 			} else {
 				console.warn("No role found after successful OTP verification");
-				router.replace("/dashboard");
+				router.replace("/dashboard/customer");
 			}
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} catch (err: any) {
