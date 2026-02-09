@@ -4,7 +4,18 @@ import React, { useState } from "react";
 import { useAuth } from "@/lib/authContext";
 import { useRouter } from "next/navigation";
 import { Button, Input, Card, Alert } from "@/components/ui";
-import { Mail, Phone, Lock, Package, Truck, Shield, Users, EyeOff, Eye } from "lucide-react";
+import {
+	Mail,
+	Phone,
+	Lock,
+	Package,
+	Truck,
+	Shield,
+	Users,
+	EyeOff,
+	Eye,
+	Contact,
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -17,6 +28,8 @@ export default function SignupPage() {
 	const [showPassword, setShowPassword] = useState(false);
 	const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 	const [formData, setFormData] = useState({
+		first_name: "",
+		last_name: "",
 		email: "",
 		phone: "",
 		password: "",
@@ -84,6 +97,8 @@ export default function SignupPage() {
 		setLoading(true);
 		try {
 			const response = await signup(
+				formData.first_name,
+				formData.last_name,
 				formData.email,
 				formData.phone,
 				formData.password,
@@ -240,7 +255,30 @@ export default function SignupPage() {
 									)}
 								</div>
 							</div>
-
+							<div className="flex  gap-4">
+								<Input
+									label="First Name"
+									type="text"
+									placeholder="John"
+									required
+									value={formData.first_name}
+									onChange={(e) =>
+										setFormData({ ...formData, first_name: e.target.value })
+									}
+									icon={<Contact className="w-5 h-5 text-gray-400" />}
+								/>
+								<Input
+									label="Last Name"
+									type="text"
+									placeholder="Doe"
+									required
+									value={formData.last_name}
+									onChange={(e) =>
+										setFormData({ ...formData, last_name: e.target.value })
+									}
+									icon={<Contact className="w-5 h-5 text-gray-400" />}
+								/>
+							</div>
 							<Input
 								label="Email Address"
 								type="email"
