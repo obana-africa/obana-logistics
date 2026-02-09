@@ -126,7 +126,7 @@ export default function UserProfilesSection() {
 											{profile.benefits.map((benefit, idx) => (
 												<li
 													key={idx}
-													className="flex items-center gap-2 text-sm text-slate-600"
+													className="flex items-center gap-2 text-sm text-[#1B3E5D]"
 												>
 													<div className="w-1.5 h-1.5 rounded-full bg-[#1B3E5D]" />
 													{benefit}
