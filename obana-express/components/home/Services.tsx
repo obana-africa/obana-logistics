@@ -65,7 +65,7 @@ export default function UserProfilesSection() {
 			{/* Background Pattern */}
 			<div className="absolute inset-0 overflow-hidden pointer-events-none opacity-40">
 				<div className="absolute top-0 left-0 right-0 h-px bg-linear-to-r from-transparent via-slate-200 to-transparent" />
-				<div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+				<div className="absolute bottom-0 left-0 right-0 h-px bg-linear-to-r from-transparent via-slate-200 to-transparent" />
 			</div>
 
 			<div className="max-w-7xl mx-auto px-6 relative">
@@ -102,7 +102,7 @@ export default function UserProfilesSection() {
 								<div className="bg-white rounded-3xl p-8 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 border border-slate-100 relative overflow-hidden">
 									{/* Gradient Background on Hover */}
 									<div
-										className={`absolute inset-0 bg-gradient-to-br ${profile.bgGradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`}
+										className={`absolute inset-0 bg-linear-to-br ${profile.bgGradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`}
 									/>
 
 									<div className="relative">
@@ -114,7 +114,7 @@ export default function UserProfilesSection() {
 										</div>
 
 										{/* Title & Description */}
-										<h3 className="text-2xl font-bold text-slate-900 mb-3 group-hover:text-blue-600 transition-colors">
+										<h3 className="text-2xl font-bold text-slate-900 mb-3 group-hover:text-[#1B3E5D] transition-colors">
 											{profile.title}
 										</h3>
 										<p className="text-slate-600 mb-6 leading-relaxed">
@@ -128,14 +128,14 @@ export default function UserProfilesSection() {
 													key={idx}
 													className="flex items-center gap-2 text-sm text-slate-600"
 												>
-													<div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+													<div className="w-1.5 h-1.5 rounded-full bg-[#1B3E5D]" />
 													{benefit}
 												</li>
 											))}
 										</ul>
 
 										{/* CTA */}
-										<div className="flex items-center gap-2 text-blue-600 font-semibold group-hover:gap-3 transition-all">
+										<div className="flex items-center gap-2 text-[#1B3E5D] font-semibold group-hover:gap-3 transition-all">
 											Get Started
 											<ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
 										</div>
@@ -153,7 +153,7 @@ export default function UserProfilesSection() {
 					</p>
 					<Link
 						href="/contact"
-						className="text-blue-600 font-semibold hover:underline inline-flex items-center gap-2"
+						className="text-[#1B3E5D] font-semibold hover:underline inline-flex items-center gap-2"
 					>
 						Contact our team for guidance
 						<ArrowRight className="w-4 h-4" />

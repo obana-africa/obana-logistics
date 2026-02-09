@@ -14,7 +14,7 @@ export default function ContactFormSection() {
 			/>
 
 			{/* Dark Overlay for better text contrast */}
-			<div className="absolute inset-0 bg-linear-to-br from-slate-900/60 via-blue-900/50 to-slate-900/60" />
+			<div className="absolute inset-0 bg-[#1B3E5D]/70" />
 
 			{/* Animated gradient overlay */}
 			<div className="absolute inset-0">
@@ -31,7 +31,7 @@ export default function ContactFormSection() {
 						Get in Touch
 					</h2>
 					<p className="text-xl text-blue-100 max-w-2xl mx-auto">
-						Have questions? We're here to help you 24/7
+						Have questions? We&apos;re here to help you 24/7
 					</p>
 				</div>
 
