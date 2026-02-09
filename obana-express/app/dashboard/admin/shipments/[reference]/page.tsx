@@ -307,7 +307,6 @@ export default function ShipmentDetailsPage() {
                   onChange={(e) => setUpdateForm({ ...updateForm, status: e.target.value })}
                   options={[
                     { value: 'pending', label: 'Pending' },
-                    { value: 'picked_up', label: 'Picked Up' },
                     { value: 'in_transit', label: 'In Transit' },
                     { value: 'delivered', label: 'Delivered' },
                     { value: 'cancelled', label: 'Cancelled' },
