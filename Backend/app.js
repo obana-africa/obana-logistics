@@ -76,7 +76,7 @@ const corsOptions = {
         origin: [
 		"http://localhost:3000",
         "https://obana-logistics-psi.vercel.app",
-        "https://obana-logistics.vercel.app"
+	    "https://obana-logistics.vercel.app"
 		
     ],
 };
