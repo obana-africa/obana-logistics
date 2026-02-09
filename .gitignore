@@ -11,6 +11,10 @@ node_modules/
 .next/
 out/
 
+
+/obana-express/.next
+/obana-express/.next/*
+
 # Production
 build/
 dist/
