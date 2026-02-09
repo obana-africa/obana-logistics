@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { useAuth } from "@/lib/authContext";
 import { useRouter } from "next/navigation";
 import { Button, Input, Card, Alert } from "@/components/ui";
-import { Mail, Phone, Lock, Package, Truck, Shield, Users } from "lucide-react";
+import { Mail, Phone, Lock, Package, Truck, Shield, Users, EyeOff, Eye } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -14,6 +14,8 @@ export default function SignupPage() {
 	const [loading, setLoading] = useState(false);
 	const [step, setStep] = useState<"role" | "info">("role");
 	const [selectedRole, setSelectedRole] = useState<string>("");
+	const [showPassword, setShowPassword] = useState(false);
+	const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 	const [formData, setFormData] = useState({
 		email: "",
 		phone: "",
@@ -102,7 +104,7 @@ export default function SignupPage() {
 	const selectedRoleData = roles.find((r) => r.id === selectedRole);
 
 	return (
-		<div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-800 flex items-center justify-center p-4 relative overflow-hidden">
+		<div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-900 to-slate-800 flex items-center justify-center p-4 relative overflow-hidden">
 			{/* Animated background elements */}
 			<div className="absolute inset-0 overflow-hidden pointer-events-none">
 				<div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
@@ -168,7 +170,7 @@ export default function SignupPage() {
 											></div>
 											<div className="relative flex items-start space-x-4">
 												<div
-													className={`flex-shrink-0 w-12 h-12 ${role.iconBg} rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform`}
+													className={`shrink-0 w-12 h-12 ${role.iconBg} rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform`}
 												>
 													<Icon className={`w-6 h-6 ${role.iconColor}`} />
 												</div>
@@ -180,7 +182,7 @@ export default function SignupPage() {
 														{role.description}
 													</p>
 												</div>
-												<div className="flex-shrink-0 text-gray-400 group-hover:text-gray-600 transition-colors">
+												<div className="shrink-0 text-gray-400 group-hover:text-gray-600 transition-colors">
 													<svg
 														className="w-5 h-5"
 														fill="none"
@@ -263,36 +265,69 @@ export default function SignupPage() {
 								icon={<Phone className="w-5 h-5 text-gray-400" />}
 							/>
 
-							<Input
-								label="Password"
-								type="password"
-								placeholder="Create a strong password"
-								required
-								value={formData.password}
-								onChange={(e) =>
-									setFormData({ ...formData, password: e.target.value })
-								}
-								icon={<Lock className="w-5 h-5 text-gray-400" />}
-							/>
+							{/* Password */}
+							<div className="relative">
+								<Input
+									label="Password"
+									type={showPassword ? "text" : "password"}
+									placeholder="Create a strong password"
+									required
+									value={formData.password}
+									onChange={(e) =>
+										setFormData({ ...formData, password: e.target.value })
+									}
+									icon={<Lock className="w-5 h-5 text-gray-400" />}
+									className="pr-10"
+								/>
+								<button
+									type="button"
+									onClick={() => setShowPassword(!showPassword)}
+									className="absolute right-3 top-10.5 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+								>
+									{showPassword ? (
+										<EyeOff className="w-5 h-5" />
+									) : (
+										<Eye className="w-5 h-5" />
+									)}
+								</button>
+							</div>
 
-							<Input
-								label="Confirm Password"
-								type="password"
-								placeholder="Re-enter your password"
-								required
-								value={formData.confirmPassword}
-								onChange={(e) =>
-									setFormData({ ...formData, confirmPassword: e.target.value })
-								}
-								icon={<Lock className="w-5 h-5 text-gray-400" />}
-							/>
+							{/* Confirm Password */}
+							<div className="relative">
+								<Input
+									label="Confirm Password"
+									type={showConfirmPassword ? "text" : "password"}
+									placeholder="Re-enter your password"
+									required
+									value={formData.confirmPassword}
+									onChange={(e) =>
+										setFormData({
+											...formData,
+											confirmPassword: e.target.value,
+										})
+									}
+									icon={<Lock className="w-5 h-5 text-gray-400" />}
+									className="pr-10"
+								/>
+								<button
+									type="button"
+									onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+									className="absolute right-3 top-12.5 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+								>
+									{showConfirmPassword ? (
+										<EyeOff className="w-5 h-5" />
+									) : (
+										<Eye className="w-5 h-5" />
+									)}
+								</button>
+							</div>
 
 							<Button
 								type="submit"
 								loading={loading}
 								fullWidth
 								variant="primary"
-								className="h-12 text-base font-semibold bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg"
+								className="h-12 text-base font-semibold bg-[#1B3E5D] shadow-lg"
 							>
 								Create Account
 							</Button>

@@ -68,10 +68,7 @@ export default function OtpPage() {
 		e.preventDefault();
 		const otpString = otp.join("");
 
-		if (otpString.length !== 4) {
-			clearError();
-			return;
-		}
+		if (otpString.length !== 4) return;
 
 		clearError();
 		setLoading(true);
@@ -79,22 +76,31 @@ export default function OtpPage() {
 		try {
 			const response = await verifyOtp(requestId || "", otpString);
 
-			const userRole = user?.role || response?.data?.user?.role;
+			let userRole = response?.data?.user?.role || response?.data?.role;
+
+			if (!userRole && user?.role) {
+				userRole = user.role;
+			}
 
 			if (userRole) {
-				const routes: Record<string, string> = {
+				const roleBasedRoutes: Record<string, string> = {
 					customer: "/dashboard/customer",
 					driver: "/dashboard/driver",
 					admin: "/dashboard/admin",
 					agent: "/dashboard/agent",
 				};
-				router.push(routes[userRole] || "/");
+
+				const dashboardPath =
+					roleBasedRoutes[userRole.toLowerCase()] || "/dashboard";
+
+				router.replace(dashboardPath);
 			} else {
-				console.warn("No user role found after OTP verification");
-				router.push("/");
+				console.warn("No role found after successful OTP verification");
+				router.replace("/dashboard");
 			}
-		} catch (err) {
-			console.error(err);
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		} catch (err: any) {
+			console.error("OTP verification failed:", err);
 		} finally {
 			setLoading(false);
 		}

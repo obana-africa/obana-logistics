@@ -2,7 +2,6 @@
 
 import React from "react";
 import {
-	Smartphone,
 	Bell,
 	MapPin,
 	Package,
@@ -11,9 +10,8 @@ import {
 	Eye,
 	CreditCard,
 	TrendingUp,
-	Zap,
 } from "lucide-react";
-import { Button } from "@/components/ui";
+import Image from "next/image";
 
 const appFeatures = [
 	{
@@ -40,10 +38,10 @@ const appFeatures = [
 		iconBg: "bg-pink-500",
 		image: "/images/app-payment.png",
 		partners: [
-			{ name: "Paystack", logo: "/images/paystack.svg" },
-			{ name: "Flutterwave", logo: "/images/flutterwave.svg" },
-			{ name: "Bank Transfer", logo: "/images/bank.svg" },
-			{ name: "Card", logo: "/images/card.svg" },
+			{ name: "Paystack", logo: "/images/paystack.png" },
+			{ name: "Salad", logo: "/images/salad.png" },
+			{ name: "Stellas", logo: "/images/stellas.jpg" },
+			{ name: "Carbon", logo: "/images/carbon.png" },
 		],
 	},
 	{
@@ -72,11 +70,7 @@ export default function QuickActions() {
 
 			<div className="max-w-7xl mx-auto px-6 relative">
 				<div className="text-center mb-16">
-					{/* <div className="inline-flex items-center gap-2 bg-blue-100 text-blue-700 px-4 py-2 rounded-full mb-4">
-						<Smartphone className="w-4 h-4" />
-						<span className="text-sm font-semibold">Mobile App</span>
-					</div> */}
-					<h2 className="text-4xl md:text-5xl font-bold text-slate-900 mb-4">
+					<h2 className="text-4xl md:text-5xl font-semibold text-slate-900 mb-4">
 						Get the best experience with
 						<span className="text-transparent bg-clip-text bg-[#1B3E5D] ml-2">
 							Obana
@@ -88,34 +82,32 @@ export default function QuickActions() {
 					</p>
 				</div>
 
-				{/* Feature Cards */}
 				<div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-16">
 					{appFeatures.map((feature, index) => {
 						const Icon = feature.icon;
 						return (
 							<div
 								key={index}
-								className={`${feature.bgColor} rounded-3xl p-8 hover:shadow-2xl transition-all duration-300 hover:-translate-y-2`}
+								className={`${feature.bgColor} flex justify-between flex-col rounded-3xl p-8 hover:shadow-2xl transition-all duration-300 hover:-translate-y-2`}
 								style={{
 									animation: `fadeInUp 0.6s ease-out ${index * 0.15}s both`,
 								}}
 							>
-								{/* Icon */}
-								<div
-									className={`w-16 h-16 ${feature.iconBg} rounded-full flex items-center justify-center mb-6 shadow-lg`}
-								>
-									<Icon className="w-8 h-8 text-white" />
+								<div>
+									<div
+										className={`w-16 h-16 ${feature.iconBg} rounded-full flex items-center justify-center mb-6 shadow-lg`}
+									>
+										<Icon className="w-8 h-8 text-white" />
+									</div>
+
+									<h3 className="text-2xl font-bold text-slate-900 mb-3">
+										{feature.title}
+									</h3>
+									<p className="text-slate-600 mb-6 leading-relaxed">
+										{feature.description}
+									</p>
 								</div>
 
-								{/* Title & Description */}
-								<h3 className="text-2xl font-bold text-slate-900 mb-3">
-									{feature.title}
-								</h3>
-								<p className="text-slate-600 mb-6 leading-relaxed">
-									{feature.description}
-								</p>
-
-								{/* Feature-specific content */}
 								{feature.stats && (
 									<div className="bg-white rounded-2xl p-6 shadow-sm">
 										<div className="flex items-center justify-between mb-4">
@@ -148,13 +140,15 @@ export default function QuickActions() {
 											{feature.partners.map((partner, idx) => (
 												<div
 													key={idx}
-													className="bg-slate-50 rounded-xl p-3 flex items-center justify-center aspect-square hover:bg-slate-100 transition-colors"
+													className="bg-slate-50 rounded-xl flex items-center justify-center aspect-square hover:bg-slate-100 transition-colors"
 												>
-													<div className="w-full h-full flex items-center justify-center">
-														<div className="text-xs font-semibold text-slate-600 text-center">
-															{partner.name}
-														</div>
-													</div>
+													<Image
+														src={partner.logo}
+														alt={partner.name}
+														width={100}
+														height={100}
+														className="ml-2 object-cover w-full h-full flex items-center justify-center"
+													/>
 												</div>
 											))}
 										</div>

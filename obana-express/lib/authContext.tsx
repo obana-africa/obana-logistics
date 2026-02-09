@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useAuthStore } from './authStore';
 import { apiClient } from './api';
@@ -22,6 +23,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     store.hydrate();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const signup = async (email: string, phone: string, password: string, role: string) => {
@@ -54,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await apiClient.verifyOtp(requestId, otp);
       
       if (response.data) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { user, access_token, refresh_token } = response.data;
         store.setUser(user);
         store.setAccessToken(access_token);
@@ -62,7 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       return response.data;
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errorMsg = err.response?.data?.message || err.message || 'OTP verification failed';
       setError(errorMsg);
       throw err;
@@ -74,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await apiClient.logout();
       store.logout();
       setError(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Logout error:', err);
     }
   };

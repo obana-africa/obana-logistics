@@ -64,7 +64,7 @@ export default function HeroSection() {
 							}}
 						/>
 
-						<div className="absolute inset-0 bg-black/60" />
+						<div className="absolute inset-0 bg-[#1B3E5D]/70" />
 					</div>
 				))}
 
@@ -90,10 +90,10 @@ export default function HeroSection() {
 					</span>
 				</div>
 
-				<h1 className="text-5xl md:text-6xl font-bold text-white mb-6 leading-tight animate-fade-in-up">
+				<h1 className="text-4xl md:text-6xl font-bold text-white mb-6 leading-tight animate-fade-in-up">
 					Send and Receive
 					<br />
-					<span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 transition-all duration-1000">
+					<span className="text-transparent bg-clip-text bg-linear-to-r from-amber-400 via-amber-300 to-yellow-400 transition-all duration-1000">
 						{heroSlides[currentSlide].title}
 					</span>
 					<br />
@@ -102,7 +102,7 @@ export default function HeroSection() {
 					</span>
 				</h1>
 
-				<p className="text-xl text-slate-300 max-w-3xl mx-auto mb-12 animate-fade-in delay-200">
+				<p className="text-xl hidden md:block text-slate-300 max-w-3xl mx-auto mb-12 animate-fade-in delay-200">
 					The modern platform for shipping, tracking, and managing deliveries.
 					Join thousands of businesses and individuals who trust Obana for their
 					logistics needs.
@@ -119,12 +119,12 @@ export default function HeroSection() {
 							value={trackingId}
 							onChange={(e) => setTrackingId(e.target.value)}
 							placeholder="Enter your tracking ID (e.g., OB123456789NG)"
-							className="flex-1 px-6 py-4 text-slate-900 placeholder-slate-400 bg-transparent border-0 focus:outline-none text-lg"
+							className="flex-1 px-6 py-4 text-slate-900 placeholder-slate-400 bg-transparent border-0 focus:outline-none text-base"
 						/>
 						<Button
 							type="submit"
 							variant="primary"
-							className="  text-white font-bold px-8 py-4 rounded-xl shadow-lg hover:shadow-xl transition-all"
+							className="  text-white  px-8 py-4 rounded-xl shadow-lg hover:shadow-xl transition-all"
 						>
 							<Search className="w-5 h-5 mr-2" />
 							Track Shipment

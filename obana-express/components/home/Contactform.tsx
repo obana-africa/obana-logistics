@@ -3,9 +3,6 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui";
 import {
-	Mail,
-	Phone,
-	MapPin,
 	Send,
 	CheckCircle,
 	MessageSquare,
@@ -69,11 +66,11 @@ export default function ContactForm() {
 								<div className="relative">
 									<MessageSquare className="w-12 h-12 mb-6 text-amber-300" />
 									<h2 className="text-4xl font-bold mb-4">
-										Let's start a conversation
+										Let&apos;s start a conversation
 									</h2>
 									<p className="text-blue-100 mb-8 leading-relaxed">
 										Have a question about our services? Want to discuss a
-										partnership? Or just want to say hi? We'd love to hear from
+										partnership? Or just want to say hi? We&apos;d love to hear from
 										you.
 									</p>
 
@@ -111,7 +108,7 @@ export default function ContactForm() {
 											Message Sent!
 										</h3>
 										<p className="text-slate-600">
-											We'll get back to you within 24 hours.
+											We&apos;ll get back to you within 24 hours.
 										</p>
 									</div>
 								) : (
@@ -121,7 +118,7 @@ export default function ContactForm() {
 												Send us a message
 											</h3>
 											<p className="text-slate-600 text-sm">
-												Fill out the form below and we'll be in touch soon
+												Fill out the form below and we&apos;ll be in touch soon
 											</p>
 										</div>
 

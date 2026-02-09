@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { useAuth } from "@/lib/authContext";
 import { useRouter } from "next/navigation";
 import { Button, Input, Card, Alert } from "@/components/ui";
-import { Mail, Lock, Package, Truck } from "lucide-react";
+import { Mail, Lock, Package, Truck, EyeOff, Eye } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -12,6 +12,7 @@ export default function LoginPage() {
 	const router = useRouter();
 	const { login, error, clearError } = useAuth();
 	const [loading, setLoading] = useState(false);
+	const [showPassword, setShowPassword] = useState(false);
 	const [formData, setFormData] = useState({
 		userIdentification: "",
 		password: "",
@@ -50,7 +51,6 @@ export default function LoginPage() {
 			</div>
 
 			<div className="w-full max-w-md relative z-10">
-
 				{/* Login Card */}
 				<Card className="shadow-2xl border-0 backdrop-blur-sm bg-white/95">
 					<div className="mb-6">
@@ -100,17 +100,31 @@ export default function LoginPage() {
 							icon={<Mail className="w-5 h-5 text-gray-400" />}
 						/>
 
-						<Input
-							label="Password"
-							type="password"
-							placeholder="Enter your password"
-							required
-							value={formData.password}
-							onChange={(e) =>
-								setFormData({ ...formData, password: e.target.value })
-							}
-							icon={<Lock className="w-5 h-5 text-gray-400" />}
-						/>
+						<div className="relative">
+							<Input
+								label="Password"
+								type={showPassword ? "text" : "password"}
+								placeholder="Enter your password"
+								required
+								value={formData.password}
+								onChange={(e) =>
+									setFormData({ ...formData, password: e.target.value })
+								}
+								icon={<Lock className="w-5 h-5 text-gray-400" />}
+								className="pr-10" // important: padding-right to make space for eye
+							/>
+							<button
+								type="button"
+								onClick={() => setShowPassword(!showPassword)}
+								className="absolute right-3 top-12.5 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+							>
+								{showPassword ? (
+									<EyeOff className="w-5 h-5" />
+								) : (
+									<Eye className="w-5 h-5" />
+								)}
+							</button>
+						</div>
 
 						<div className="flex items-center justify-between">
 							<div className="flex items-center">
