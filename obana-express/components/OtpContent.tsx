@@ -252,7 +252,7 @@ export default function OtpPage() {
 					{/* Resend Section */}
 					<div className="mt-8 pt-6 border-t border-gray-200 text-center">
 						<p className="text-gray-600 text-sm mb-3">
-							Didn't receive the code?
+							Didn&apos;t receive the code?
 						</p>
 						<button
 							onClick={handleResend}

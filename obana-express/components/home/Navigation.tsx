@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui";
-import { Package, Search, X, Menu } from "lucide-react";
+import { Package, Search, X } from "lucide-react";
 
 interface NavigationProps {
 	isAuthenticated: boolean;
@@ -17,6 +17,7 @@ export default function Navigation({
 	getDashboardLink,
 	logout,
 }: NavigationProps) {
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	const [scrolled, setScrolled] = useState(false);
 	const [showTrackingModal, setShowTrackingModal] = useState(false);
 	const [trackingId, setTrackingId] = useState("");

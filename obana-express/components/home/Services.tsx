@@ -4,13 +4,10 @@ import React from "react";
 import Link from "next/link";
 import {
 	User,
-	Package,
 	Store,
 	Truck,
 	ArrowRight,
 	Users,
-	ShoppingBag,
-	Wrench,
 } from "lucide-react";
 
 const userProfiles = [
