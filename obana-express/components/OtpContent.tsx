@@ -90,8 +90,7 @@ export default function OtpPage() {
 					agent: "/dashboard/agent",
 				};
 
-				const dashboardPath =
-					roleBasedRoutes[userRole.toLowerCase()] || "/dashboard";
+				const dashboardPath = roleBasedRoutes[userRole.toLowerCase()];
 
 				router.replace(dashboardPath);
 			} else {
