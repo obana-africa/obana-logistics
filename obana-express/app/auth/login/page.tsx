@@ -40,7 +40,7 @@ export default function LoginPage() {
 	};
 
 	return (
-		<div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-800 flex items-center justify-center p-4 relative overflow-hidden">
+		<div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-900 to-slate-800 flex items-center justify-center p-4 relative overflow-hidden">
 			{/* Animated background elements */}
 			<div className="absolute inset-0 overflow-hidden pointer-events-none">
 				<div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
@@ -151,7 +151,7 @@ export default function LoginPage() {
 
 					<div className="mt-8 pt-6 border-t border-gray-200 text-center">
 						<p className="text-gray-600">
-							Don't have an account?{" "}
+							Don&apos;t have an account?{" "}
 							<a
 								href="/auth/signup"
 								className="text-blue-600 hover:text-blue-700 font-semibold hover:underline"
