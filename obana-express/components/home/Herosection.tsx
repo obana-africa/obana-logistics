@@ -98,7 +98,7 @@ export default function HeroSection() {
 					</span>
 					<br />
 					<span className="text-4xl md:text-6xl">
-						to and from Anywhere in Nigeria
+						to and from Anywhere in The world
 					</span>
 				</h1>
 

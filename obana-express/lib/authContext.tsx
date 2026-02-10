@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+"use client";
+
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useAuthStore } from "./authStore";
 import { apiClient } from "./api";
@@ -37,17 +39,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-  const signup = async (first_name:string, last_name: string, email: string, phone: string, password: string, role: string) => {
-    try {
-      setError(null);
-      const response = await apiClient.signup(first_name, last_name, email, phone, password, role);
-      return response.data;
-    } catch (err: any) {
-      const errorMsg = err.response?.data?.message || err.message || 'Signup failed';
-      setError(errorMsg);
-      throw err;
-    }
-  };
+	const signup = async (
+		first_name: string,
+		last_name: string,
+		email: string,
+		phone: string,
+		password: string,
+		role: string
+	) => {
+		try {
+			setError(null);
+			const response = await apiClient.signup(
+				first_name,
+				last_name,
+				email,
+				phone,
+				password,
+				role
+			);
+			return response.data;
+		} catch (err: any) {
+			const errorMsg =
+				err.response?.data?.message || err.message || "Signup failed";
+			setError(errorMsg);
+			throw err;
+		}
+	};
 
 	const login = async (
 		userIdentification: string,

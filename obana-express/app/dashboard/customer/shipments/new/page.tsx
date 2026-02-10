@@ -3,18 +3,18 @@
 
 import React, { useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Card, Button, Input, Select, Alert } from '@/components/ui';
+import { Card, Button, Input, Select } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Check, Package, MapPin, Truck, Clock } from 'lucide-react';
+import { Check, Package, MapPin, Truck, Clock, AlertCircle, X } from 'lucide-react';
 import { LocationInput } from '@/components/LocationInput';
 
 export default function CreateShipmentPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
+  const [showErrorModal, setShowErrorModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [newShipmentInfo, setNewShipmentInfo] = useState<any>(null);
   const [matchedRoute, setMatchedRoute] = useState<any>(null);
@@ -63,6 +63,16 @@ export default function CreateShipmentPage() {
     { value: 'Economy', label: '🐢 Economy (7-14 days)' },
   ];
 
+  const showError = (message: string) => {
+    setError(message);
+    setShowErrorModal(true);
+  };
+
+  const closeErrorModal = () => {
+    setShowErrorModal(false);
+    // Don't clear error message so it can still be seen after modal closes if needed
+  };
+
   const resetForm = () => {
     setFormData({
       transport_mode: '',
@@ -88,22 +98,22 @@ export default function CreateShipmentPage() {
   const handleMatchRoute = async () => {
     // Validate location fields
     if (!formData.pickup_address.city || !formData.pickup_address.state || !formData.pickup_address.country) {
-      setError('Please select a complete pickup location (City, State, and Country)');
+      showError('Please select a complete pickup location (City, State, and Country)');
       return;
     }
 
     if (!formData.delivery_address.city || !formData.delivery_address.state || !formData.delivery_address.country) {
-      setError('Please select a complete delivery location (City, State, and Country)');
+      showError('Please select a complete delivery location (City, State, and Country)');
       return;
     }
 
     if (formData.items.length === 0 || formData.items.some(item => !item.name || !item.quantity || !item.price)) {
-      setError('Please add at least one item with all required fields');
+      showError('Please add at least one item with all required fields (Name, Quantity, and Price)');
       return;
     }
 
     if (!formData.transport_mode || !formData.service_level) {
-      setError('Please select Transport Mode and Service Level');
+      showError('Please select both Transport Mode and Service Level');
       return;
     }
 
@@ -127,10 +137,10 @@ export default function CreateShipmentPage() {
         setStep('match');
         setError('');
       } else {
-        setError('No matching routes found. Try different parameters.');
+        showError('No matching routes found. Please try different parameters or contact support.');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Error matching routes');
+      showError(err.response?.data?.message || 'Error matching routes. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -140,12 +150,14 @@ export default function CreateShipmentPage() {
     if (!matchedRoute) return;
 
     if (!formData.pickup_address.line1 || !formData.pickup_address.phone) {
-      setError('Please fill in required pickup address fields (Street Address and Phone)');
+      showError('Please fill in required pickup address fields: Street Address and Phone Number');
+      setStep('details'); 
       return;
     }
 
     if (!formData.delivery_address.line1 || !formData.delivery_address.phone) {
-      setError('Please fill in required delivery address fields (Street Address and Phone)');
+      showError('Please fill in required delivery address fields: Street Address and Phone Number');
+      setStep('details'); 
       return;
     }
 
@@ -173,11 +185,12 @@ export default function CreateShipmentPage() {
       if (response.success && response.data) {
         setNewShipmentInfo(response.data);
         setShowSuccessModal(true);
+        setError('');
       } else {
-        setError(response.message || 'Error creating shipment');
+        showError(response.message || 'Error creating shipment. Please try again.');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Error creating shipment');
+      showError(err.response?.data?.message || 'Error creating shipment. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -235,44 +248,82 @@ export default function CreateShipmentPage() {
           </div>
         </div>
 
-        {error && (
-          <Alert type="error" className="cursor-pointer" onClick={() => setError('')}>
-            {error}
-          </Alert>
+        {/* Error Modal */}
+        {showErrorModal && error && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in duration-200">
+              <div className="p-6">
+                <div className="flex items-start gap-4">
+                  <div className="shrink-0">
+                    <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                      <AlertCircle className="h-6 w-6 text-red-600" />
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      Oops! Something went wrong
+                    </h3>
+                    <p className="text-gray-600 text-sm leading-relaxed">
+                      {error}
+                    </p>
+                  </div>
+                  <button
+                    onClick={closeErrorModal}
+                    className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="mt-6 flex gap-3">
+                  <Button
+                    onClick={closeErrorModal}
+                    fullWidth
+                    variant="primary"
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    Continue
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Success Modal */}
         {showSuccessModal && newShipmentInfo && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <Card className="w-full max-w-md text-center">
-              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
-                <Check className="h-8 w-8 text-green-600" />
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900">Shipment Created!</h2>
-              <p className="text-gray-600 mt-2 mb-6">Your shipment has been created successfully.</p>
-              
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-left space-y-2 text-sm mb-6">
-                <p><span className="font-semibold">Tracking #:</span> {newShipmentInfo.shipment_reference}</p>
-                <p><span className="font-semibold">Carrier:</span> {newShipmentInfo.carrier}</p>
-                <p>
-                  <span className="font-semibold">Status:</span> 
-                  <span className="capitalize ml-1">{newShipmentInfo.status}</span>
-                </p>
-              </div>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in duration-200">
+              <div className="p-6 text-center">
+                <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
+                  <Check className="h-8 w-8 text-green-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900">Shipment Created!</h2>
+                <p className="text-gray-600 mt-2 mb-6">Your shipment has been created successfully.</p>
+                
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-left space-y-2 text-sm mb-6">
+                  <p><span className="font-semibold">Tracking #:</span> {newShipmentInfo.shipment_reference}</p>
+                  <p><span className="font-semibold">Carrier:</span> {newShipmentInfo.carrier}</p>
+                  <p>
+                    <span className="font-semibold">Status:</span> 
+                    <span className="capitalize ml-1">{newShipmentInfo.status}</span>
+                  </p>
+                </div>
 
-              <div className="space-y-3">
-                <Button
-                  onClick={() => router.push(`/dashboard/customer/shipments/${newShipmentInfo.shipment_reference}`)}
-                  fullWidth
-                  variant="primary"
-                >
-                  Track Shipment
-                </Button>
-                <Button onClick={resetForm} fullWidth variant="secondary">
-                  Create Another Shipment
-                </Button>
+                <div className="space-y-3">
+                  <Button
+                    onClick={() => router.push(`/dashboard/customer/shipments/${newShipmentInfo.shipment_reference}`)}
+                    fullWidth
+                    variant="primary"
+                  >
+                    Track Shipment
+                  </Button>
+                  <Button onClick={resetForm} fullWidth variant="secondary">
+                    Create Another Shipment
+                  </Button>
+                </div>
               </div>
-            </Card>
+            </div>
           </div>
         )}
 
@@ -317,7 +368,6 @@ export default function CreateShipmentPage() {
                       pickup_address: { ...formData.pickup_address, line1: e.target.value }
                     })}
                     required
-                    error={error.includes('pickup') && !formData.pickup_address.line1 ? 'Street address is required' : undefined}
                   />
 
                   <Input
@@ -342,7 +392,6 @@ export default function CreateShipmentPage() {
                     />
                     <Input
                       label="Phone Number *"
-                      aria-required
                       placeholder="+234 801 234 5678"
                       value={formData.pickup_address.phone}
                       onChange={(e) => setFormData({
@@ -350,7 +399,6 @@ export default function CreateShipmentPage() {
                         pickup_address: { ...formData.pickup_address, phone: e.target.value }
                       })}
                       required
-                      error={!formData.pickup_address.phone && error.includes('pickup') ? 'Phone number is required' : undefined}
                     />
                   </div>
 
@@ -415,7 +463,6 @@ export default function CreateShipmentPage() {
                       delivery_address: { ...formData.delivery_address, line1: e.target.value }
                     })}
                     required
-                    error={error.includes('delivery') && !formData.delivery_address.line1 ? 'Street address is required' : undefined}
                   />
 
                   <Input
@@ -447,7 +494,6 @@ export default function CreateShipmentPage() {
                         delivery_address: { ...formData.delivery_address, phone: e.target.value }
                       })}
                       required
-                         error={!formData.delivery_address.phone && error.includes('delivery') ? 'Phone number is required' : undefined}
                     />
                   </div>
 
@@ -489,7 +535,7 @@ export default function CreateShipmentPage() {
               <div className="border-2 border-purple-100 rounded-xl p-6 bg-linear-to-br from-purple-50 to-white">
                 <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
                   <Package className="h-5 w-5 text-purple-600" />
-                  Package Descriptionn
+                  Package Description
                 </h3>
                 <p className="text-sm text-gray-600 mb-5">What are you shipping?</p>
 
