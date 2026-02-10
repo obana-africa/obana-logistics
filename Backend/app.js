@@ -23,8 +23,8 @@ const io = socketIo(server, {
 	cors: {
 		origin: [
 			"http://localhost:3000",
+			"https://www.logistic.obana.africa",
 			"https://obana-logistics-psi.vercel.app",
-			"https://logistic.obana.africa",
 			"https://obana-logistics.vercel.app",
 		],
 		// methods: ["GET", "POST", "PUT", "DELETE"],
