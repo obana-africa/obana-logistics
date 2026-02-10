@@ -10,7 +10,6 @@ import {
 	Lock,
 	Package,
 	Truck,
-	Shield,
 	Users,
 	EyeOff,
 	Eye,
@@ -61,18 +60,18 @@ export default function SignupPage() {
 			iconBg: "bg-green-100",
 			iconColor: "text-green-600",
 		},
-		{
-			id: "admin",
-			label: "Admin",
-			description: "Manage operations & analytics",
-			icon: Shield,
-			color: "from-purple-500 to-purple-600",
-			bgColor: "bg-purple-50",
-			borderColor: "border-purple-200",
-			hoverBorder: "hover:border-purple-500",
-			iconBg: "bg-purple-100",
-			iconColor: "text-purple-600",
-		},
+		// {
+		// 	id: "admin",
+		// 	label: "Admin",
+		// 	description: "Manage operations & analytics",
+		// 	icon: Shield,
+		// 	color: "from-purple-500 to-purple-600",
+		// 	bgColor: "bg-purple-50",
+		// 	borderColor: "border-purple-200",
+		// 	hoverBorder: "hover:border-purple-500",
+		// 	iconBg: "bg-purple-100",
+		// 	iconColor: "text-purple-600",
+		// },
 	];
 
 	const handleRoleSelect = (roleId: string) => {
