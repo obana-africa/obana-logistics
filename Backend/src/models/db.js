@@ -1,5 +1,4 @@
 const dbConfig = require('../config/dbConfig.js');
-const { createClient } = require('redis')
 const { Sequelize, DataTypes } = require('sequelize');
 
 const sequelize = new Sequelize(
@@ -21,13 +20,9 @@ const sequelize = new Sequelize(
         }
     }
 )
-const redis = createClient(dbConfig.REDIS_CONN);
-redis.on('error', err => console.log('Redis Client Error', err));
-redis.connect();
-redis.select(dbConfig.REDIS_DB)
 
 
-const Cache = require('./cache.js');
+
 const { port } = require('../config/MigrationConfig.js');
 
 
@@ -54,7 +49,7 @@ db.role_scopes = require('./roleScopeModel.js')(sequelize, DataTypes)
 db.attributes = require('./attributeModel.js')(sequelize, DataTypes)
 db.user_attributes = require('./userAttributeModel.js')(sequelize, DataTypes)
 
-db.cache = new Cache(redis)
+
 db.drivers = require('./driversModel.js')(sequelize, DataTypes)
 db.addresses = require('./addressModel.js')(sequelize, DataTypes)
 
