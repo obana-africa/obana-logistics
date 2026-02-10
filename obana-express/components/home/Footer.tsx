@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import {  Facebook, Twitter, Instagram, Linkedin } from "lucide-react";
+import { Facebook, Twitter, Instagram, Linkedin } from "lucide-react";
 import Image from "next/image";
 
 export default function Footer() {
@@ -12,21 +12,15 @@ export default function Footer() {
 			<div className="max-w-7xl mx-auto px-6">
 				<div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
 					<div className="text-center mb-8">
-						<Link
-							href="/"
-							className="flex items-center justify-center bg-[#f4f4f4] rounded-lg "
-						>
+						<Link href="/" className="">
 							<Image
-								src="/logo.svg"
+								src="/white-logo.svg"
 								alt="Obana Logistics Logo"
-								width={100}
+								width={120}
 								height={100}
 								className="ml-2"
 							/>
 						</Link>
-						<p className="text-blue-200 text-lg font-medium">
-							Logistics Made Simple
-						</p>
 					</div>
 
 					<div>
