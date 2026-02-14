@@ -95,7 +95,7 @@ export default function OtpPage() {
 				router.replace(dashboardPath);
 			} else {
 				console.warn("No role found after successful OTP verification");
-				router.replace("/dashboard");
+				router.replace("/dashboard/customer");
 			}
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} catch (err: any) {
@@ -252,7 +252,7 @@ export default function OtpPage() {
 					{/* Resend Section */}
 					<div className="mt-8 pt-6 border-t border-gray-200 text-center">
 						<p className="text-gray-600 text-sm mb-3">
-							Didn't receive the code?
+							Didn&apos;t receive the code?
 						</p>
 						<button
 							onClick={handleResend}

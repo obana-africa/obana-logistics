@@ -10,7 +10,6 @@ import {
 	Lock,
 	Package,
 	Truck,
-	Shield,
 	Users,
 	EyeOff,
 	Eye,

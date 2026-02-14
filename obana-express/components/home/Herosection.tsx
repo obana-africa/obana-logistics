@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Search, CheckCircle, Star, Shield, ChevronDown } from "lucide-react";
+import { Search, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui";
 
 const heroSlides = [
@@ -98,7 +98,7 @@ export default function HeroSection() {
 					</span>
 					<br />
 					<span className="text-4xl md:text-6xl">
-						to and from Anywhere in Nigeria
+						to and from Anywhere in The world
 					</span>
 				</h1>
 

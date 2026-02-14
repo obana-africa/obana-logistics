@@ -233,7 +233,7 @@ export default function ShipmentDetailsPage() {
             </Card>
 
             {/* Driver Info */}
-            <Card title="Driver Details">
+            <Card title="Agent Details">
               {shipment.driver ? (
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
