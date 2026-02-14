@@ -89,7 +89,7 @@ class ApiClient {
   }
 
   // Auth endpoints
-  async signup(first_name: string, last_name: string, email: string, phone: string, password: string, role: string) {
+  async signup(first_name: string, last_name: string, email: string, phone: string, password: string, role: string, additionalData?: any) {
     const response = await this.client.post<ApiResponse>('/users/signup', {
       first_name,
       last_name,
@@ -97,6 +97,7 @@ class ApiClient {
       phone,
       password,
       role,
+      ...additionalData
     });
     return response;
   }
@@ -222,6 +223,11 @@ class ApiClient {
     return response.data;
   }
 
+  async getAgentStats() {
+    const response = await this.client.get<ApiResponse>('/shipments/agent/stats');
+    return response.data;
+  }
+
   async getShipment(id: string) {
     const response = await this.client.get<ApiResponse>(`/shipments/track/${id}`);
     return response.data;
@@ -233,6 +239,11 @@ class ApiClient {
       notes,
       location,
     });
+    return response.data;
+  }
+
+  async assignDriver(shipmentId: string, driverId: string) {
+    const response = await this.client.put<ApiResponse>(`/shipments/${shipmentId}/assign-driver`, { driver_id: driverId });
     return response.data;
   }
 

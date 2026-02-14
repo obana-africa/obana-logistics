@@ -52,6 +52,7 @@ db.user_attributes = require('./userAttributeModel.js')(sequelize, DataTypes)
 
 db.drivers = require('./driversModel.js')(sequelize, DataTypes)
 db.addresses = require('./addressModel.js')(sequelize, DataTypes)
+db.agents = require('./agentModel.js')(sequelize, DataTypes)
 
 db.shipment_tracking = require('./shipmentTrackingModel.js')(sequelize, DataTypes)
 // db.driver_assignment = require('./driverAssignmentModel.js')(sequelize, DataTypes)
@@ -109,6 +110,12 @@ syncDatabase();
         as: 'driver',
         constraints: false // For internal shipments only
     });
+
+    
+    db.shippings.belongsTo(db.agents, {
+        foreignKey: 'agent_id',
+        as: 'agent'
+    });
     
     // Shipment Item associations
     db.shipment_items.belongsTo(db.shippings, {
@@ -127,6 +134,11 @@ syncDatabase();
         foreignKey: 'driver_id',
         as: 'assigned_shipments'
     });
+
+    db.agents.hasMany(db.shippings, {
+        foreignKey: 'agent_id',
+        as: 'assigned_shipments'
+    });
     
     
         db.drivers.belongsTo(db.users, {
@@ -137,6 +149,16 @@ syncDatabase();
         db.users.hasOne(db.drivers, {
             foreignKey: 'user_id',
             as: 'driver_profile'
+        });
+
+        db.agents.belongsTo(db.users, {
+            foreignKey: 'user_id',
+            as: 'user'
+        });
+
+        db.users.hasOne(db.agents, {
+            foreignKey: 'user_id',
+            as: 'agent_profile'
         });
 
 // // Order -> Shipment association

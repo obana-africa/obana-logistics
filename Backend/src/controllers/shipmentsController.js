@@ -353,6 +353,45 @@ const shipmentController = {
     },
 
     /**
+     * Get Agent Dashboard Stats
+     */
+    getAgentStats: async (req, res) => {
+        try {
+            const user_id = req.user.id;
+            const agent = await db.agents.findOne({ where: { user_id } });
+            
+            if (!agent) {
+                return res.status(404).json({ success: false, message: 'Agent profile not found' });
+            }
+
+            const [activeOrders, pendingShipments, customersCount, recentShipments] = await Promise.all([
+                db.shippings.count({ where: { agent_id: agent.id, status: { [Op.notIn]: ['delivered', 'cancelled', 'failed'] } } }),
+                db.shippings.count({ where: { agent_id: agent.id, status: 'pending' } }),
+                db.shippings.count({ where: { agent_id: agent.id }, distinct: true, col: 'user_id' }),
+                db.shippings.findAll({
+                    where: { agent_id: agent.id },
+                    limit: 5,
+                    order: [['createdAt', 'DESC']],
+                    attributes: ['id', 'shipment_reference', 'vendor_name', 'status', 'createdAt']
+                })
+            ]);
+
+            return res.status(200).json({
+                success: true,
+                data: {
+                    activeOrders,
+                    pendingShipments,
+                    customersCount,
+                    recentShipments
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching agent stats:', error);
+            return res.status(500).json({ success: false, message: 'Error fetching stats' });
+        }
+    },
+
+    /**
      * Main endpoint to create shipments
      * Handles both internal and external shipments
      */
@@ -378,7 +417,7 @@ const shipmentController = {
                 });
             }
             let user = req.user;
-            console.log("user info from auth middleware:", user.id);
+            
             const transaction = await db.sequelize.transaction();
             
             try {
@@ -466,37 +505,36 @@ const shipmentController = {
                     notes: payload.notes || ''
                 }, { transaction });
 
-                // 6.5 Auto-assign driver for internal shipments
-                if (isInternal) {
+                // 6.5 Auto-assign 
                     try {
-                        // Find an available driver based on transport mode
-                        const availableDriver = await db.drivers.findOne({
+                        // Find nearest/eligible Agent based on pickup address
+                        // Logic Sugs
+                        const availableAgent = await db.agents.findOne({
                             where: {
                                 status: 'active',
-                                vehicle_type: {
-                                    [Op.in]: getVehicleTypesForTransportMode(payload.transport_mode)
-                                }
+                                state: pickupAddress.state,
+                                city: pickupAddress.city
                             },
+                             
+                                // Simple load balancing: random or by ID for now
                             order: [
-                                // Prefer drivers with lower delivery count
-                                ['total_deliveries', 'ASC']
+                                [db.sequelize.fn('RANDOM')]
                             ]
                         });
-
-                        if (availableDriver) {
-                            shipment.driver_id = availableDriver.id;
+                        
+                    
+                        if (availableAgent) {
+                            shipment.agent_id = availableAgent.id;
                             await shipment.save({ transaction });
-                            console.log(`[DRIVER ASSIGNMENT] Assigned driver ${availableDriver.driver_code} to shipment ${shipmentReference}`);
+                            
+                            console.log(`[AGENT ASSIGNMENT] Assigned agent ${availableAgent.agent_code} to shipment ${shipmentReference}`);
                         } else {
-                            console.warn(`[DRIVER ASSIGNMENT] No available driver found for transport_mode: ${payload.transport_mode}`);
+                            console.warn(`[AGENT ASSIGNMENT] No available agent found for location: ${pickupAddress.city}, ${pickupAddress.state}`);
                         }
-                    } catch (driverError) {
-                        console.error('[DRIVER ASSIGNMENT] Error assigning driver:', driverError);
-                        // Don't fail the shipment creation if driver assignment fails
-                    }
+                    } catch (agentError) {
+                        console.error('[AGENT ASSIGNMENT ERROR]', agentError);
                 }
 
-                // 7. Create shipment items
                 if (payload.items && Array.isArray(payload.items) && payload.items.length > 0) {
                     await db.shipment_items.bulkCreate(
                         payload.items.map((item, index) => {
@@ -541,7 +579,9 @@ const shipmentController = {
                 }
 
                 await transaction.commit();
-                await sendNewShipmentEmail(shipment, deliveryAddress, pickupAddress);
+                sendNewShipmentEmail(shipment, deliveryAddress, pickupAddress);
+                // Send email asynchronously to prevent timeout blocking
+                sendNewShipmentEmail(shipment, deliveryAddress, pickupAddress);
                 // 10. Trigger async post-creation processes
                 triggerPostCreationProcesses(shipment.id, isInternal);
 
@@ -788,7 +828,7 @@ getAllShipments: async (req, res) => {
         const { shipment_reference } = req.params;
             const user_id = String(req.user.id);
             const user_role = req.user.role;
-
+            console.log("user roolllw", user_role)
             let where = { shipment_reference };
 
             if (user_role === 'admin') {
@@ -796,16 +836,23 @@ getAllShipments: async (req, res) => {
             } else if (user_role === 'driver') {
                 const driver = await db.drivers.findOne({ where: { user_id: req.user.id } });
                 if (driver) {
-                    where[Op.or] = [
-                        { user_id },
-                        { driver_id: driver.id }
-                    ];
+                    where.driver_id = driver.id
                 } else {
                     where.user_id = user_id;
                 }
-            } else {
+            } else if (user_role === 'agent') {
+                    console.log(" entered user roolllw", user_role)
+
+                    const agent = await db.agents.findOne({ where: {user_id: req.user.id }})
+                    console.log("Agentttttttttt", agent)
+                    if (agent) {
+                        where.agent_id = agent.id
+                        
+                    }
+                } else {
                 where.user_id = user_id;
             }
+            // explain the  above  code below:
 
             const shipment = await db.shippings.findOne({
                 where,
@@ -834,6 +881,8 @@ getAllShipments: async (req, res) => {
                     }
                 ]
             });
+
+            console.log("SHIPMENTTTT", shipment)
 
             if (!shipment) {
                 return res.status(404).json({
@@ -927,6 +976,47 @@ getAllShipments: async (req, res) => {
     },
 
     /**
+     * Assign driver to shipment
+     */
+    assignDriver: async (req, res) => {
+        try {
+            const { shipment_id } = req.params;
+            const { driver_id } = req.body;
+
+            const shipment = await db.shippings.findByPk(shipment_id);
+            if (!shipment) {
+                return res.status(404).json({ success: false, message: 'Shipment not found' });
+            }
+
+            // If agent, verify ownership
+            if (req.user.role === 'agent') {
+                const agent = await db.agents.findOne({ where: { user_id: req.user.id } });
+                if (!agent || shipment.agent_id !== agent.id) {
+                    return res.status(403).json({ success: false, message: 'Unauthorized access to this shipment' });
+                }
+            }
+
+            shipment.driver_id = driver_id;
+            if (shipment.status === 'pending' || shipment.status === 'created') {
+                shipment.status = 'in_transit'; // Or a specific status like 'driver_assigned' if you have it
+            }
+            await shipment.save();
+
+            await db.shipment_tracking.create({
+                shipment_id: shipment.id,
+                status: shipment.status,
+                description: 'Driver assigned',
+                performed_by: req.user ? `user_${req.user.id}` : 'system'
+            });
+
+            return res.status(200).json({ success: true, message: 'Driver assigned successfully' });
+        } catch (error) {
+            console.error('Error assigning driver:', error);
+            return res.status(500).json({ success: false, message: 'Error assigning driver' });
+        }
+    },
+
+    /**
      * Cancel shipment
      */
     cancelShipment: async (req, res) => {
@@ -1001,6 +1091,13 @@ getAllShipments: async (req, res) => {
                 const driver = await db.drivers.findOne({ where: { user_id } });
                 if (driver) {
                     where.driver_id = driver.id;
+                } else {
+                    return res.status(200).json({ success: true, data: { shipments: [], pagination: { total: 0, page: 1, pages: 0, limit: parseInt(limit) } } });
+                }
+            } else if (role === 'agent') {
+                const agent = await db.agents.findOne({ where: { user_id } });
+                if (agent) {
+                    where.agent_id = agent.id;
                 } else {
                     return res.status(200).json({ success: true, data: { shipments: [], pagination: { total: 0, page: 1, pages: 0, limit: parseInt(limit) } } });
                 }

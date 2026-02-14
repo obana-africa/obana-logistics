@@ -6,6 +6,8 @@ const db = require('../models/db.js')
 const utils = require('../../utils.js')
 const nodemailer = require('../mailer/nodemailer')
 const requestController = require('./requestController.js')
+const fs = require('fs')
+const path = require('path')
 
 
 const User = db.users
@@ -18,6 +20,7 @@ const Roles = db.roles
 const Scopes = db.scopes
 const RoleScopes = db.role_scopes
 const Drivers = db.drivers
+const Agents = db.agents
 
 /**
  * Method to request user creation
@@ -34,7 +37,7 @@ const createUserRequest = async (req, res) => {
     req.body.email = req.body.email.toLowerCase()
 
     // Validate role
-    const validRoles = ['admin', 'driver', 'customer'];
+    const validRoles = ['admin', 'driver', 'customer', 'agent'];
     if (!req.body.role || !validRoles.includes(req.body.role)) {
         return res.status(400).send(
             utils.responseError(`Role is required and must be one of: ${validRoles.join(', ')}`)
@@ -100,6 +103,47 @@ const createUserAfterOtpVerification = async (payload, req, res) => {
 
         let driver_id = driverObj.id
         await createUserAttributes(user.id, { first_name, last_name, role, driver_id})    
+    }
+
+    // If user is an agent, link to agent record
+    if (role === 'agent') {
+        // Helper to save base64 files
+        const saveAgentFile = (base64Data, type) => {
+            if (!base64Data || !base64Data.includes('base64')) return null;
+            try {
+                const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+                if (!matches || matches.length !== 3) return null;
+                
+                const ext = matches[1].split('/')[1];
+                const buffer = Buffer.from(matches[2], 'base64');
+                const fileName = `${type}_${user.id}_${Date.now()}.${ext}`;
+                const uploadDir = path.join(__dirname, '../../public/uploads/agents');
+                
+                if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+                fs.writeFileSync(path.join(uploadDir, fileName), buffer);
+                return `/uploads/agents/${fileName}`;
+            } catch (e) { console.error('File save error:', e); return null; }
+        };
+
+        await Agents.create({
+            agent_code: `OBANA-AGT-${String(user.id).padStart(3, '0')}`,
+            user_id: user.id,
+            verification_status: 'pending', // Admin still needs to verify docs
+            status: 'active', // Designated active as requested since fields are provided
+            country: payload.country || 'Nigeria',
+            state: payload.state,
+            city: payload.city,
+            lga: payload.lga,
+            assigned_zone: payload.assigned_zone,
+            latitude: parseFloat(payload.latitude) || 0,
+            longitude: parseFloat(payload.longitude) || 0,
+            service_radius: parseFloat(payload.service_radius) || 0,
+            government_id_type: payload.government_id_type,
+            government_id_number: payload.government_id_number,
+            government_id_image: saveAgentFile(payload.government_id_image, 'id'),
+            profile_photo: saveAgentFile(payload.profile_photo, 'profile')
+        });
+        await createUserAttributes(user.id, { first_name, last_name, role });
     }
     
     // Create user attributes
@@ -305,53 +349,66 @@ const token = async (req, res) => {
     })
 }
 
+
+/**
+ * Method to get users profile
+ * @param {*} req 
+ * @param {*} res 
+ */
+const getProfile = async (req, res) => {
+     
+        let user = req.user
+    
+
+    user = await getUser(user.email, user.phone, true, req, res)
+
+     let userAuth = await createAuthDetail(user, true)
+    return res.status(203).send(
+        utils.responseSuccess(userAuth)
+    )
+}
+
 /**
  * Method to update users profile
  * @param {*} req 
  * @param {*} res 
  */
 const updateProfile = async (req, res) => {
+    
     const attributes = req.body
     let user = req.user
+
+    try {
     await createUserAttributes(user.id, attributes)
 
     user = await getUser(user.email, user.phone, true, req, res)
     const payload = utils.flattenObj(user)
 
-    req.body = payload
-    req.body.return = 1
-    req.params = { tenant: 'zoho', endpoint: 'update-customer' }
-    req.query.contact_id = user.attributes.zoho_id
-    if (
-        req.body.category_of_interest &&
-        Array.isArray(req.body.category_of_interest)
-    ) {
-        req.body.category_of_interest = req.body.category_of_interest
-            .map((item) => item.value)
-            .join(",");
-    }
-    if (
-        req.body.brand_of_interest &&
-        Array.isArray(req.body.brand_of_interest)
-    ) {
-        req.body.brand_of_interest = req.body.brand_of_interest
-            .map((item) => item.value)
-            .join(",");
+  
+
+    // Update Agent Profile if exists
+    const agent = await Agents.findOne({ where: { user_id: user.id } });
+    if (agent) {
+        const agentFields = ['country', 'state', 'city', 'lga', 'assigned_zone', 'latitude', 'longitude', 'service_radius', 'government_id_type', 'government_id_number'];
+        let hasUpdate = false;
+        agentFields.forEach(field => {
+            if (payload[field] !== undefined) {
+                agent[field] = payload[field];
+                hasUpdate = true;
+            }
+        });
+        if (hasUpdate) await agent.save();
     }
 
-    if (user.attributes.zoho_id)
-        await requestController.makeRequest(req, res)
-
-    if (payload?.account_types && ['agent'].includes(payload?.account_types)) {
-        await updaeteSalesPerson(payload, req, res)
-
-        if (payload?.bank_name && payload?.account_name)
-            await updateSalesPersonPerymentInfo(payload, req, res)
-    }
     let userAuth = await createAuthDetail(user, true)
     return res.status(203).send(
         utils.responseSuccess(userAuth)
     )
+}  catch (error) {
+    return res.status(500).send(
+        utils.responseError(error.message)
+    )
+}
 }
 
 /**
@@ -423,6 +480,12 @@ const getUser = async (email = null, phone = null, withAttr = false, req = null,
                 user.role = roleVal
                 user.permission = { role: roleVal, scope: [] }
             }
+        }
+
+        // Attach Agent Profile if exists
+        const agentProfile = await Agents.findOne({ where: { user_id: user.id } });
+        if (agentProfile) {
+            user.agent_profile = agentProfile;
         }
     }
     return user
@@ -969,6 +1032,7 @@ module.exports = {
     loginRequest,
     getUser,
     token,
+    getProfile,
     updateProfile,
     getUserById,
     logout,

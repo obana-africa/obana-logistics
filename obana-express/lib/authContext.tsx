@@ -14,7 +14,8 @@ interface AuthContextType {
 		email: string,
 		phone: string,
 		password: string,
-		role: string
+		role: string,
+		additionalData?: any
 	) => Promise<any>;
 	login: (
 		userIdentification: string,

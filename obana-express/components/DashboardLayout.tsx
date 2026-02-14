@@ -38,7 +38,6 @@ const navigationByRole = {
   ],
   agent: [
     { name: 'Dashboard', href: '/dashboard/agent', icon: Home },
-    { name: 'Orders', href: '/dashboard/agent/orders', icon: Home },
     { name: 'Shipments', href: '/dashboard/agent/shipments', icon: Home },
     { name: 'Profile', href: '/dashboard/agent/profile', icon: Settings },
   ],

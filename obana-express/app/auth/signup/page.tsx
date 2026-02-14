@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useAuth } from "@/lib/authContext";
 import { useRouter } from "next/navigation";
-import { Button, Input, Card, Alert } from "@/components/ui";
+import { Button, Input, Card, Alert, Select } from "@/components/ui";
 import {
 	Mail,
 	Phone,
@@ -15,6 +15,9 @@ import {
 	EyeOff,
 	Eye,
 	Contact,
+	MapPin,
+	FileText,
+	Upload
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -34,6 +37,22 @@ export default function SignupPage() {
 		phone: "",
 		password: "",
 		confirmPassword: "",
+	});
+
+	// Agent specific state
+	const [agentData, setAgentData] = useState({
+		government_id_type: 'NIN',
+		government_id_number: '',
+		country: 'Nigeria',
+		state: '',
+		city: '',
+		lga: '',
+		assigned_zone: '',
+		service_radius: '',
+		latitude: '',
+		longitude: '',
+		government_id_image: '',
+		profile_photo: ''
 	});
 
 	const roles = [
@@ -62,8 +81,8 @@ export default function SignupPage() {
 			iconColor: "text-green-600",
 		},
 		{
-			id: "admin",
-			label: "Admin",
+			id: "agent",
+			label: "Agent",
 			description: "Manage operations & analytics",
 			icon: Shield,
 			color: "from-purple-500 to-purple-600",
@@ -80,6 +99,20 @@ export default function SignupPage() {
 		setStep("info");
 	};
 
+	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
+		const file = e.target.files?.[0];
+		if (file) {
+			const reader = new FileReader();
+			reader.onloadend = () => {
+				setAgentData(prev => ({
+					...prev,
+					[field]: reader.result as string
+				}));
+			};
+			reader.readAsDataURL(file);
+		}
+	};
+
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		if (
@@ -94,6 +127,10 @@ export default function SignupPage() {
 			return;
 		}
 
+		// Merge data if agent
+		const payload = { ...formData };
+		const additionalData = selectedRole === 'agent' ? agentData : {};
+
 		setLoading(true);
 		try {
 			const response = await signup(
@@ -102,7 +139,8 @@ export default function SignupPage() {
 				formData.email,
 				formData.phone,
 				formData.password,
-				selectedRole
+				selectedRole,
+				additionalData
 			);
 			if (response?.data?.request_id) {
 				router.push(
@@ -302,6 +340,99 @@ export default function SignupPage() {
 								}
 								icon={<Phone className="w-5 h-5 text-gray-400" />}
 							/>
+
+							{/* Agent Specific Fields */}
+							{selectedRole === 'agent' && (
+								<div className="space-y-4 pt-4 border-t border-gray-100">
+									<h3 className="font-semibold text-gray-900">Agent Details</h3>
+									
+									<div className="grid grid-cols-2 gap-4">
+										<Select
+											label="ID Type"
+											value={agentData.government_id_type}
+											onChange={(e) => setAgentData({...agentData, government_id_type: e.target.value})}
+											options={[
+												{ value: 'NIN', label: 'NIN' },
+												{ value: 'Passport', label: 'Intl Passport' },
+												{ value: 'VoterID', label: 'Voter ID' }
+											]}
+										/>
+										<Input
+											label="ID Number"
+											placeholder="Enter ID Number"
+											value={agentData.government_id_number}
+											onChange={(e) => setAgentData({...agentData, government_id_number: e.target.value})}
+											required
+										/>
+									</div>
+
+									<div className="grid grid-cols-2 gap-4">
+										<Input
+											label="State"
+											placeholder="Lagos"
+											value={agentData.state}
+											onChange={(e) => setAgentData({...agentData, state: e.target.value})}
+											required
+										/>
+										<Input
+											label="City"
+											placeholder="Ikeja"
+											value={agentData.city}
+											onChange={(e) => setAgentData({...agentData, city: e.target.value})}
+											required
+										/>
+									</div>
+
+									<div className="grid grid-cols-2 gap-4">
+										<Input
+											label="LGA"
+											placeholder="Ikeja"
+											value={agentData.lga}
+											onChange={(e) => setAgentData({...agentData, lga: e.target.value})}
+										/>
+										<Input
+											label="Zone"
+											placeholder="Zone A"
+											value={agentData.assigned_zone}
+											onChange={(e) => setAgentData({...agentData, assigned_zone: e.target.value})}
+										/>
+									</div>
+
+									<Input
+										label="Service Radius (km)"
+										type="number"
+										placeholder="e.g. 10"
+										value={agentData.service_radius}
+										onChange={(e) => setAgentData({...agentData, service_radius: e.target.value})}
+									/>
+
+									<div className="space-y-2">
+										<label className="block text-sm font-medium text-gray-700">Upload Government ID</label>
+										<div className="flex items-center gap-2">
+											<input
+												type="file"
+												accept="image/*"
+												onChange={(e) => handleFileChange(e, 'government_id_image')}
+												className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+											/>
+											{agentData.government_id_image && <span className="text-green-600 text-xs">Uploaded</span>}
+										</div>
+									</div>
+
+									<div className="space-y-2">
+										<label className="block text-sm font-medium text-gray-700">Upload Profile Photo</label>
+										<div className="flex items-center gap-2">
+											<input
+												type="file"
+												accept="image/*"
+												onChange={(e) => handleFileChange(e, 'profile_photo')}
+												className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+											/>
+											{agentData.profile_photo && <span className="text-green-600 text-xs">Uploaded</span>}
+										</div>
+									</div>
+								</div>
+							)}
 
 							{/* Password */}
 							<div className="relative">

@@ -12,16 +12,18 @@ const controller =  shipmentController
     router.get('/track/:shipment_reference', auth.authenticateToken, controller.getShipment);
     
     
-    router.get('/users/:user_id', auth.authenticateToken, auth.verifyRole(['admin', 'driver',  'customer']), controller.getUserShipments);
+    router.get('/users/:user_id', auth.authenticateToken, auth.verifyRole(['admin', 'driver', 'agent', 'customer']), controller.getUserShipments);
     
     
     // router.post('/webhooks/:carrier', controller.handleCarrierWebhook);
     router.put('/status/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin','driver']), controller.updateShipmentStatus);
+    router.put('/:shipment_id/assign-driver', auth.authenticateToken, auth.verifyRole(['admin', 'agent']), controller.assignDriver);
 
 
     router.post('/cancel/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin', 'customer']), controller.cancelShipment);
     
     router.get('/admin/stats', auth.authenticateToken, auth.verifyRole(['admin']), controller.getAdminStats);
+    router.get('/agent/stats', auth.authenticateToken, auth.verifyRole(['agent']), controller.getAgentStats);
     router.get('', auth.authenticateToken, auth.verifyRole(['admin']), controller.getAllShipments);
     router.delete('/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin']), controller.deleteShipment);
     

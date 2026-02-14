@@ -247,7 +247,8 @@ router.post('/token', userController.token)
  *       401:
  *          description: Login failed
 */
-router.get('/profile', auth.authenticateToken, userController.updateProfile)
+router.get('/profile', auth.authenticateToken, userController.getProfile)
+router.put('/profile', auth.authenticateToken, userController.updateProfile)
 
 /**
  * @swagger
@@ -276,7 +277,7 @@ router.get('/profile', auth.authenticateToken, userController.updateProfile)
 router.delete('/logout', auth.authenticateToken, userController.logout)
 
 // Admin User Management Routes
-router.get('/', auth.authenticateToken, auth.verifyRole(['admin']), userController.getUsers);
+router.get('/', auth.authenticateToken, auth.verifyRole(['admin', 'agent']), userController.getUsers);
 router.post('/', auth.authenticateToken, auth.verifyRole(['admin']), userController.createUserByAdmin);
 router.put('/:id', auth.authenticateToken, auth.verifyRole(['admin']), userController.updateUserByAdmin);
 router.delete('/:id', auth.authenticateToken, auth.verifyRole(['admin']), userController.deleteUserByAdmin);
