@@ -828,7 +828,7 @@ getAllShipments: async (req, res) => {
         const { shipment_reference } = req.params;
             const user_id = String(req.user.id);
             const user_role = req.user.role;
-            console.log("user roolllw", user_role)
+            
             let where = { shipment_reference };
 
             if (user_role === 'admin') {
@@ -841,10 +841,10 @@ getAllShipments: async (req, res) => {
                     where.user_id = user_id;
                 }
             } else if (user_role === 'agent') {
-                    console.log(" entered user roolllw", user_role)
+                    
 
                     const agent = await db.agents.findOne({ where: {user_id: req.user.id }})
-                    console.log("Agentttttttttt", agent)
+                    
                     if (agent) {
                         where.agent_id = agent.id
                         
@@ -882,7 +882,6 @@ getAllShipments: async (req, res) => {
                 ]
             });
 
-            console.log("SHIPMENTTTT", shipment)
 
             if (!shipment) {
                 return res.status(404).json({
@@ -1126,7 +1125,7 @@ getAllShipments: async (req, res) => {
                 limit: parseInt(limit),
                 offset: offset
             });
-            console.log(`Fetched ${shipments.rows.length} shipments for user ${user_id} (total: ${shipments.count})`);
+            
             return res.status(200).json({
                 success: true,
                 data: {
