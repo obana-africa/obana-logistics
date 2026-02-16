@@ -76,15 +76,11 @@ export default function OtpPage() {
 		try {
 			const response = await verifyOtp(requestId || "", otpString);
 
-			console.log("OTP verification response:", response);
-
 			let userRole = response?.user?.role || response?.role;
 
 			if (!userRole && user?.role) {
 				userRole = user.role;
 			}
-
-			console.log("OTP verification successful, user role:", userRole);
 
 			if (userRole) {
 				const roleBasedRoutes: Record<string, string> = {
@@ -99,7 +95,7 @@ export default function OtpPage() {
 				router.replace(dashboardPath);
 			} else {
 				console.warn("No role found after successful OTP verification");
-				router.replace("/dashboard/customer");
+				router.replace("/");
 			}
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} catch (err: any) {
