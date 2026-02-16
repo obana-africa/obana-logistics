@@ -76,11 +76,15 @@ export default function OtpPage() {
 		try {
 			const response = await verifyOtp(requestId || "", otpString);
 
-			let userRole = response?.data?.user?.role || response?.data?.role;
+			console.log("OTP verification response:", response);
+
+			let userRole = response?.user?.role || response?.role;
 
 			if (!userRole && user?.role) {
 				userRole = user.role;
 			}
+
+			console.log("OTP verification successful, user role:", userRole);
 
 			if (userRole) {
 				const roleBasedRoutes: Record<string, string> = {
