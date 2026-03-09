@@ -76,6 +76,7 @@ export default function AdminDashboard() {
     { label: 'Manage Drivers', href: '/dashboard/admin/drivers', icon: Users },
     { label: 'View Shipments', href: '/dashboard/admin/shipments', icon: Package },
     { label: 'Analytics', href: '/dashboard/admin/analytics', icon: BarChart3 },
+    { label: 'Agent Management', href: '/dashboard/admin/agents', icon: Users },
   ];
 
   return (

@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Check, Package, MapPin, Truck, Clock, AlertCircle, X } from 'lucide-react';
 import { LocationInput } from '@/components/LocationInput';
+import PhoneInput from '@/components/PhoneInput';
 
 export default function CreateShipmentPage() {
   const router = useRouter();
@@ -58,9 +59,9 @@ export default function CreateShipmentPage() {
   ];
 
   const serviceLevels = [
-    { value: 'Standard', label: '📦 Standard (5-7 days)' },
-    { value: 'Express', label: '⚡ Express (2-3 days)' },
-    { value: 'Economy', label: '🐢 Economy (7-14 days)' },
+    { value: 'Standard', label: '📦 Standard' },
+    { value: 'Express', label: '⚡ Express' },
+    { value: 'Economy', label: '🐢 Economy' },
   ];
 
   const showError = (message: string) => {
@@ -120,7 +121,7 @@ export default function CreateShipmentPage() {
     setLoading(true);
     try {
       const totalWeight = formData.items.reduce(
-        (sum, item) => sum + ((parseFloat(item.weight) || 0) * (parseInt(item.quantity) || 1)), 
+        (sum, item) => sum + ((parseFloat(item.weight) || 1)), 
         0
       );
 
@@ -390,13 +391,12 @@ export default function CreateShipmentPage() {
                         pickup_address: { ...formData.pickup_address, zip_code: e.target.value }
                       })}
                     />
-                    <Input
-                      label="Phone Number *"
-                      placeholder="+234 801 234 5678"
+                    <PhoneInput
+                      label="Phone Number"
                       value={formData.pickup_address.phone}
-                      onChange={(e) => setFormData({
+                      onChange={(phone) => setFormData({
                         ...formData,
-                        pickup_address: { ...formData.pickup_address, phone: e.target.value }
+                        pickup_address: { ...formData.pickup_address, phone }
                       })}
                       required
                     />
@@ -485,13 +485,12 @@ export default function CreateShipmentPage() {
                         delivery_address: { ...formData.delivery_address, zip_code: e.target.value }
                       })}
                     />
-                    <Input
-                      label="Phone Number *"
-                      placeholder="+234 801 234 5678"
+                    <PhoneInput
+                      label="Phone Number"
                       value={formData.delivery_address.phone}
-                      onChange={(e) => setFormData({
+                      onChange={(phone) => setFormData({
                         ...formData,
-                        delivery_address: { ...formData.delivery_address, phone: e.target.value }
+                        delivery_address: { ...formData.delivery_address, phone }
                       })}
                       required
                     />

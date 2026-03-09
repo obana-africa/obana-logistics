@@ -30,9 +30,23 @@ export default function LoginPage() {
 				formData.password,
 				formData.rememberMe
 			);
-			if (response?.data?.request_id) {
-				router.push(`/auth/otp?request_id=${response.data.request_id}`);
-			}
+			type RoleType = 'customer' | 'driver' | 'admin' | 'agent';
+
+
+			const roleRoutes: Record<RoleType, string> = {
+			    customer: '/dashboard/customer',
+			    driver: '/dashboard/driver',
+			    admin: '/dashboard/admin',
+			    agent: '/dashboard/agent',
+			};
+			
+			const role = response.data.user.role as RoleType;
+			const route = roleRoutes[role]; 
+			router.replace(
+					role
+					? route || '/'
+					: '/'
+			);
 		} catch (err) {
 			console.error(err);
 		} finally {

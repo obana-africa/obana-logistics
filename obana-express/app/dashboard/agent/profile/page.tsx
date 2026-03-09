@@ -31,7 +31,8 @@ export default function AgentProfilePage() {
   const loadProfile = async () => {
     try {
       const response = await apiClient.getProfile();
-      if (response.success && response.data) {
+      if (response.status && response.data) {
+        console.log("SUCcess")
         const u = response.data;
         const agent = u.agent_profile || {};
         setFormData({
@@ -99,9 +100,9 @@ export default function AgentProfilePage() {
                   <Input label="Country" name="country" value={formData.country} onChange={handleChange} />
                   <Input label="State" name="state" value={formData.state} onChange={handleChange} />
                   <Input label="City" name="city" value={formData.city} onChange={handleChange} />
-                  <Input label="LGA" name="lga" value={formData.lga} onChange={handleChange} />
+                  {/* <Input label="LGA" name="lga" value={formData.lga} onChange={handleChange} />
                   <Input label="Zone" name="assigned_zone" value={formData.assigned_zone} onChange={handleChange} />
-                  <Input label="Service Radius (km)" name="service_radius" type="number" value={formData.service_radius} onChange={handleChange} />
+                  <Input label="Service Radius (km)" name="service_radius" type="number" value={formData.service_radius} onChange={handleChange} /> */}
                 </div>
               </div>
 

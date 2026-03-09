@@ -3,7 +3,8 @@
 import React, { useState } from "react";
 import { useAuth } from "@/lib/authContext";
 import { useRouter } from "next/navigation";
-import { Button, Input, Card, Alert, Select } from "@/components/ui";
+import { Button, Card, Alert, Select, Input } from "@/components/ui";
+import PhoneInput from "@/components/PhoneInput";
 import {
 	Mail,
 	Phone,
@@ -127,7 +128,7 @@ export default function SignupPage() {
 			return;
 		}
 
-		// Merge data if agent
+		
 		const payload = { ...formData };
 		const additionalData = selectedRole === 'agent' ? agentData : {};
 
@@ -142,11 +143,23 @@ export default function SignupPage() {
 				selectedRole,
 				additionalData
 			);
-			if (response?.data?.request_id) {
-				router.push(
-					`/auth/otp?request_id=${response.data.request_id}&email=${formData.email}`
-				);
-			}
+			type RoleType = 'customer' | 'driver' | 'admin' | 'agent';
+
+
+const roleRoutes: Record<RoleType, string> = {
+    customer: '/dashboard/customer',
+    driver: '/dashboard/driver',
+    admin: '/dashboard/admin',
+    agent: '/dashboard/agent',
+};
+
+const role = response.data.user.role as RoleType;
+const route = roleRoutes[role]; 
+			router.replace(
+				response?.data?.user?.role
+					? route || '/'
+					: '/'
+			);
 		} catch (err) {
 			console.error(err);
 		} finally {
@@ -329,16 +342,13 @@ export default function SignupPage() {
 								icon={<Mail className="w-5 h-5 text-gray-400" />}
 							/>
 
-							<Input
-								label="Phone Number"
-								type="tel"
-								placeholder="+234 800 000 0000"
-								required
-								value={formData.phone}
-								onChange={(e) =>
-									setFormData({ ...formData, phone: e.target.value })
-								}
-								icon={<Phone className="w-5 h-5 text-gray-400" />}
+				<PhoneInput
+					label="Phone Number"
+					required
+					value={formData.phone}
+					onChange={(val) =>
+						setFormData({ ...formData, phone: val })
+					}
 							/>
 
 							{/* Agent Specific Fields */}

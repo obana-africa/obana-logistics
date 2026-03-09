@@ -5,7 +5,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3006';
 interface ApiResponse<T = any> {
   data?: T;
   message?: string;
-  status?: number;
+  status?: string;
   error?: string;
   success?: boolean;
 }
@@ -16,6 +16,15 @@ interface AuthTokens {
   user?: any;
 }
 
+interface RegisterTenantResponse {
+  id: number;
+  name: string;
+  slug: string;
+  base_url: string;
+  description?: string;
+  api_key: string;
+  message?: string;
+}
 class ApiClient {
   private client: AxiosInstance;
   private accessToken: string | null = null;
@@ -108,18 +117,7 @@ class ApiClient {
       password,
       remember_me: rememberMe,
     });
-    return response;
-  }
 
-  async verifyOtp(requestId: string, otp: string) {
-    const response = await this.client.post<ApiResponse<AuthTokens>>(
-      '/verify/otp',
-      {
-        request_id: requestId,
-        otp,
-      }
-    );
-    
     if (response.data?.data) {
       const tokens = response.data.data;
       const { access_token, refresh_token } = tokens;
@@ -129,8 +127,9 @@ class ApiClient {
       this.client.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
     }
     
-    return response.data;
+    return response;
   }
+
 
   async getProfile() {
     const response = await this.client.get<ApiResponse>('/users/profile');
@@ -142,9 +141,11 @@ class ApiClient {
     return response.data;
   }
 
-  async logout() {
+  async logout(refresh_token?: string | null) {
     try {
-      await this.client.delete('/users/logout');
+      await this.client.delete('/users/logout', {
+        data: { refresh_token }
+      });
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
@@ -197,6 +198,17 @@ class ApiClient {
     return response.data;
   }
 
+  // Tenant/Business endpoints
+  async registerTenant(name: string, slug: string, base_url: string, description: string) {
+    const response = await this.client.post<ApiResponse<RegisterTenantResponse>>('/tenants/register', {
+      name,
+      slug,
+      base_url,
+      description,
+    });
+    return response.data;
+  }
+
   // Shipments endpoints
   async createShipment(data: any) {
     const response = await this.client.post<ApiResponse>('/shipments', data);
@@ -228,6 +240,11 @@ class ApiClient {
     return response.data;
   }
 
+  async getCustomerStats() {
+    const response = await this.client.get<ApiResponse>('/shipments/customer/stats');
+    return response.data;
+  }
+
   async getShipment(id: string) {
     const response = await this.client.get<ApiResponse>(`/shipments/track/${id}`);
     return response.data;
@@ -249,6 +266,27 @@ class ApiClient {
 
   async deleteShipment(id: string) {
     const response = await this.client.delete<ApiResponse>(`/shipments/${id}`);
+    return response.data;
+  }
+
+  // Agents endpoints (for Admin)
+  async listAgents() {
+    const response = await this.client.get<ApiResponse>('/agents');
+    return response.data;
+  }
+
+  async getAgent(id: string) {
+    const response = await this.client.get<ApiResponse>(`/agents/${id}`);
+    return response.data;
+  }
+
+  async updateAgent(id: string, data: any) {
+    const response = await this.client.put<ApiResponse>(`/agents/${id}`, data);
+    return response.data;
+  }
+
+  async deleteAgent(id: string) {
+    const response = await this.client.delete<ApiResponse>(`/agents/${id}`);
     return response.data;
   }
 

@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Search, ChevronDown } from "lucide-react";
-import { Button } from "@/components/ui";
-
+import { Search, ChevronDown, X, MapPin, Truck } from "lucide-react";
+import { Loader, Button, Badge } from "@/components/ui";
+import { apiClient } from "@/lib/api";
 const heroSlides = [
 	{
 		title: "Gifts & Personal Items",
@@ -27,9 +27,24 @@ const heroSlides = [
 	},
 ];
 
+const getStatusVariant = (status: string) => {
+	switch (status?.toLowerCase()) {
+		case 'delivered': return 'success';
+		case 'in_transit': return 'info';
+		case 'pending': return 'warning';
+		case 'cancelled':
+		case 'returned': return 'error';
+		default: return 'default';
+	}
+};
+
 export default function HeroSection() {
 	const [currentSlide, setCurrentSlide] = useState(0);
 	const [trackingId, setTrackingId] = useState("");
+	const [trackingResult, setTrackingResult] = useState<any>(null);
+	const [trackingError, setTrackingError] = useState<string | null>(null);
+	const [trackingLoading, setTrackingLoading] = useState(false);
+	const [showTrackingModal, setShowTrackingModal] = useState(false);
 
 	useEffect(() => {
 		const interval = setInterval(() => {
@@ -38,11 +53,24 @@ export default function HeroSection() {
 		return () => clearInterval(interval);
 	}, []);
 
-	const handleTrackShipment = (e: React.FormEvent) => {
+	const handleTrackShipment = async (e: React.FormEvent) => {
 		e.preventDefault();
 		if (trackingId.trim()) {
-			console.log("Tracking:", trackingId);
-			// router.push(`/track/${trackingId}`);
+			setTrackingLoading(true);
+			setTrackingError(null);
+			setTrackingResult(null);
+			setShowTrackingModal(true);
+			try {
+				const res = await apiClient.getShipment(trackingId.trim());
+				if (res.success) {
+					setTrackingResult(res.data);
+				} else {
+					setTrackingError(res.message || 'Not found');
+				}
+			} catch (err: any) {
+				setTrackingError(err.response?.data?.message || 'Failed to fetch');
+			}
+			setTrackingLoading(false);
 		}
 	};
 
@@ -118,7 +146,7 @@ export default function HeroSection() {
 							type="text"
 							value={trackingId}
 							onChange={(e) => setTrackingId(e.target.value)}
-							placeholder="Enter your tracking ID (e.g., OB123456789NG)"
+							placeholder="Enter your tracking ID (e.g., OBN-123456789NG)"
 							className="flex-1 px-6 py-4 text-slate-900 placeholder-slate-400 bg-transparent border-0 focus:outline-none text-base"
 						/>
 						<Button
@@ -134,28 +162,127 @@ export default function HeroSection() {
 						Real-time tracking • Instant notifications • 24/7 support
 					</p>
 				</div>
-
-				{/* Slide Indicators */}
-				<div className="flex justify-center gap-2 mt-12">
-					{heroSlides.map((_, index) => (
-						<button
-							key={index}
-							onClick={() => setCurrentSlide(index)}
-							className={`w-2 h-2 rounded-full transition-all ${
-								index === currentSlide
-									? "bg-amber-400 w-8"
-									: "bg-white/40 hover:bg-white/60"
-							}`}
-							aria-label={`Go to slide ${index + 1}`}
-						/>
-					))}
-				</div>
-
-				{/* Scroll Indicator */}
-				<div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
-					<ChevronDown className="w-8 h-8 text-white/60" />
-				</div>
 			</div>
+
+			{/* Tracking Result Modal */}
+			{showTrackingModal && (
+				<div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+					<div className="bg-white rounded-2xl max-w-md w-full p-8 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 text-left">
+						<button
+							onClick={() => setShowTrackingModal(false)}
+							className="absolute top-5 right-5 text-slate-400 hover:text-black"
+						>
+							<X className="w-6 h-6" />
+						</button>
+
+						{trackingLoading ? (
+							<div className="flex justify-center py-12"><Loader /></div>
+						) : trackingError ? (
+							<div className="text-center py-8">
+								<div className="flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mx-auto mb-4">
+									<X className="w-8 h-8 text-red-600" />
+								</div>
+								<h3 className="text-lg font-bold text-slate-900 mb-2">Tracking Failed</h3>
+								<p className="text-red-600 mb-6">{trackingError}</p>
+								<Button 
+									variant="secondary" 
+									className="w-full"
+									onClick={() => setShowTrackingModal(false)}
+								>
+									Close
+								</Button>
+							</div>
+						) : trackingResult ? (
+							<div className="space-y-6">
+								<div className="flex justify-between items-start border-b pb-4">
+									<div>
+										<p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Shipment Reference</p>
+										<h3 className="text-lg font-bold text-slate-900">{trackingResult.shipment_reference}</h3>
+									</div>
+									<Badge variant={getStatusVariant(trackingResult.status)}>
+										{trackingResult.status?.replace('_', ' ').toUpperCase()}
+									</Badge>
+								</div>
+
+								<div className="grid grid-cols-2 gap-6">
+									<div>
+										<div className="flex items-center text-slate-500 mb-1">
+											<MapPin className="w-4 h-4 mr-1" />
+											<span className="text-xs font-medium uppercase">Origin</span>
+										</div>
+										<p className="font-medium text-slate-900">
+											{trackingResult.pickup_address?.city}, {trackingResult.pickup_address?.state}
+										</p>
+									</div>
+									<div>
+										<div className="flex items-center text-slate-500 mb-1">
+											<MapPin className="w-4 h-4 mr-1" />
+											<span className="text-xs font-medium uppercase">Destination</span>
+										</div>
+										<p className="font-medium text-slate-900">
+											{trackingResult.delivery_address?.city}, {trackingResult.delivery_address?.state}
+										</p>
+									</div>
+								</div>
+
+								<div className="bg-slate-50 p-4 rounded-xl space-y-2">
+									<div className="flex justify-between text-sm">
+										<span className="text-slate-500">Service Level</span>
+										<span className="font-medium text-slate-900">{trackingResult.service_level}</span>
+									</div>
+									<div className="flex justify-between text-sm">
+										<span className="text-slate-500">Transport Mode</span>
+										<span className="font-medium text-slate-900 capitalize">{trackingResult.transport_mode}</span>
+									</div>
+									<div className="flex justify-between text-sm">
+										<span className="text-slate-500">Total Items</span>
+										<span className="font-medium text-slate-900">{trackingResult.total_items}</span>
+									</div>
+								</div>
+
+								{trackingResult.tracking_events && trackingResult.tracking_events.length > 0 && (
+									<div>
+										<h4 className="font-semibold text-slate-900 mb-4 flex items-center">
+											<Truck className="w-4 h-4 mr-2" />
+											Tracking History
+										</h4>
+										<div className="space-y-0 relative border-l-2 border-slate-200 ml-2 pl-6 py-2 max-h-60 overflow-y-auto">
+											{trackingResult.tracking_events
+												.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+												.map((event: any, index: number) => (
+												<div key={event.id} className="relative mb-6 last:mb-0">
+													<div className={`absolute -left-7.75 top-1.5 w-3 h-3 rounded-full border-2 border-white ${index === 0 ? 'bg-blue-600 ring-2 ring-blue-100' : 'bg-slate-300'}`} />
+													<div className="flex flex-col">
+														<span className="text-sm font-bold text-slate-900">
+															{event.status.replace('_', ' ').toUpperCase()}
+														</span>
+														<span className="text-xs text-slate-500 mb-1">
+															{new Date(event.createdAt).toLocaleString()}
+														</span>
+														{event.description && (
+															<span className="text-sm text-slate-600">
+																{event.description}
+															</span>
+														)}
+													</div>
+												</div>
+											))}
+										</div>
+									</div>
+								)}
+
+								<Button 
+									variant="secondary" 
+									className="w-full"
+									onClick={() => { setShowTrackingModal(false); setTrackingResult(null); setTrackingId(""); }}
+								>
+									Track Another Shipment
+								</Button>
+							</div>
+						) : null}
+					</div>
+				</div>
+			)}
 		</section>
 	);
 }

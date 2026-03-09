@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "@/lib/authContext";
 import { useRouter } from "next/navigation";
 import { Menu, X, LogOut, Home, Settings, Users } from "lucide-react";
@@ -34,8 +34,7 @@ const navigationByRole = {
     { name: 'Users', href: '/dashboard/admin/users', icon: Users },
     { name: 'Drivers', href: '/dashboard/admin/drivers', icon: Home },
     { name: 'Shipments', href: '/dashboard/admin/shipments', icon: Home },
-    { name: 'Analytics', href: '/dashboard/admin/analytics', icon: Home },
-    { name: 'Settings', href: '/dashboard/admin/settings', icon: Settings },
+    { name: 'Agents', href: '/dashboard/admin/agents', icon: Users },
   ],
   agent: [
     { name: 'Dashboard', href: '/dashboard/agent', icon: Home },
@@ -49,9 +48,16 @@ export default function DashboardLayout({
 	role,
 }: DashboardLayoutProps) {
 	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const { user, logout } = useAuth();
-	const person = useAuthStore((state) => state.getUser());
+	const { user, isAuthenticated, isLoading, logout } = useAuth();
+	const person = user
 	const router = useRouter();
+
+	// redirect unauthenticated users away from dashboards
+	useEffect(() => {
+		if (!isLoading && !isAuthenticated) {
+			router.replace('/auth/login');
+		}
+	}, [isLoading, isAuthenticated, router]);
 
 	const handleLogout = async () => {
 		await logout();

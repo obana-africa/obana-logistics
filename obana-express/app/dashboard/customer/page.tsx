@@ -33,7 +33,7 @@ export default function CustomerDashboardPage() {
   const [stats, setStats] = useState<Stat[]>([]);
   const [recentShipments, setRecentShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
-  const user = useAuthStore((state) => state.getUser());
+  const user = useAuthStore((state) => state.user);
 
   useEffect(() => {
     const userId = user?.id ? Number(user.id) : null;
@@ -154,8 +154,8 @@ export default function CustomerDashboardPage() {
                       </td>
                       <td className="py-3 px-4 text-gray-600">{shipment.createdAt.slice(0, 10)}</td>
                       <td className="py-3 px-4 text-right">
-                        <Link href={`/dashboard/customer/shipments/${shipment.id}`}>
-                          <Button variant="ghost" size="sm">
+                        <Link href={`/dashboard/customer/shipments/${shipment.shipment_reference}`}>
+                          <Button variant="ghost" size="sm" className='text-right'>
                             View
                           </Button>
                         </Link>

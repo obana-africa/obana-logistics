@@ -52,6 +52,14 @@ export default function Footer() {
 							</li>
 							<li>
 								<Link
+									href="/route-match"
+									className="hover:text-amber-400 transition-colors"
+								>
+									Get Quote
+								</Link>
+							</li>
+							<li>
+								<Link
 									href="#"
 									className="hover:text-amber-400 transition-colors"
 								>

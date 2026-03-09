@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Card, Button, Badge, Loader, Select, Input, Alert } from '@/components/ui';
+import { Card, Button, Badge, Loader, SelectP, Input, Alert, Label, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import { ArrowLeft, MapPin, Package, Calendar, Truck, User, X, Trash2 } from 'lucide-react';
 import Link from 'next/link';
@@ -302,18 +302,21 @@ export default function ShipmentDetailsPage() {
               </div>
               
               <form onSubmit={handleUpdateSubmit} className="space-y-4">
-                <Select
-                  label="New Status"
-                  value={updateForm.status}
-                  onChange={(e) => setUpdateForm({ ...updateForm, status: e.target.value })}
-                  options={[
-                    { value: 'pending', label: 'Pending' },
-                    { value: 'in_transit', label: 'In Transit' },
-                    { value: 'delivered', label: 'Delivered' },
-                    { value: 'cancelled', label: 'Cancelled' },
-                    { value: 'returned', label: 'Returned' },
-                  ]}
-                />
+                <div className="space-y-2">
+                  <Label>New Status</Label>
+                  <SelectP value={updateForm.status} onValueChange={(value) => setUpdateForm({ ...updateForm, status: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="in_transit">In Transit</SelectItem>
+                      <SelectItem value="delivered">Delivered</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                      <SelectItem value="returned">Returned</SelectItem>
+                    </SelectContent>
+                  </SelectP>
+                </div>
 
                 <Input
                   label="Current Location"

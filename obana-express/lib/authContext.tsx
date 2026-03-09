@@ -24,7 +24,6 @@ interface AuthContextType {
 		password: string,
 		rememberMe?: boolean
 	) => Promise<any>;
-	verifyOtp: (requestId: string, otp: string) => Promise<any>;
 	logout: () => Promise<void>;
 	clearError: () => void;
 }
@@ -34,12 +33,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const store = useAuthStore();
 	const [error, setError] = useState<string | null>(null);
-
-	useEffect(() => {
-		store.hydrate();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
-
 	const signup = async (
 		first_name: string,
 		last_name: string,
@@ -56,9 +49,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 				email,
 				phone,
 				password,
-				role
+				role,
+				// additionalData
 			);
-			return response.data;
+			const authResponse = response.data;
+			if ((authResponse.success || authResponse.status === 'success') && authResponse.data) {
+				const { user, access_token, refresh_token } = authResponse.data;
+				store.setUser(user);
+				store.setAccessToken(access_token);
+				store.setAuthenticated(true);
+
+				if (typeof window !== "undefined" && refresh_token) {
+					localStorage.setItem("refresh_token", refresh_token);
+				}
+			}
+			return authResponse;
 		} catch (err: any) {
 			const errorMsg =
 				err.response?.data?.message || err.message || "Signup failed";
@@ -79,7 +84,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 				password,
 				rememberMe
 			);
-			return response.data;
+			const authResponse = response.data;
+			if ((authResponse.success || authResponse.status === 'success') && authResponse.data) {
+				const { user, access_token, refresh_token } = authResponse.data;
+				store.setUser(user);
+				store.setAccessToken(access_token);
+				store.setAuthenticated(true);
+				
+				if (typeof window !== "undefined") {
+					if (refresh_token) {
+						localStorage.setItem("refresh_token", refresh_token);
+					}
+				}
+			}
+			return authResponse;
 		} catch (err: any) {
 			const errorMsg =
 				err.response?.data?.message || err.message || "Login failed";
@@ -88,34 +106,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		}
 	};
 
-	const verifyOtp = async (requestId: string, otp: string) => {
-		try {
-			setError(null);
-			const response = await apiClient.verifyOtp(requestId, otp);
-
-			if (response.data) {
-				// eslint-disable-next-line @typescript-eslint/no-unused-vars
-				const { user, access_token, refresh_token } = response.data;
-				store.setUser(user);
-				store.setAccessToken(access_token);
-				store.setAuthenticated(true);
-				localStorage.setItem("user", JSON.stringify(user));
-			}
-
-			return response.data;
-		} catch (err: unknown) {
-			const errorMsg =
-				(err as any).response?.data?.message ||
-				(err as any).message ||
-				"OTP verification failed";
-			setError(errorMsg);
-			throw err;
-		}
-	};
 
 	const logout = async () => {
 		try {
-			await apiClient.logout();
+			if (typeof window !== "undefined") {
+				await apiClient.logout(localStorage.getItem("refresh_token"));
+			}
 			store.logout();
 			setError(null);
 		} catch (err: unknown) {
@@ -128,13 +124,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	return (
 		<AuthContext.Provider
 			value={{
-				user: store.getUser(),
+				user: store.user,
 				isAuthenticated: store.isAuthenticated,
 				isLoading: store.isLoading,
 				error: error || store.error,
 				signup,
 				login,
-				verifyOtp,
 				logout,
 				clearError,
 			}}

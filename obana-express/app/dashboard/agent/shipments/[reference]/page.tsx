@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Card, Button, Badge, Loader, Select, Alert } from '@/components/ui';
+import { Card, Button, Badge, Loader, SelectP, Alert, Label, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui';
+import { useAuth } from '@/lib/authContext';
 import { apiClient } from '@/lib/api';
 import { ArrowLeft, MapPin, User, Truck } from 'lucide-react';
 import Link from 'next/link';
@@ -17,6 +18,13 @@ export default function AgentShipmentDetailsPage() {
   const [selectedDriver, setSelectedDriver] = useState('');
   const [assigning, setAssigning] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+
+  const { user } = useAuth();
+
+  // status update state
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateForm, setUpdateForm] = useState({ status: '', location: '', notes: '' });
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -59,6 +67,29 @@ export default function AgentShipmentDetailsPage() {
       setMessage({ type: 'error', text: 'Failed to assign driver' });
     } finally {
       setAssigning(false);
+    }
+  };
+
+  const handleUpdateClick = () => {
+    setUpdateForm({ status: shipment.status, location: '', notes: '' });
+    setShowUpdateModal(true);
+    setMessage({ type: '', text: '' });
+  };
+
+  const handleUpdateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shipment) return;
+    setUpdating(true);
+    try {
+      await apiClient.updateShipmentStatus(shipment.id.toString(), updateForm.status, updateForm.notes, updateForm.location);
+      setShowUpdateModal(false);
+      loadData();
+      setMessage({ type: 'success', text: 'Status updated successfully' });
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: 'Failed to update status' });
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -129,19 +160,91 @@ export default function AgentShipmentDetailsPage() {
                   <p className="text-sm text-yellow-600 bg-yellow-50 p-2 rounded mb-4">No driver assigned</p>
                 )}
 
-                <Select
-                  label="Assign Driver"
-                  value={selectedDriver}
-                  onChange={(e) => setSelectedDriver(e.target.value)}
-                  options={[{ value: '', label: 'Select a driver' }, ...drivers.map(d => ({ value: d.id, label: `${d.driver_code} - ${d.vehicle_type} (${d.user?.email})` }))]}
-                />
+                <div className="space-y-2">
+                  <Label>Assign Driver</Label>
+                  <SelectP value={selectedDriver} onValueChange={setSelectedDriver}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a driver" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {drivers.map((d) => (
+                        <SelectItem key={d.id} value={d.id.toString()}>
+                          {`${d.driver_code} - ${d.vehicle_type} (${d.user?.email})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </SelectP>
+                </div>
                 
                 <Button fullWidth variant="primary" onClick={handleAssignDriver} loading={assigning} disabled={!selectedDriver}>Assign Driver</Button>
               </div>
             </Card>
+
+            {shipment.agent_id === (user?.agent_profile?.id ?? null) && (
+              <Card title="Update Status">
+                <div className="flex flex-col gap-2">
+                  <span>Current status: <strong className="capitalize">{shipment.status}</strong></span>
+                  <Button variant="primary" onClick={handleUpdateClick}>
+                    Change Status
+                  </Button>
+                </div>
+              </Card>
+            )}
           </div>
         </div>
       </div>
+
+      {showUpdateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90">
+          <div className="bg-white rounded-lg w-11/12 max-w-md p-6">
+            <h2 className="text-xl font-semibold mb-4">Update Shipment Status</h2>
+            <form onSubmit={handleUpdateSubmit} className="space-y-4">
+              <div>
+                <Label className="mb-2 block">Status</Label>
+                <SelectP value={updateForm.status} onValueChange={(value) => setUpdateForm({ ...updateForm, status: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="picked_up">Picked Up</SelectItem>
+                    <SelectItem value="in_transit">In Transit</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                    <SelectItem value="returned">Returned</SelectItem>
+                  </SelectContent>
+                </SelectP>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Location (optional)</label>
+                <input
+                  type="text"
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                  value={updateForm.location}
+                  onChange={(e) => setUpdateForm({ ...updateForm, location: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Notes (optional)</label>
+                <textarea
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                  value={updateForm.notes}
+                  onChange={(e) => setUpdateForm({ ...updateForm, notes: e.target.value })}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => setShowUpdateModal(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" loading={updating}>
+                  Update
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }

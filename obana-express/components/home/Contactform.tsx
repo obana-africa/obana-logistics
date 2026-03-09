@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui";
+import PhoneInput from "@/components/PhoneInput";
 import {
 	Send,
 	CheckCircle,
@@ -48,6 +49,13 @@ export default function ContactForm() {
 		setFormData({
 			...formData,
 			[e.target.name]: e.target.value,
+		});
+	};
+
+	const handlePhoneChange = (phone: string) => {
+		setFormData({
+			...formData,
+			phone,
 		});
 	};
 
@@ -158,13 +166,10 @@ export default function ContactForm() {
 												<label className="block text-sm font-medium text-slate-700 mb-2">
 													Phone Number
 												</label>
-												<input
-													type="tel"
-													name="phone"
+												<PhoneInput
 													value={formData.phone}
-													onChange={handleChange}
-													className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-													placeholder="+234 800 000 0000"
+													onChange={handlePhoneChange}
+													className="w-full"
 												/>
 											</div>
 											<div>
