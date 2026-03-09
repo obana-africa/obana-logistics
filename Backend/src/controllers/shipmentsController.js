@@ -402,7 +402,7 @@ const shipmentController = {
             }
 
             const statusCounts = await db.shippings.findAll({
-                where: { user_id },
+                where: { user_id: String(user_id) },
                 attributes: [
                     'status',
                     [db.sequelize.fn('COUNT', db.sequelize.col('id')), 'count']
@@ -877,7 +877,7 @@ getAllShipments: async (req, res) => {
             let where = { shipment_reference };
 
             if (user_role === 'admin') {
-                // Admin can view any shipment
+                
             } else if (user_role === 'driver') {
                 const driver = await db.drivers.findOne({ where: { user_id: req.user.id } });
                 if (driver) {

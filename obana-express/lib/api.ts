@@ -209,7 +209,7 @@ class ApiClient {
     return response.data;
   }
 
-  // Shipments endpoints
+  
   async createShipment(data: any) {
     const response = await this.client.post<ApiResponse>('/shipments', data);
     return response.data;

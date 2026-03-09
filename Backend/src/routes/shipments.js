@@ -33,10 +33,7 @@ router.get('/track/:shipment_reference', authenticateRequest, controller.getShip
     
     
     router.get('/users/:user_id', auth.authenticateToken, auth.verifyRole(['admin', 'driver', 'agent', 'customer']), controller.getUserShipments);
-    
-    
-    // router.post('/webhooks/:carrier', controller.handleCarrierWebhook);
-    // agents can also update status but only for their assigned shipments
+ 
     router.put('/status/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin','driver','agent']), controller.updateShipmentStatus);
     router.put('/:shipment_id/assign-driver', auth.authenticateToken, auth.verifyRole(['admin', 'agent']), controller.assignDriver);
 

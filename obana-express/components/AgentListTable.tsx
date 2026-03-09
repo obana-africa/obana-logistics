@@ -80,10 +80,11 @@ export default function AgentListTable({ agents, onDelete }: AgentListTableProps
                 <Badge variant={getStatusVariant(agent.status)}>{agent.status}</Badge>
               </TableCell>
               <TableCell>{new Date(agent.createdAt).toLocaleDateString()}</TableCell>
-              <TableCell className='text-right hover:cursor-pointer '>View Details</TableCell>
-              <TableCell className="text-right">
+              <TableCell className=' hover:cursor-pointer '>
+                {/* View Details */}
                 <DropdownMenu>
-                  <DropdownMenuTrigger asChild><Button variant="ghost" className="h-8 w-8 p-0"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                  
+                  <DropdownMenuTrigger asChild><Button variant="secondary" className="h-8 w-12 p-0">view</Button></DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <Link href={`/dashboard/admin/agents/${agent.id}`} passHref>
                       <DropdownMenuItem><Eye className="mr-2 h-4 w-4" />View/Edit</DropdownMenuItem>

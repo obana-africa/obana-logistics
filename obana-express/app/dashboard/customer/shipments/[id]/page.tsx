@@ -234,7 +234,7 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
                       <p className="text-gray-500">Weight: {item.weight} kg</p>
                     </div>
                     <p className="font-semibold text-gray-900">
-                      {new Intl.NumberFormat('en-NG', { style: 'currency', currency: shipment.currency }).format(parseFloat(item.total_price))}
+                      {new Intl.NumberFormat('en-NG', { style: 'currency', currency: shipment.currency }).format(parseFloat(item.unit_price))}
                     </p>
                   </li>
                 ))}
