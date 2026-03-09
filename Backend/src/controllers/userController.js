@@ -1,17 +1,16 @@
 const { Op } = require('sequelize')
 const bcrypt = require('bcryptjs')
-const uuid = require('uuid')
 const jwt = require('jsonwebtoken')
 const db = require('../models/db.js')
 const utils = require('../../utils.js')
 const nodemailer = require('../mailer/nodemailer')
 const requestController = require('./requestController.js')
 const fs = require('fs')
+const { uploadImage } = require('../helpers/cloudinary')
 const path = require('path')
 
 
 const User = db.users
-const Verifications = db.verifications
 const Tokens = db.tokens
 const Attribute = db.attributes
 const UserAttribute = db.user_attributes
@@ -36,6 +35,11 @@ const createUserRequest = async (req, res) => {
     try {
     req.body.email = req.body.email.toLowerCase()
 
+    // normalize phone if present
+    if (req.body.phone && req.body.phone.length > 50) {
+        return res.status(400).send(utils.responseError('Phone number too long. Maximum 50 characters.'))
+    }
+
     // Validate role
     const validRoles = ['admin', 'driver', 'customer', 'agent'];
     if (!req.body.role || !validRoles.includes(req.body.role)) {
@@ -52,7 +56,9 @@ const createUserRequest = async (req, res) => {
         )
     }
 
-    createVerificationRequest(req.body, res, 'createUserAfterOtpVerification')
+    // direct creation without OTP
+    const authData = await createUserAfterOtpVerification(req.body, req, res);
+    return res.status(201).send(utils.responseSuccess(authData));
     } catch (err) {
         return res.status(500).send(
             utils.responseError(err.message)
@@ -107,29 +113,21 @@ const createUserAfterOtpVerification = async (payload, req, res) => {
 
     // If user is an agent, link to agent record
     if (role === 'agent') {
-        // Helper to save base64 files
-        const saveAgentFile = (base64Data, type) => {
-            if (!base64Data || !base64Data.includes('base64')) return null;
-            try {
-                const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-                if (!matches || matches.length !== 3) return null;
-                
-                const ext = matches[1].split('/')[1];
-                const buffer = Buffer.from(matches[2], 'base64');
-                const fileName = `${type}_${user.id}_${Date.now()}.${ext}`;
-                const uploadDir = path.join(__dirname, '../../public/uploads/agents');
-                
-                if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-                fs.writeFileSync(path.join(uploadDir, fileName), buffer);
-                return `/uploads/agents/${fileName}`;
-            } catch (e) { console.error('File save error:', e); return null; }
-        };
+        let governmentIdImageUrl = null;
+        if (payload.government_id_image && payload.government_id_image.startsWith('data:')) {
+            governmentIdImageUrl = await uploadImage(payload.government_id_image, 'obana/agents/documents');
+        }
+
+        let profilePhotoUrl = null;
+        if (payload.profile_photo && payload.profile_photo.startsWith('data:')) {
+            profilePhotoUrl = await uploadImage(payload.profile_photo, 'obana/agents/photos');
+        }
 
         await Agents.create({
             agent_code: `OBANA-AGT-${String(user.id).padStart(3, '0')}`,
             user_id: user.id,
             verification_status: 'pending', // Admin still needs to verify docs
-            status: 'active', // Designated active as requested since fields are provided
+            status: 'pending_verification', // Should be pending until admin verifies
             country: payload.country || 'Nigeria',
             state: payload.state,
             city: payload.city,
@@ -140,8 +138,8 @@ const createUserAfterOtpVerification = async (payload, req, res) => {
             service_radius: parseFloat(payload.service_radius) || 0,
             government_id_type: payload.government_id_type,
             government_id_number: payload.government_id_number,
-            government_id_image: saveAgentFile(payload.government_id_image, 'id'),
-            profile_photo: saveAgentFile(payload.profile_photo, 'profile')
+            government_id_image: governmentIdImageUrl,
+            profile_photo: profilePhotoUrl
         });
         await createUserAttributes(user.id, { first_name, last_name, role });
     }
@@ -284,10 +282,13 @@ const loginRequest = async (req, res) => {
         )
     }
 
-    bcrypt.compare(req.body.password, user.password, (error, isMatch) => {
+    bcrypt.compare(req.body.password, user.password, async (error, isMatch) => {
         if (isMatch) {
-            delete req.body.password
-            createVerificationRequest(req.body, res, 'loginAfterOtpVerification')
+            // After password verification, fetch the full user profile for token generation.
+            const userProfile = await getUser(user.email, user.phone, true, req, res);
+            const rememberMe = req.body.hasOwnProperty('remember_me') ? req.body.remember_me : false;
+            const authData = await createAuthDetail(userProfile, rememberMe);
+            return res.status(200).send(utils.responseSuccess(authData));
         } else {
             return res.status(401).send(
                 utils.responseError('Wrong password. Check your credentials and try again')
@@ -356,16 +357,12 @@ const token = async (req, res) => {
  * @param {*} res 
  */
 const getProfile = async (req, res) => {
-     
-        let user = req.user
-    
-
-    user = await getUser(user.email, user.phone, true, req, res)
-
-     let userAuth = await createAuthDetail(user, true)
-    return res.status(203).send(
-        utils.responseSuccess(userAuth)
-    )
+    let user = req.user;
+    // The user object from the token is used to fetch the latest full profile from the database.
+    const userProfile = await getUser(user.email, user.phone, true, req, res);
+    // On a profile fetch, we should return the user's data, not create a new set of tokens.
+    // This prevents session issues and unnecessary token generation.
+    return res.status(200).send(utils.responseSuccess(userProfile));
 }
 
 /**
@@ -376,13 +373,16 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
     
     const attributes = req.body
+    // phone length validation
+    if (attributes.phone && attributes.phone.length > 50) {
+        return res.status(400).send(utils.responseError('Phone number too long. Maximum 50 characters.'))
+    }
     let user = req.user
 
     try {
     await createUserAttributes(user.id, attributes)
 
     user = await getUser(user.email, user.phone, true, req, res)
-    const payload = utils.flattenObj(user)
 
   
 
@@ -392,19 +392,18 @@ const updateProfile = async (req, res) => {
         const agentFields = ['country', 'state', 'city', 'lga', 'assigned_zone', 'latitude', 'longitude', 'service_radius', 'government_id_type', 'government_id_number'];
         let hasUpdate = false;
         agentFields.forEach(field => {
-            if (payload[field] !== undefined) {
-                agent[field] = payload[field];
+            if (attributes[field] !== undefined) {
+                agent[field] = attributes[field];
                 hasUpdate = true;
             }
         });
         if (hasUpdate) await agent.save();
     }
 
-    let userAuth = await createAuthDetail(user, true)
-    return res.status(203).send(
-        utils.responseSuccess(userAuth)
-    )
-}  catch (error) {
+    // After a successful update, return the updated user profile.
+    // Issuing new tokens here is unnecessary and can cause session problems.
+    return res.status(200).send(utils.responseSuccess(user));
+    }  catch (error) {
     return res.status(500).send(
         utils.responseError(error.message)
     )
@@ -703,87 +702,10 @@ const getUserAttributes = async (id) => {
     return result
 }
 
-/**
- * Method to create verification request and send details to user
- * @param body
- *   Required 
- *     email: string
- *     phone: string
- * @param res - Optional; used in sending back response to user when available
- * TODO 
- *  Implement notification service
- *  Send OTP to email and/or phone
- *  Remove OTP from response
- * @returns {*} otp
-*/
-const createVerificationRequest = async (body, res = null, callback = null) => {
-    const data = await prepareVerificationData(body, callback)
-    try {
-        const verification = await Verifications.create(data)
-        nodemailer.sendMail({ email: data.email, content: { otp: 'OTP: ' + data.otp, user: data.email }, subject: 'One Time Password', template: 'otp' })
-        if (res) {
-            return res.status(200).send(
-                utils.responseSuccess({ request_id: verification.request_id })
-            )
-        }
-        return verification.otp
-    } catch (error) {
-        return res.status(422).send(utils.responseError(error.message))
-    }
-}
-
-/**
- * Method to prepare verification data
- * @param body: object
- *    Requird:
- *      email: string
- *      phone: string
- * @param callback - The method to be called after verification is done (Optional)
- **/
-const prepareVerificationData = async (body, callback = null) => {
-
-    if (body.hasOwnProperty('password'))
-        body.password = await hashPassword(body.password)
-
-    if (body.hasOwnProperty('user_identification')) {
-        const user = await getUser(body.user_identification, body.user_identification)
-        body.email = user.email
-        body.phone = user.phone
-    }
-
-    return {
-        request_id: uuid.v4(),
-        otp: generateOTP(),
-        email: body.email,
-        phone: body.phone,
-        used: 0,
-        call_back: JSON.stringify({
-            method: callback,
-            payload: {
-                ...body
-            }
-        })
-    }
-}
-
 const hashPassword = async (password) => {
     return await bcrypt.hash(password, 10)
 }
 
-
-/**
- * Method to generate OTP
- * @param length -Optional
- * @return OTP
- **/
-const generateOTP = (length = 4) => {
-    var digits = '0123456789'
-    let OTP = ''
-    for (let i = 0; i < length; i++) {
-        OTP += digits[Math.floor(Math.random() * 10)]
-    }
-    return OTP
-}
 
 /**
  * Method to generate JWT
@@ -807,7 +729,7 @@ const generateAgentId = (id) => {
     for (let i = 0; i < length; i++) {
         prefix += '0'
     }
-    return 'OB-' + prefix + id
+    return 'OBN-' + prefix + id
 }
 
 /**
@@ -1024,10 +946,6 @@ module.exports = {
     signin: loginRequest,
     
     // Original function names (deprecated)
-    createUserAfterOtpVerification,
-    resetPasswordAfterOtpVerification,
-    loginAfterOtpVerification,
-    resetPasswordRequest,
     createUserRequest,
     loginRequest,
     getUser,

@@ -13,18 +13,17 @@ http://localhost:3006
 
 ## 📋 Table of Contents
 1. [Signup](#signup)
-2. [Verify OTP](#verify-otp)
-3. [Login](#login)
-4. [Refresh Token](#refresh-token)
-5. [Logout](#logout)
-6. [Error Responses](#error-responses)
-7. [Testing Checklist](#testing-checklist)
+2. [Login](#login)
+3. [Refresh Token](#refresh-token)
+4. [Logout](#logout)
+5. [Error Responses](#error-responses)
+6. [Testing Checklist](#testing-checklist)
 
 ---
 
 ## Signup
 
-Create a new user account with role selection.
+Create a new user account with role selection. A JWT pair and user profile are returned directly (no OTP step).
 
 ### Endpoint
 ```
@@ -69,13 +68,20 @@ Content-Type: application/json
 }
 ```
 
-### Success Response (200)
+### Success Response (201)
 ```json
 {
   "success": true,
-  "message": "Verification request created",
   "data": {
-    "request_id": "550e8400-e29b-41d4-a716-446655440000"
+    "user": {
+      "id": 1,
+      "email": "customer@example.com",
+      "phone": "+2348100000001",
+      "role": "customer"
+    },
+    "active_quote_id": null,
+    "access_token": "<jwt>",
+    "refresh_token": "<jwt>"
   }
 }
 ```
@@ -110,71 +116,7 @@ curl -X POST http://localhost:3006/users/signup \
 
 ---
 
-## Verify OTP
-
-Verify the OTP sent to user email and get authentication tokens.
-
-### Endpoint
-```
-POST /verify/otp
-```
-
-### Headers
-```
-Content-Type: application/json
-```
-
-### Request Body
-```json
-{
-  "request_id": "550e8400-e29b-41d4-a716-446655440000",
-  "otp": "1234"
-}
-```
-
-### Success Response (200)
-```json
-{
-  "success": true,
-  "data": {
-    "user": {
-      "id": 1,
-      "email": "customer@example.com",
-      "phone": "+2348100000001",
-      "role": "customer"
-    },
-    "active_quote_id": null,
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwi...",
-    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwi..."
-  }
-}
-```
-
-### Error Response (401)
-```json
-{
-  "success": false,
-  "message": "Invalid OTP"
-}
-```
-
-### Notes
-- Save `access_token` for API authentication
-- Save `refresh_token` for token refresh
-- Save `user.role` for UI role-based rendering
-- OTP expires after a certain period (check env config)
-
-### cURL Example
-```bash
-curl -X POST http://localhost:3006/verify/otp \
-  -H "Content-Type: application/json" \
-  -d '{
-    "request_id": "550e8400-e29b-41d4-a716-446655440000",
-    "otp": "1234"
-  }'
-```
-
----
+<!-- OTP verification endpoints have been deprecated and removed. All signup/login calls now return tokens directly. -->
 
 ## Login
 
@@ -201,23 +143,23 @@ Content-Type: application/json
 
 **Note**: `user_identification` can be either email or phone number.
 
-### Response (Step 1 - OTP Required)
+### Success Response (200)
 ```json
 {
   "success": true,
-  "message": "Verification request created",
   "data": {
-    "request_id": "660e8400-e29b-41d4-a716-446655440001"
+    "user": {
+      "id": 1,
+      "email": "customer@example.com",
+      "phone": "+2348100000001",
+      "role": "customer"
+    },
+    "active_quote_id": null,
+    "access_token": "<jwt>",
+    "refresh_token": "<jwt>"
   }
 }
 ```
-
-### Then Verify OTP
-```json
-{
-  "request_id": "660e8400-e29b-41d4-a716-446655440001",
-  "otp": "1234"
-}
 ```
 
 ### Final Response (After OTP Verification)

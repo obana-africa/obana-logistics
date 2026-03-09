@@ -3,65 +3,28 @@ const express = require("express");
 const cors = require("cors");
 
 const usersRoute = require("./src/routes/users");
-const verificationRoute = require("./src/routes/verification");
 const requestsRoute = require("./src/routes/requests");
 const shipmentRoutes = require("./src/routes/shipments");
 const routesManagement = require("./src/routes/routes");
+const agentRoutes = require("./src/routes/agents");
 
 const PORT = process.env.PORT;
 const app = express();
 
 app.use(express.json());
 const http = require("http");
-const socketIo = require("socket.io");
+
 
 // Create HTTP server
 const server = http.createServer(app);
 
-// Socket.IO setup
-const io = socketIo(server, {
-	cors: {
-		origin: [
-			"http://localhost:3000",
-			"https://logistic.obana.africa",
-			"https://obana-logistics-psi.vercel.app",
-			"https://obana-logistics.vercel.app",
-		],
-		// methods: ["GET", "POST", "PUT", "DELETE"],
-		methods: ["*"],
-		allowedHeaders: ["*"],
-		credentials: true,
-	},
-});
 
-// Make io accessible to routes
-app.set("socketio", io);
-
-// Socket connection handling
-io.on("connection", (socket) => {
-	console.log("🔌 New client connected:", socket.id);
-
-	// Join room for specific order/shipment updates
-	socket.on("join_shipment", (shipmentId) => {
-		socket.join(`shipment_${shipmentId}`);
-		console.log(`Client ${socket.id} joined shipment_${shipmentId}`);
-	});
-
-	socket.on("join_order", (orderId) => {
-		socket.join(`order_${orderId}`);
-		console.log(`Client ${socket.id} joined order_${orderId}`);
-	});
-
-	socket.on("disconnect", () => {
-		console.log("🔌 Client disconnected:", socket.id);
-	});
-});
 
 // Session and Passport setup
 const session = require("express-session");
 const passport = require("./src/config/passport");
 app.use(
-	session({ secret: "tajiri_secret", resave: false, saveUninitialized: true })
+	session({ secret: "obana", resave: false, saveUninitialized: true })
 );
 app.use(passport.initialize());
 app.use(passport.session());
@@ -73,7 +36,7 @@ app.use(passport.session());
 const corsOptions = {
 	origin: [
 		"http://localhost:3000",
-		"https://logistic.obana.africa",
+		"https://logistics.obana.africa",
 		"https://obana-logistics-psi.vercel.app",
 		"https://obana-logistics.vercel.app",
 	],
@@ -105,7 +68,7 @@ const swaggerOptions = {
 				url: `http://localhost:${PORT}`,
 			},
 			{
-				url: `http://api.tajiri.xyz`,
+				url: `http://api.Obana.xyz`,
 			},
 		],
 	},
@@ -139,10 +102,10 @@ app.use((req, res, next) => {
 
 app.use("/shipments", shipmentRoutes);
 app.use("/users", usersRoute);
-app.use("/verify", verificationRoute);
 app.use("/requests", requestsRoute);
 app.use("/routes", routesManagement);
-
+app.use("/tenants", require("./src/routes/tenants"));
+app.use("/agents", agentRoutes);
 // app.listen(PORT, () => {
 //     console.log(`Obana is running on port ${PORT}`);
 // })

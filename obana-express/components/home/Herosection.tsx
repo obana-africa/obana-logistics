@@ -119,21 +119,19 @@ export default function HeroSection() {
 				</div>
 
 				<h1 className="text-4xl md:text-6xl font-bold text-white mb-6 leading-tight animate-fade-in-up">
-					Send and Receive
+					Move Goods from Europe to Africa
 					<br />
-					<span className="text-transparent bg-clip-text bg-linear-to-r from-amber-400 via-amber-300 to-yellow-400 transition-all duration-1000">
+					{/* <span className="text-transparent bg-clip-text bg-linear-to-r from-amber-400 via-amber-300 to-yellow-400 transition-all duration-1000">
 						{heroSlides[currentSlide].title}
 					</span>
 					<br />
 					<span className="text-4xl md:text-6xl">
 						to and from Anywhere in The world
-					</span>
+					</span> */}
 				</h1>
 
-				<p className="text-xl hidden md:block text-slate-300 max-w-3xl mx-auto mb-12 animate-fade-in delay-200">
-					The modern platform for shipping, tracking, and managing deliveries.
-					Join thousands of businesses and individuals who trust Obana for their
-					logistics needs.
+				<p className="text-4xl md:text-6xl hidden md:block text-slate-300 max-w-3xl mx-auto mb-12 animate-fade-in delay-200">
+					Fast, secure logistics built for African retailers and distributors.
 				</p>
 
 				{/* Tracking Input */}

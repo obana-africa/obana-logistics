@@ -31,7 +31,7 @@ const router = Router();
  *       example:
  *         name: Faszion
  *         slug: faszion
- *         base_url: http://fazsion.com/api
+ *         base_url: http://obana-logistics.com/api
  *         description: Fazsion API
  *         status: Enabled
  *         config: 
@@ -69,12 +69,102 @@ const router = Router();
 */
 router.post('/create', tenantController.createTenant)
 
+/**
+ * @swagger
+ * /tenants/register:
+ *   post:
+ *     summary: Register a new business tenant (onboarding)
+ *     tags: [TenantAPI]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - slug
+ *               - base_url
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: "Zoho CRM"
+ *               slug:
+ *                 type: string
+ *                 example: "zohocrm"
+ *               base_url:
+ *                 type: string
+ *                 example: "www.zohoapis.com/crm/v2"
+ *               description:
+ *                 type: string
+ *                 example: "Zoho CRM Integration"
+ *     responses:
+ *       '201':
+ *         description: Tenant registered successfully with API key
+ *       '400':
+ *         description: Invalid input or tenant already exists
+ */
+router.post('/register', tenantController.registerTenant)
+
+/**
+ * @swagger
+ * /tenants/{id}:
+ *   get:
+ *     summary: Get tenant details
+ *     tags: [TenantAPI]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       '200':
+ *         description: Tenant details
+ *       '404':
+ *         description: Tenant not found
+ */
+router.get('/:id', tenantController.getTenant)
+
+/**
+ * @swagger
+ * /tenants:
+ *   get:
+ *     summary: Get all tenants
+ *     tags: [TenantAPI]
+ *     responses:
+ *       '200':
+ *         description: List of all tenants
+ */
+router.get('', tenantController.getAllTenants)
+
+/**
+ * @swagger
+ * /tenants/{id}/regenerate-key:
+ *   post:
+ *     summary: Regenerate API key for a tenant
+ *     tags: [TenantAPI]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       '200':
+ *         description: New API key generated successfully
+ *       '404':
+ *         description: Tenant not found
+ */
+router.post('/:id/regenerate-key', tenantController.regenerateApiKey)
+router.post('/:id/regenerate-key', tenantController.regenerateApiKey)
+
 
 /**
 * @swagger
 *  /tenants/update:
 *  put:
-*    summary: Updtae Tenant
+*    summary: Update Tenant
 *    tags: [TenantAPI]
 *    requestBody:
 *       required: true

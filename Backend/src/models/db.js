@@ -39,7 +39,7 @@ const db = {}
 db.Sequelize = Sequelize
 db.sequelize = sequelize
 
-
+db.tenants = require('./tenantModel.js')(sequelize, DataTypes)
 db.users = require('./userModel.js')(sequelize, DataTypes)
 db.tokens = require('./tokenModel.js')(sequelize, DataTypes)
 db.roles = require('./roleModel.js')(sequelize, DataTypes)
@@ -58,7 +58,6 @@ db.shipment_tracking = require('./shipmentTrackingModel.js')(sequelize, DataType
 // db.driver_assignment = require('./driverAssignmentModel.js')(sequelize, DataTypes)
 db.shipment_items = require('./shipmentItemsModel.js')(sequelize, DataTypes)
 db.shippings = require('./shipmentsModel.js')(sequelize, DataTypes)
-db.verifications = require('./verificationModel.js')(sequelize, DataTypes)
 db.route_templates = require('./routeTemplateModel.js')(sequelize, DataTypes)
 // Sync database with force: false and alter: false to avoid enum conflicts
 const syncDatabase = async () => {

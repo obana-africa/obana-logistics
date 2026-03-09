@@ -82,7 +82,7 @@ const swaggerOptions = {
                 url: `http://localhost:${PORT}`
             },
             {
-                url: `http://api.tajiri.xyz`
+                url: `http://api.log.xyz`
             }
         ]
     },

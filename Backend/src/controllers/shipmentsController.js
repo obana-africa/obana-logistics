@@ -1,8 +1,8 @@
 const { Op } = require('sequelize');
 const crypto = require('crypto');
 const db = require('../models/db');
-const nodemailer = require('../mailer/nodemailer'); // hypothetical email module
-// Helper functions (not using 'this')
+const nodemailer = require('../mailer/nodemailer');
+
 const validateShipmentPayload = (payload) => {
     const errors = [];
 
@@ -51,7 +51,7 @@ const generateShipmentReference = (isInternal = true) => {
     const date = new Date();
     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
     const random = Math.random().toString(36).substring(2, 10).toUpperCase();
-    const prefix = isInternal ? 'OBANA' : 'EXT';
+    const prefix = isInternal ? 'OBN' : 'EXT';
     return `${prefix}-${dateStr}-${random}`;
 };
 
@@ -76,11 +76,11 @@ const calculateShipmentTotals = (items) => {
 };
 
 const getVehicleTypesForTransportMode = (transportMode) => {
-    // Map transport modes to vehicle types
+
     const modeToVehicles = {
         'road': ['car', 'van', 'truck', 'bike'],
-        'air': ['car', 'van'],  // Air requires vehicles to go to airport
-        'sea': ['van', 'truck']  // Sea requires larger vehicles for port delivery
+        'air': ['car', 'van'],  
+        'sea': ['van', 'truck']  
     };
     
     return modeToVehicles[transportMode] || ['car', 'bike', 'van', 'truck'];
@@ -89,20 +89,20 @@ const getVehicleTypesForTransportMode = (transportMode) => {
 const triggerPostCreationProcesses = async (shipmentId, isInternal) => {
     setImmediate(async () => {
         try {
-            // 1. Send confirmation email/SMS
+            
             await sendShipmentConfirmation(shipmentId);
             
-            // 2. Notify drivers if internal shipment
+            
             if (isInternal) {
                 await notifyPickupTeam(shipmentId);
             }
             
-            // 3. Update order status if linked
+         
             await updateOrderStatus(shipmentId);
             
         } catch (error) {
             console.error('Error in post-creation processes:', error);
-            // Log but don't fail the main request
+        
         }
     });
 };
@@ -117,7 +117,7 @@ const sendShipmentConfirmation = async (shipmentId) => {
         
         if (shipment && shipment.delivery_address?.contact_email) {
             console.log(`[NOTIFICATION] Sending confirmation email to ${shipment.delivery_address.contact_email} for shipment ${shipment.shipment_reference}`);
-            // TODO: Implement email service
+            
         }
     } catch (error) {
         console.error('Error sending confirmation:', error);
@@ -134,7 +134,7 @@ const notifyPickupTeam = async (shipmentId) => {
         
         if (shipment && shipment.carrier_type === 'internal') {
             console.log(`[DRIVER NOTIFICATION] New internal shipment ${shipment.shipment_reference} needs pickup from ${shipment.pickup_address?.line1}`);
-            // TODO: Notify drivers via push notification or SMS
+            
         }
     } catch (error) {
         console.error('Error notifying pickup team:', error);
@@ -143,8 +143,7 @@ const notifyPickupTeam = async (shipmentId) => {
 
 const updateOrderStatus = async (shipmentId) => {
     try {
-        // This would update your orders table if you have one
-        // For now, just log
+    
         console.log(`[ORDER SYNC] Would update order status for shipment ${shipmentId}`);
     } catch (error) {
         console.error('Error updating order status:', error);
@@ -208,7 +207,7 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
 
     } catch (error) {
         console.error('Error sending shipment email:', error);
-        // Don't throw error, just log it
+        
     }
 }
 
@@ -242,7 +241,7 @@ const sendStatusUpdateEmail = async (shipment, status, trackingEvent) => {
         for (const email of emails) {
             await nodemailer.sendMail({
                 email: email,
-                subject: `🔄 Shipment Update: ${shipment.shipment_reference} - ${status.toUpperCase()}`,
+                subject: ` Shipment Update: ${shipment.shipment_reference} - ${status.toUpperCase()}`,
                 content: emailData,
                 template: 'statusUpdate' // You'll need to create this template
             });
@@ -392,16 +391,63 @@ const shipmentController = {
     },
 
     /**
+     * Get Customer Dashboard Stats
+     */
+    getCustomerStats: async (req, res) => {
+        try {
+            const user_id = req.user.id;
+
+            if (!user_id) {
+                return res.status(401).json({ success: false, message: 'User not authenticated' });
+            }
+
+            const statusCounts = await db.shippings.findAll({
+                where: { user_id },
+                attributes: [
+                    'status',
+                    [db.sequelize.fn('COUNT', db.sequelize.col('id')), 'count']
+                ],
+                group: ['status']
+            });
+
+            const stats = { total: 0, pending: 0, in_transit: 0, delivered: 0, failed: 0, cancelled: 0, returned: 0 };
+
+            statusCounts.forEach(item => {
+                const status = item.dataValues.status;
+                const count = parseInt(item.dataValues.count, 10);
+                if (stats.hasOwnProperty(status)) {
+                    stats[status] = count;
+                }
+                stats.total += count;
+            });
+
+            return res.status(200).json({ success: true, data: stats });
+        } catch (error) {
+            console.error('Error fetching customer stats:', error);
+            return res.status(500).json({ success: false, message: 'Error fetching stats' });
+        }
+    },
+
+    /**
      * Main endpoint to create shipments
      * Handles both internal and external shipments
      */
     createShipment: async (req, res) => {
         try {
-            // Check if user is authenticated
-            if (!req.user || !req.user.id) {
+            // Support both user (JWT) and tenant (API key) authentication
+            let userId = null;
+            let tenantId = null;
+
+            if (req.user && req.user.id) {
+                // Authenticated via JWT
+                userId = req.user.id;
+            } else if (req.tenant && req.tenant.id) {
+                // Authenticated via API key
+                tenantId = req.tenant.id;
+            } else {
                 return res.status(403).json({
                     success: false,
-                    message: 'Authentication required - user not found in request'
+                    message: 'Authentication required'
                 });
             }
 
@@ -416,7 +462,6 @@ const shipmentController = {
                     errors: validation.errors
                 });
             }
-            let user = req.user;
             
             const transaction = await db.sequelize.transaction();
             
@@ -457,19 +502,20 @@ const shipmentController = {
 
                 const pickupAddress = await db.addresses.create(pickupAddressData, { transaction });
 
-                // 3. Determine carrier type
+
                 const isInternal = payload.carrier_slug === 'obana' || 
                                  (payload.dispatcher && payload.dispatcher.carrier_slug === 'obana');
                 
-                // 4. Generate shipment reference
+                
                 const shipmentReference = generateShipmentReference(isInternal);
                 
-                // 5. Calculate total weight and value
+                
                 const { totalWeight, totalValue, itemCount } = calculateShipmentTotals(payload.items);
 
-                // 6. Create shipment
+                
                 const shipment = await db.shippings.create({
-                    user_id: user.id,
+                    user_id: userId,
+                    tenant_id: tenantId,
                     shipment_reference: shipmentReference,
                     order_reference: payload.order_id || `ORDER-${Date.now()}`,
                     vendor_name: payload.vendor_name || 'Unknown Vendor',
@@ -505,10 +551,9 @@ const shipmentController = {
                     notes: payload.notes || ''
                 }, { transaction });
 
-                // 6.5 Auto-assign 
+                
                     try {
-                        // Find nearest/eligible Agent based on pickup address
-                        // Logic Sugs
+          
                         const availableAgent = await db.agents.findOne({
                             where: {
                                 status: 'active',
@@ -927,6 +972,14 @@ getAllShipments: async (req, res) => {
                     success: false,
                     message: 'Shipment not found'
                 });
+            }
+
+            // if the requester is an agent, enforce ownership
+            if (req.user && req.user.role === 'agent') {
+                const agent = await db.agents.findOne({ where: { user_id: req.user.id } });
+                if (!agent || shipment.agent_id !== agent.id) {
+                    return res.status(403).json({ success: false, message: 'Unauthorized to update this shipment' });
+                }
             }
 
             // Update shipment status

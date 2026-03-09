@@ -22,7 +22,13 @@ module.exports = (sequelize, DataTypes) => {
         
         user_id: {
             type: DataTypes.STRING(50),
-            allowNull: false
+            allowNull: true
+        },
+
+        tenant_id: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            comment: 'Tenant ID for API-based shipment creation'
         },
         
         

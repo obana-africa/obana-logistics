@@ -25,7 +25,7 @@ Quick overview
 }
 ```
 
-Response: success message; server creates a verification record and sends OTP. Then call `/verify/otp`.
+Response: success message with user created. Tokens returned directly; no OTP step required.
 
 1.2 Login (request OTP)
 - POST /users/login
@@ -35,10 +35,9 @@ Response: success message; server creates a verification record and sends OTP. T
 { "user_identification": "user@example.com", "password": "Password@1" }
 ```
 
-Response: success and OTP sent (dev: OTP visible via GET /verify/otp?email=...)
+Response: success and tokens provided directly in response.
 
 1.3 Verify OTP
-- POST /verify/otp
 - Body:
 
 ```json
