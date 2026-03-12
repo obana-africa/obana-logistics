@@ -190,6 +190,20 @@ router.post('/login', userController.signin)
 
 /**
  * @swagger
+ * /users/change-password:
+ *   post:
+ *     summary: Change user password
+ *     tags: [UsersAPI]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
+ */
+router.post('/change-password', auth.authenticateToken, userController.resetPassword)
+
+/**
+ * @swagger
  * /users/token:
  *   post:
  *     summary: Generate a new token for a given user

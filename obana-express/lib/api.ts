@@ -141,6 +141,14 @@ class ApiClient {
     return response.data;
   }
 
+  async changePassword(oldPassword: string, newPassword: string) {
+    const response = await this.client.post<ApiResponse>('/users/change-password', {
+      old_password: oldPassword,
+      password: newPassword,
+    });
+    return response.data;
+  }
+
   async logout(refresh_token?: string | null) {
     try {
       await this.client.delete('/users/logout', {

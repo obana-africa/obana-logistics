@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import React, { useState } from 'react';
@@ -5,11 +6,16 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { Card, Button, Input, Alert } from '@/components/ui';
 import { useAuth } from '@/lib/authContext';
 import { apiClient } from '@/lib/api';
+import { Eye, EyeOff } from 'lucide-react';
 
 export default function CustomerProfilePage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ old_password: '', password: '', confirm_password: '' });
+  const [showPasswords, setShowPasswords] = useState({ old: false, new: false, confirm: false });
   const [formData, setFormData] = useState({
     first_name: user?.attributes?.first_name || '',
     last_name: user?.attributes?.last_name || '',
@@ -29,6 +35,28 @@ export default function CustomerProfilePage() {
       setMessage('Error updating profile');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordForm.password !== passwordForm.confirm_password) {
+      setMessage('Error: New passwords do not match');
+      return;
+    }
+    
+    setPasswordLoading(true);
+    try {
+      let response = await apiClient.changePassword(passwordForm.old_password, passwordForm.password);
+
+      setMessage('Password changed successfully');
+      setShowPasswordModal(false);
+      setPasswordForm({ old_password: '', password: '', confirm_password: '' });
+      setShowPasswords({ old: false, new: false, confirm: false });
+    } catch (err: any) {
+      setMessage('Error: ' + (err.response?.data?.message || 'Failed to change password'));
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -89,13 +117,94 @@ export default function CustomerProfilePage() {
                 <p className="font-medium text-gray-900">Password</p>
                 <p className="text-sm text-gray-600">Change your password</p>
               </div>
-              <Button variant="secondary" size="sm">
+              <Button variant="secondary" size="sm" onClick={() => setShowPasswordModal(true)}>
                 Change
               </Button>
             </div>
 
           </div>
         </Card>
+
+        {/* Password Change Modal */}
+        {showPasswordModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <Card className="w-full max-w-md" title="Change Password">
+                   {message && (
+          <Alert type={message.includes('Error') ? 'error' : 'success'} className="mb-6">
+            {message}
+          </Alert>
+        )}
+
+              <form onSubmit={handlePasswordChange} className="space-y-4">
+                <div className="relative">
+                  <Input
+                    label="Current Password"
+                    type={showPasswords.old ? 'text' : 'password'}
+                    value={passwordForm.old_password}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, old_password: e.target.value })}
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords(p => ({ ...p, old: !p.old }))}
+                    className="absolute right-3 top-10 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  >
+                    {showPasswords.old ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+                <div className="relative">
+                  <Input
+                    label="New Password"
+                    type={showPasswords.new ? 'text' : 'password'}
+                    value={passwordForm.password}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, password: e.target.value })}
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords(p => ({ ...p, new: !p.new }))}
+                    className="absolute right-3 top-10 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  >
+                    {showPasswords.new ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+                <div className="relative">
+                  <Input
+                    label="Confirm New Password"
+                    type={showPasswords.confirm ? 'text' : 'password'}
+                    value={passwordForm.confirm_password}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords(p => ({ ...p, confirm: !p.confirm }))}
+                    className="absolute right-3 top-10 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  >
+                    {showPasswords.confirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+                
+                <div className="flex gap-3 pt-2">
+                  <Button 
+                    type="button" 
+                    variant="secondary" 
+                    fullWidth 
+                    onClick={() => setShowPasswordModal(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" variant="primary" fullWidth loading={passwordLoading}>
+                    Update Password
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

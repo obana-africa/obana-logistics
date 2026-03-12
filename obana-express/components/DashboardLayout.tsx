@@ -18,8 +18,8 @@ const navigationByRole = {
     { name: 'Dashboard', href: '/dashboard/customer', icon: Home },
     { name: 'Create Shipment', href: '/dashboard/customer/shipments/new', icon: Home },
     { name: 'My Shipments', href: '/dashboard/customer/shipments', icon: Home },
-    { name: 'Tracking', href: '/dashboard/customer/tracking', icon: Home },
-    { name: 'Profile', href: '/dashboard/customer/profile', icon: Settings },
+    // { name: 'Tracking', href: '/dashboard/customer/tracking', icon: Home },
+    { name: 'settings', href: '/dashboard/customer/profile', icon: Settings },
   ],
   driver: [
     { name: 'Dashboard', href: '/dashboard/driver', icon: Home },

@@ -23,9 +23,9 @@ const sendMail = async (payload) => {
   // create reusable transporter object using the default SMTP transport
   let transporter = nodemailer.createTransport({
     //Service should be removed if you are using the SMTP settings
-    // service: "gmail",
+    service: "gmail",
     // host: "smtp.ethereal.email",
-    host: "smtppro.zoho.com",
+    // host: "smtppro.zoho.com",
     port: 465,
     secure: true,
     //secure: false, // true for 465, false for other ports

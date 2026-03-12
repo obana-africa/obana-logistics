@@ -256,10 +256,19 @@ const resetPasswordAfterOtpVerification = async (payload, req, res) => {
 const resetPassword = async (req, res) => {
     let user = req.user
     try {
+        
+        if (req.body.old_password) {
+            const dbUser = await User.findByPk(user.id);
+            const isMatch = await bcrypt.compare(req.body.old_password, dbUser.password);
+            if (!isMatch) {
+                return res.status(400).send(utils.responseError('Current password is incorrect'));
+            }
+        }
+
         const response = await resetPasswordAfterOtpVerification(Object.assign({ email: user.email, phone: user.phone }, req.body), req, res)
         return res.status(200).send(utils.responseSuccess(response))
     } catch (error) {
-        res.status().send(utils.responseError(error.message))
+        return res.status(500).send(utils.responseError(error.message))
     }
 }
 
