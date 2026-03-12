@@ -66,7 +66,8 @@ const calculateShipmentTotals = (items) => {
             const value = parseFloat(item.total_price) || parseFloat(item.value) || parseFloat(item.price) || 0;
             const quantity = parseInt(item.quantity) || 1;
             
-            totalWeight += weight * quantity;
+            totalWeight += weight;
+            // totalWeight += weight * quantity;
             totalValue += value;
             itemCount += quantity;
         });
@@ -434,7 +435,7 @@ const shipmentController = {
      */
     createShipment: async (req, res) => {
         try {
-            // Support both user (JWT) and tenant (API key) authentication
+            
             let userId = null;
             let tenantId = null;
 
@@ -466,7 +467,7 @@ const shipmentController = {
             const transaction = await db.sequelize.transaction();
             
             try {
-                // 1. Create delivery address
+                
                 const deliveryAddress = await db.addresses.create({
                     address_type: 'delivery',
                     name: `${payload.delivery_address.first_name || ''} ${payload.delivery_address.last_name || ''}`.trim(),
@@ -483,7 +484,7 @@ const shipmentController = {
                     metadata: payload.delivery_address.metadata || {}
                 }, { transaction });
 
-                // 2. Create pickup address - from user form
+                
                 const pickupAddressData = {
                     address_type: 'pickup',
                     name: payload.pickup_address.contact_name || 'Vendor',
@@ -748,6 +749,18 @@ getAllShipments: async (req, res) => {
                     attributes: ['driver_code', 'user_id'] 
                 },
                 {
+                    model: db.agents,
+                    as: 'agent',
+                    attributes: ['agent_code'],
+                    required: false,
+                    include: [{
+                        model: db.users,
+                        as: 'user',
+                        attributes: ['email'],
+                        required: false
+                    }]
+                },
+                {
                     model: db.shipment_tracking,
                     as: 'tracking_events',
                     attributes: ['status', 'createdAt'],
@@ -776,10 +789,10 @@ getAllShipments: async (req, res) => {
             order,
             limit: parseInt(limit),
             offset: offset,
-            distinct: true // Important for count with includes
+            distinct: true 
         });
 
-        // Calculate statistics
+        
         const statistics = {
             total: shipments.count,
             by_status: {},
@@ -787,7 +800,7 @@ getAllShipments: async (req, res) => {
             by_day: {}
         };
 
-        // Get status counts
+        
         const statusCounts = await db.shippings.findAll({
             attributes: [
                 'status',
@@ -800,7 +813,7 @@ getAllShipments: async (req, res) => {
             statistics.by_status[item.status] = parseInt(item.dataValues.count);
         });
 
-        // Get carrier type counts
+        
         const carrierCounts = await db.shippings.findAll({
             attributes: [
                 'carrier_type',
@@ -813,7 +826,7 @@ getAllShipments: async (req, res) => {
             statistics.by_carrier[item.carrier_type] = parseInt(item.dataValues.count);
         });
 
-        // Get daily counts for last 7 days
+        
         const last7Days = new Date();
         last7Days.setDate(last7Days.getDate() - 7);
 
@@ -870,6 +883,7 @@ getAllShipments: async (req, res) => {
      */
     getShipment: async (req, res) => {
         try {
+        const userController = require('./userController');
         const { shipment_reference } = req.params;
             const user_id = String(req.user.id);
             const user_role = req.user.role;
@@ -897,7 +911,7 @@ getAllShipments: async (req, res) => {
                 } else {
                 where.user_id = user_id;
             }
-            // explain the  above  code below:
+            
 
             const shipment = await db.shippings.findOne({
                 where,
@@ -920,6 +934,17 @@ getAllShipments: async (req, res) => {
                         order: [['createdAt', 'DESC']]
                     },
                     {
+                        model: db.agents,
+                        as: 'agent',
+                        required: false,
+                        include: [{
+                            model: db.users,
+                            as: 'user',
+                            attributes: { exclude: ['password'] },
+                            required: false
+                        }]
+                    },
+                    {
                         model: db.drivers,
                         as: 'driver',
                         required: false 
@@ -935,9 +960,18 @@ getAllShipments: async (req, res) => {
                 });
             }
 
+            const plainShipment = shipment.get({ plain: true });
+
+            if (plainShipment.agent && plainShipment.agent.user) {
+                const attributes = await userController.getUserAttributes(plainShipment.agent.user.id);
+                if (attributes) {
+                    plainShipment.agent.user.attributes = attributes;
+                }
+            }
+
             return res.status(200).json({
                 success: true,
-                data: shipment
+                data: plainShipment
             });
         } catch (error) {
             console.error('Error fetching shipment:', error);

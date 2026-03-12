@@ -42,7 +42,7 @@ router.get('/track/:shipment_reference', authenticateRequest, controller.getShip
     
     router.get('/admin/stats', auth.authenticateToken, auth.verifyRole(['admin']), controller.getAdminStats);
     router.get('/agent/stats', auth.authenticateToken, auth.verifyRole(['agent']), controller.getAgentStats);
-    router.get('/customer/stats', auth.authenticateToken, auth.verifyRole(['customer']), controller.getCustomerStats);
+    router.get('/customer/stats', auth.authenticateToken, auth.verifyRole(['customer', 'admin']), controller.getCustomerStats);
     router.get('', auth.authenticateToken, auth.verifyRole(['admin']), controller.getAllShipments);
     router.delete('/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin']), controller.deleteShipment);
     

@@ -130,6 +130,7 @@ export default function AdminShipmentsPage() {
                     <tr>
                       <th className="px-6 py-3">Reference</th>
                       <th className="px-6 py-3">Vendor</th>
+                      <th className="px-6 py-3">Agent</th>
                       <th className="px-6 py-3">Route</th>
                       <th className="px-6 py-3">Status</th>
                       <th className="px-6 py-3">Date</th>
@@ -147,6 +148,16 @@ export default function AdminShipmentsPage() {
                           </td>
                           <td className="px-6 py-4">
                             {shipment.vendor_name}
+                          </td>
+                          <td className="px-6 py-4">
+                            {shipment.agent ? (
+                              <div>
+                                <div className="font-medium text-gray-900">{shipment.agent.agent_code}</div>
+                                <div className="text-xs text-gray-500">{shipment.agent.user?.email}</div>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 text-xs">Unassigned</span>
+                            )}
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex flex-col">
@@ -185,7 +196,7 @@ export default function AdminShipmentsPage() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                        <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                           No shipments found matching your criteria
                         </td>
                       </tr>

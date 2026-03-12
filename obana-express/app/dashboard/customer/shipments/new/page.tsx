@@ -53,15 +53,15 @@ export default function CreateShipmentPage() {
   });
 
   const transportModes = [
-    { value: 'road', label: '🚚 Road Transport' },
-    { value: 'air', label: '✈️ Air Transport' },
-    { value: 'sea', label: '🚢 Sea Transport' },
+    { value: 'road', label: 'Road Transport' },
+    { value: 'air', label: 'Air Transport' },
+    { value: 'sea', label: 'Sea Transport' },
   ];
 
   const serviceLevels = [
-    { value: 'Standard', label: '📦 Standard' },
-    { value: 'Express', label: '⚡ Express' },
-    { value: 'Economy', label: '🐢 Economy' },
+    { value: 'Standard', label: 'Standard' },
+    { value: 'Express', label: 'Express' },
+    { value: 'Economy', label: 'Economy' },
   ];
 
   const showError = (message: string) => {
@@ -173,7 +173,7 @@ export default function CreateShipmentPage() {
           quantity: parseInt(item.quantity),
           weight: parseFloat(item.weight || '0'),
           price: parseFloat(item.price),
-          total_price: parseFloat(item.price) * parseInt(item.quantity),
+          total_price: parseFloat(item.price) ,
         })),
         transport_mode: formData.transport_mode,
         service_level: formData.service_level,

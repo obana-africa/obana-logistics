@@ -177,7 +177,7 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
                 Shipment Details
               </h3>
               <div className="space-y-2 text-sm">
-                <p className="flex justify-between"><span><Tag className="inline w-4 h-4 mr-1" />Order Ref:</span> <span className="font-medium">{shipment.order_reference}</span></p>
+                <p className="flex justify-between"><span><Tag className="inline w-4 h-4 mr-1" />Shipment Ref:</span> <span className="font-medium">{shipment.shipment_reference}</span></p>
                 <p className="flex justify-between"><span><Calendar className="inline w-4 h-4 mr-1" />Created:</span> <span className="font-medium">{new Date(shipment.createdAt).toLocaleDateString()}</span></p>
                 <p className="flex justify-between"><span><Weight className="inline w-4 h-4 mr-1" />Total Weight:</span> <span className="font-medium">{shipment.total_weight} kg</span></p>
                 <p className="flex justify-between"><span><Package className="inline w-4 h-4 mr-1" />Total Items:</span> <span className="font-medium">{shipment.total_items}</span></p>
@@ -239,12 +239,12 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
                   </li>
                 ))}
               </ul>
-              <div className="border-t border-gray-200 mt-4 pt-4 text-sm">
+              {/* <div className="border-t border-gray-200 mt-4 pt-4 text-sm">
                 <p className="flex justify-between font-semibold">
                   <span>Total Product Value</span>
                   <span>{new Intl.NumberFormat('en-NG', { style: 'currency', currency: shipment.currency }).format(parseFloat(shipment.product_value))}</span>
                 </p>
-              </div>
+              </div> */}
             </Card>
           </div>
         </div>
