@@ -191,67 +191,26 @@ export default function DocsPage() {
 					<Section id="authentication" title="2. Authentication">
 						<div className="space-y-4">
 							<p className="text-gray-700">
-								All API requests must include your API key in the{" "}
+								All API requests must be authenticated by including your API key in the{" "}
 								<code className="bg-slate-100 px-2 py-1 rounded text-sm">
-									Authoriation
+									Authorization
 								</code>{" "}
 								header.
 							</p>
-
+							<p className="text-gray-700">
+								The key should be prefixed with <code className="bg-slate-100 px-2 py-1 rounded text-sm">Bearer </code>.
+							</p>
 							<CodeBlock
-								code={`curl -X POST ${process.env.NEXT_PUBLIC_API_URL}/shipments \\
-  -H "Authoriation: Bearer obana_your_api_key_here" \\
-  -H "Content-Type: application/json" \\
-  -d '{ "pickup_address": {...} }'`}
-								language="bash"
+								code={`Authorization: Bearer obana_your_api_key_here`}
+								language="http"
 								id="auth-example"
 							/>
-
-							<div className="space-y-3">
-								<h3 className="font-semibold text-gray-900">
-									Node.js Example
-								</h3>
-								<CodeBlock
-									code={`const axios = require('axios');
-
-const apiKey = 'Bearer obana_your_api_key_here';
-const client = axios.create({
-  baseURL: ${process.env.NEXT_PUBLIC_API_URL},
-  'Authorization': Bearer apiKey,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
-
-// Use client for all requests
-const response = await client.post('/shipments', { /* ... */ });`}
-									language="javascript"
-									id="node-example"
-								/>
-							</div>
-
-							<div className="space-y-3">
-								<h3 className="font-semibold text-gray-900">
-									Python Example
-								</h3>
-								<CodeBlock
-									code={`import requests
-
-api_key = 'Bearer obana_your_api_key_here'
-headers = {
-    'Authoriation': api_key,
-    'Content-Type': 'application/json'
-}
-
-response = requests.post(
-    '${process.env.NEXT_PUBLIC_API_URL}/shipments',
-    json={...},
-    headers=headers
-)`}
-									language="python"
-									id="python-example"
-								/>
-							</div>
+							<p className="text-sm text-gray-600">
+								You can get your API key by registering on the{" "}
+								<Link href="/onboarding/business" className="text-blue-600 hover:underline">
+									business onboarding page
+								</Link>.
+							</p>
 						</div>
 					</Section>
 
@@ -281,7 +240,7 @@ response = requests.post(
 									description="Create a new shipment"
 								/>
 
-								<h4 className="font-semibold text-gray-900 mt-4 mb-2">
+								<h4 className="font-medium text-gray-800 mt-4 mb-2">
 									Request Body
 								</h4>
 								<CodeBlock
@@ -322,7 +281,7 @@ response = requests.post(
 									id="create-shipment-request"
 								/>
 
-								<h4 className="font-semibold text-gray-900 mt-4 mb-2">
+								<h4 className="font-medium text-gray-800 mt-4 mb-2">
 									Response
 								</h4>
 								<CodeBlock
@@ -341,6 +300,63 @@ response = requests.post(
 									language="json"
 									id="create-shipment-response"
 								/>
+
+								<h4 className="font-medium text-gray-800 mt-6 mb-2">
+									Example Requests
+								</h4>
+								<h5 className="font-semibold text-gray-700 text-sm">cURL</h5>
+								<CodeBlock
+									code={`curl -X POST ${process.env.NEXT_PUBLIC_API_URL}/shipments \\
+  -H "Authorization: Bearer obana_your_api_key_here" \\
+  -H "Content-Type: application/json" \\
+  -d @- <<'EOF'
+{
+  "pickup_address": { ... },
+  "delivery_address": { ... },
+  "items": [ ... ],
+  "transport_mode": "road",
+  "service_level": "Standard"
+}
+EOF`}
+									language="bash"
+									id="curl-create-shipment"
+								/>
+
+								<h5 className="font-semibold text-gray-700 text-sm mt-4">Node.js (Axios)</h5>
+								<CodeBlock
+									code={`const axios = require('axios');
+
+const apiKey = 'obana_your_api_key_here';
+const shipmentData = { /* ... your shipment data ... */ };
+
+axios.post('${process.env.NEXT_PUBLIC_API_URL}/shipments', shipmentData, {
+  headers: {
+    'Authorization': \`Bearer \${apiKey}\`,
+    'Content-Type': 'application/json'
+  }
+}).then(response => {
+  console.log(response.data);
+}).catch(error => {
+  console.error(error.response.data);
+});`}
+									language="javascript"
+									id="node-example"
+								/>
+
+								<h5 className="font-semibold text-gray-700 text-sm mt-4">Python (requests)</h5>
+								<CodeBlock
+									code={`import requests
+
+api_key = 'obana_your_api_key_here'
+shipment_data = { ... } # Your shipment data
+
+headers = {'Authorization': f'Bearer {api_key}'}
+response = requests.post('${process.env.NEXT_PUBLIC_API_URL}/shipments', json=shipment_data, headers=headers)
+
+print(response.json())`}
+									language="python"
+									id="python-example"
+								/>
 							</div>
 
 							<div>
@@ -353,12 +369,12 @@ response = requests.post(
 									description="Get details of a specific shipment"
 								/>
 
-								<h4 className="font-semibold text-gray-900 mt-4 mb-2">
+								<h4 className="font-medium text-gray-800 mt-4 mb-2">
 									Example Request
 								</h4>
 								<CodeBlock
 									code={`curl -X GET ${process.env.NEXT_PUBLIC_API_URL}/shipments/track/OBANA-20260303-ABC123 \\
-  -H "Authoriation: Bearer obana_your_api_key_here"`}
+  -H "Authorization: Bearer obana_your_api_key_here"`}
 									language="bash"
 									id="get-shipment-request"
 								/>
@@ -447,7 +463,7 @@ response = requests.post(
 					</Section>
 
 					{/* Rate Limiting */}
-					<Section id="rate-limiting" title="6. Rate Limiting">
+					{/* <Section id="rate-limiting" title="6. Rate Limiting">
 						<div className="space-y-4">
 							<p className="text-gray-700">
 								Current rate limits (subject to change):
@@ -468,7 +484,7 @@ response = requests.post(
 								Requests) response. Wait before retrying.
 							</p>
 						</div>
-					</Section>
+					</Section> */}
 
 					{/* Support */}
 					<Section id="support" title="7. Support">
