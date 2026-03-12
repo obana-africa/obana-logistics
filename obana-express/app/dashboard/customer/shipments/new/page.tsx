@@ -682,74 +682,108 @@ export default function CreateShipmentPage() {
 
         {/* Step 2: Route Match */}
         {step === 'match' && matchedRoute && (
-          <Card>
-            <div className="text-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900">Your Shipping Quote</h2>
-              <p className="text-gray-600 mt-1">Based on your selected route and service</p>
-            </div>
+					<Card>
+						<div className="text-center mb-6">
+							<h2 className="text-2xl font-bold text-gray-900">
+								Your Shipping Quote
+							</h2>
+							<p className="text-gray-600 mt-1">
+								Based on your selected route and service
+							</p>
+						</div>
 
-            <div className="bg-linear-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-8 space-y-6">
-              <div className="flex items-center justify-between pb-4 border-b border-blue-200">
-                <div className="flex items-center gap-3">
-                  <MapPin className="h-6 w-6 text-blue-600" />
-                  <div>
-                    <p className="text-sm text-gray-600">From</p>
-                    <p className="font-semibold text-gray-900">{formData.pickup_address.city}, {formData.pickup_address.state}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-right">
-                    <p className="text-sm text-gray-600">To</p>
-                    <p className="font-semibold text-gray-900">{formData.delivery_address.city}, {formData.delivery_address.state}</p>
-                  </div>
-                  <MapPin className="h-6 w-6 text-green-600" />
-                </div>
-              </div>
+						<div className="bg-linear-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-4 sm:p-6 md:p-8 space-y-6">
+							<div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-6 pb-4 border-b border-blue-200">
+								<div className="flex items-center gap-3 text-center md:text-left">
+									<MapPin className="h-6 w-6 text-blue-600 shrink-0" />
+									<div>
+										<p className="text-sm text-gray-600">From</p>
+										<p className="font-semibold text-gray-900">
+											{formData.pickup_address.city},{" "}
+											{formData.pickup_address.state}
+										</p>
+									</div>
+								</div>
+								<div className="w-full md:w-auto h-px md:h-16 border-t-2 md:border-t-0 md:border-l-2 border-dashed border-blue-300" />
+								<div className="flex items-center gap-3 text-center md:text-left">
+									<MapPin className="h-6 w-6 text-green-600 shrink-0" />
+									<div>
+										<p className="text-sm text-gray-600">To</p>
+										<p className="font-semibold text-gray-900">
+											{formData.delivery_address.city},{" "}
+											{formData.delivery_address.state}
+										</p>
+									</div>
+								</div>
+							</div>
 
-              <div className="grid grid-cols-2 gap-6">
-                <div className="bg-white rounded-lg p-5 shadow-sm">
-                  <p className="text-sm text-gray-600 mb-1">Shipping Cost</p>
-                  <p className="text-3xl font-bold text-green-600">
-                    ₦{matchedRoute.match.price?.toLocaleString() || 'N/A'}
-                  </p>
-                </div>
-                <div className="bg-white rounded-lg p-5 shadow-sm">
-                  <p className="text-sm text-gray-600 mb-1">Estimated Delivery</p>
-                  <p className="text-3xl font-bold text-blue-600">
-                    {matchedRoute.match.eta || 'N/A'} days
-                  </p>
-                </div>
-              </div>
+							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+								<div className="bg-white rounded-lg p-4 sm:p-5 shadow-sm text-center">
+									<p className="text-sm text-gray-600 mb-1">Shipping Cost</p>
+									<p className="text-2xl sm:text-3xl font-bold text-green-600">
+										₦{matchedRoute.match.price?.toLocaleString() || "N/A"}
+									</p>
+								</div>
+								<div className="bg-white rounded-lg p-4 sm:p-5 shadow-sm text-center">
+									<p className="text-sm text-gray-600 mb-1">
+										Estimated Delivery
+									</p>
+									<p className="text-2xl sm:text-3xl font-bold text-blue-600">
+										{matchedRoute.match.eta || "N/A"} days
+									</p>
+								</div>
+							</div>
 
-              <div className="bg-white/80 rounded-lg p-4 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Transport Mode:</span>
-                  <span className="font-semibold capitalize">{formData.transport_mode}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Service Level:</span>
-                  <span className="font-semibold">{formData.service_level}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Total Weight:</span>
-                  <span className="font-semibold">
-                    {formData.items.reduce((sum, item) => 
-                      sum + ((parseFloat(item.weight) || 0) * (parseInt(item.quantity) || 1)), 0
-                    ).toFixed(2)} kg
-                  </span>
-                </div>
-              </div>
+							<div className="bg-white/80 rounded-lg p-4 space-y-3 text-sm">
+								<div className="flex justify-between items-center">
+									<span className="text-gray-600 flex items-center gap-2">
+										<Truck className="w-4 h-4" /> Transport Mode:
+									</span>
+									<span className="font-semibold capitalize">
+										{formData.transport_mode}
+									</span>
+								</div>
+								<div className="flex justify-between items-center">
+									<span className="text-gray-600 flex items-center gap-2">
+										<Clock className="w-4 h-4" /> Service Level:
+									</span>
+									<span className="font-semibold">{formData.service_level}</span>
+								</div>
+								<div className="flex justify-between items-center">
+									<span className="text-gray-600 flex items-center gap-2">
+										<Package className="w-4 h-4" /> Total Weight:
+									</span>
+									<span className="font-semibold">
+										{formData.items
+											.reduce(
+												(sum, item) => sum + (parseFloat(item.weight) || 0),
+												0
+											)
+											.toFixed(2)}{" "}
+										kg
+									</span>
+								</div>
+							</div>
 
-              <div className="space-y-3 pt-4">
-                <Button onClick={() => setStep('confirm')} fullWidth variant="primary" className="py-3!">
-                  Continue to Confirmation
-                </Button>
-                <Button onClick={() => setStep('details')} fullWidth variant="secondary">
-                  ← Back to Details
-                </Button>
-              </div>
-            </div>
-          </Card>
+							<div className="space-y-3 pt-4">
+								<Button
+									onClick={() => setStep("confirm")}
+									fullWidth
+									variant="primary"
+									className="py-3!"
+								>
+									Continue to Confirmation
+								</Button>
+								<Button
+									onClick={() => setStep("details")}
+									fullWidth
+									variant="secondary"
+								>
+									← Back to Details
+								</Button>
+							</div>
+						</div>
+					</Card>
         )}
 
         {/* Step 3: Confirmation */}
@@ -848,7 +882,7 @@ export default function CreateShipmentPage() {
                           ₦{parseFloat(item.price || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })} each
                         </p>
                         <p className="font-bold text-gray-900 mt-1">
-                          ₦{(parseFloat(item.price || '0') * parseInt(item.quantity)).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                          ₦{(parseFloat(item.price || '0'))}
                         </p>
                       </div>
                     </div>

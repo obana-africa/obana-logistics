@@ -94,15 +94,6 @@ export default function CustomerProfilePage() {
               </Button>
             </div>
 
-            <div className="flex items-center justify-between py-3">
-              <div>
-                <p className="font-medium text-gray-900">Two-Factor Authentication</p>
-                <p className="text-sm text-gray-600">Secure your account with 2FA</p>
-              </div>
-              <Button variant="secondary" size="sm">
-                Enable
-              </Button>
-            </div>
           </div>
         </Card>
       </div>
