@@ -48,7 +48,7 @@ router.post('/google_token/callback', async (req, res) => {
     let user = null;
 
     if (user_check) {
-      // Use the same logic as loginAfterOtpVerification
+      // Use the same logic as loginHelper
       user = await getUser(user_check.email, null, true, req, res, user_check.id);
     }
 

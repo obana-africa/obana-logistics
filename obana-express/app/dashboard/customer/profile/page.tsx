@@ -6,7 +6,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { Card, Button, Input, Alert } from '@/components/ui';
 import { useAuth } from '@/lib/authContext';
 import { apiClient } from '@/lib/api';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Copy, Check } from 'lucide-react';
 
 export default function CustomerProfilePage() {
   const { user } = useAuth();
@@ -16,6 +16,7 @@ export default function CustomerProfilePage() {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ old_password: '', password: '', confirm_password: '' });
   const [showPasswords, setShowPasswords] = useState({ old: false, new: false, confirm: false });
+  const [copied, setCopied] = useState(false);
   const [formData, setFormData] = useState({
     first_name: user?.attributes?.first_name || '',
     last_name: user?.attributes?.last_name || '',
@@ -57,6 +58,14 @@ export default function CustomerProfilePage() {
       setMessage('Error: ' + (err.response?.data?.message || 'Failed to change password'));
     } finally {
       setPasswordLoading(false);
+    }
+  };
+
+  const copyApiKey = () => {
+    if (user?.attributes?.api_key) {
+      navigator.clipboard.writeText(user.attributes.api_key);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -109,6 +118,25 @@ export default function CustomerProfilePage() {
             </Button>
           </form>
         </Card>
+
+        {user?.attributes?.api_key && (
+          <Card title="Developer Settings" description="Your API Key for integration" className="mt-6">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                <div className="flex gap-2">
+                  <div className="flex-1 bg-slate-100 p-2 rounded border border-gray-200 font-mono text-sm overflow-x-auto">
+                     {user.attributes.api_key}
+                  </div>
+                  <Button variant="secondary" onClick={copyApiKey} className="shrink-0">
+                    {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" values='copy'/>}
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">Use this key to authenticate your API requests. Keep it secret!</p>
+              </div>
+            </div>
+          </Card>
+        )}
 
         <Card title="Account Settings" description="Manage your account security" className="mt-6">
           <div className="space-y-4">

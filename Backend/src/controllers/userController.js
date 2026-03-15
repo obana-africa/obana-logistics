@@ -8,6 +8,7 @@ const requestController = require('./requestController.js')
 const fs = require('fs')
 const { uploadImage } = require('../helpers/cloudinary')
 const path = require('path')
+const crypto = require('crypto')
 
 
 const User = db.users
@@ -56,8 +57,8 @@ const createUserRequest = async (req, res) => {
         )
     }
 
-    // direct creation without OTP
-    const authData = await createUserAfterOtpVerification(req.body, req, res);
+    
+    const authData = await createUser(req.body, req, res);
     return res.status(201).send(utils.responseSuccess(authData));
     } catch (err) {
         return res.status(500).send(
@@ -76,7 +77,7 @@ const createUserRequest = async (req, res) => {
  *     role: string (admin, driver, customer)
  * @returns {User} User with role info
  **/
-const createUserAfterOtpVerification = async (payload, req, res) => {
+const createUser = async (payload, req, res) => {
     let user = await getUser(payload.email, payload.phone)
 
     if (user) {
@@ -92,9 +93,11 @@ const createUserAfterOtpVerification = async (payload, req, res) => {
         password: userData.password
     })
 
+    const attributesToSave = { first_name, last_name, role };
+
     // If user is a driver, link to driver record
     if (role === 'driver' ) {
-       let driverObj = Drivers.create({
+       let driverObj = await Drivers.create({
             driver_code: `OBANA-DRV-${String(user.id).padStart(3, '0')}`,
             user_id: user.id,
             vehicle_type,
@@ -107,11 +110,10 @@ const createUserAfterOtpVerification = async (payload, req, res) => {
             updatedAt: new Date()
         })
 
-        let driver_id = driverObj.id
-        await createUserAttributes(user.id, { first_name, last_name, role, driver_id})    
+        attributesToSave.driver_id = driverObj.id;
     }
 
-    // If user is an agent, link to agent record
+    
     if (role === 'agent') {
         let governmentIdImageUrl = null;
         if (payload.government_id_image && payload.government_id_image.startsWith('data:')) {
@@ -141,20 +143,18 @@ const createUserAfterOtpVerification = async (payload, req, res) => {
             government_id_image: governmentIdImageUrl,
             profile_photo: profilePhotoUrl
         });
-        await createUserAttributes(user.id, { first_name, last_name, role });
     }
+
+    if (role === 'customer') {
+        attributesToSave.api_key = `OBN-${crypto.randomBytes(20).toString('hex')}`;
+    }
+    const createdAttributes = await createUserAttributes(user.id, attributesToSave);
     
-    // Create user attributes
-    await createUserAttributes(user.id, { first_name, last_name, role})
     
-    
-
-
-
-
     user = JSON.parse(JSON.stringify(user))
     delete user.password
     user.role = role
+    user.attributes = createdAttributes;
     
     return createAuthDetail(user)
 }
@@ -166,6 +166,7 @@ const createUserAfterOtpVerification = async (payload, req, res) => {
  * @param {*} parent_id - 
  */
 const createUserAttributes = async (user_id, attributes, parent_id = null) => {
+    const createdAttributes = {};
     for (let slug in attributes) {
         let theAttribute = await Attribute.findOne({ where: { slug } });
         if (!theAttribute) {
@@ -192,15 +193,18 @@ const createUserAttributes = async (user_id, attributes, parent_id = null) => {
                 userAttribute.value = JSON.stringify(value);
                 if (parent_id) userAttribute.parent_id = parent_id;
                 await userAttribute.save();
+                createdAttributes[slug] = value;
             } else {
-                await createUserAttributes(user_id, value, theAttribute.id);
+                createdAttributes[slug] = await createUserAttributes(user_id, value, theAttribute.id);
             }
         } else {
             userAttribute.value = value;
             if (parent_id) userAttribute.parent_id = parent_id;
             await userAttribute.save();
+            createdAttributes[slug] = value;
         }
     }
+    return createdAttributes;
 }
 
 /**
@@ -226,7 +230,7 @@ const resetPasswordRequest = async (req, res) => {
     req.body.email = user.email
     req.body.phone = user.phone
 
-    createVerificationRequest(req.body, res, 'resetPasswordAfterOtpVerification')
+    createVerificationRequest(req.body, res, 'resetPasswordHelper')
 
 }
 
@@ -238,7 +242,7 @@ const resetPasswordRequest = async (req, res) => {
  *     phone: string
  *     password: string
  **/
-const resetPasswordAfterOtpVerification = async (payload, req, res) => {
+const resetPasswordHelper = async (payload, req, res) => {
     let user = await getUser(payload.email, payload.phone)
     if (!user)
         return res.status(401).send(utils.responseError('User Not Found'))
@@ -265,7 +269,7 @@ const resetPassword = async (req, res) => {
             }
         }
 
-        const response = await resetPasswordAfterOtpVerification(Object.assign({ email: user.email, phone: user.phone }, req.body), req, res)
+        const response = await resetPasswordHelper(Object.assign({ email: user.email, phone: user.phone }, req.body), req, res)
         return res.status(200).send(utils.responseSuccess(response))
     } catch (error) {
         return res.status(500).send(utils.responseError(error.message))
@@ -316,7 +320,7 @@ const loginRequest = async (req, res) => {
  * @param {*} payload 
  * @returns 
  */
-const loginAfterOtpVerification = async (payload, req, res) => {
+const loginHelper = async (payload, req, res) => {
     const user = await getUser(payload.user_identification, payload.user_identification, true, req, res)
     const attributes = utils.flattenObj(user.attributes || {})
 
@@ -928,7 +932,7 @@ const addAdminUser = async (req, res) => {
     if (!req.body.attributes && req.body.attributes.account_types !== "admin")
         return res.status(201).send(utils.responseError('Only admin account type is permited'))
     const subject = "Welcome to Obana! Your Salesforce Account i"
-    const userCreated = await createUserAfterOtpVerification(payload, req, res)
+    const userCreated = await createUser(payload, req, res)
     if (userCreated?.id) {
         await nodemailer.sendMail({
             email: payload.email, content:

@@ -159,8 +159,7 @@ export default function DocsPage() {
 								<ul className="text-sm text-blue-800 space-y-1">
 									<li>✓ Register your business on our platform</li>
 									<li>✓ Receive your unique API Key</li>
-									<li>✓ Basic knowledge of REST APIs</li>
-									<li>✓ HTTP client library (curl, Axios, requests, etc.)</li>
+									<li>✓ start making APIs Calls</li>
 								</ul>
 							</div>
 
@@ -171,7 +170,7 @@ export default function DocsPage() {
 								<li>
 									<strong>1. Register:</strong> Go to the{" "}
 									<Link href="/onboarding/business" className="text-blue-600 hover:underline">
-										business onboarding page
+										customer onboarding page
 									</Link>{" "}
 									and register your application
 								</li>
@@ -201,14 +200,14 @@ export default function DocsPage() {
 								The key should be prefixed with <code className="bg-slate-100 px-2 py-1 rounded text-sm">Bearer </code>.
 							</p>
 							<CodeBlock
-								code={`Authorization: Bearer obana_your_api_key_here`}
+								code={`Authorization: Bearer OBN-your_api_key_here`}
 								language="http"
 								id="auth-example"
 							/>
 							<p className="text-sm text-gray-600">
-								You can get your API key by registering on the{" "}
-								<Link href="/onboarding/business" className="text-blue-600 hover:underline">
-									business onboarding page
+								Your API key is generated automatically. You can find it in your{" "}
+								<Link href="/dashboard/customer/profile" className="text-blue-600 hover:underline">
+									Dashboard Profile
 								</Link>.
 							</p>
 						</div>
@@ -307,7 +306,7 @@ export default function DocsPage() {
 								<h5 className="font-semibold text-gray-700 text-sm">cURL</h5>
 								<CodeBlock
 									code={`curl -X POST ${process.env.NEXT_PUBLIC_API_URL}/shipments \\
-  -H "Authorization: Bearer obana_your_api_key_here" \\
+  -H "Authorization: Bearer OBN-your_api_key_here" \\
   -H "Content-Type: application/json" \\
   -d @- <<'EOF'
 {
@@ -326,7 +325,7 @@ EOF`}
 								<CodeBlock
 									code={`const axios = require('axios');
 
-const apiKey = 'obana_your_api_key_here';
+const apiKey = 'OBN-your_api_key_here';
 const shipmentData = { /* ... your shipment data ... */ };
 
 axios.post('${process.env.NEXT_PUBLIC_API_URL}/shipments', shipmentData, {
@@ -347,7 +346,7 @@ axios.post('${process.env.NEXT_PUBLIC_API_URL}/shipments', shipmentData, {
 								<CodeBlock
 									code={`import requests
 
-api_key = 'obana_your_api_key_here'
+api_key = 'OBN-your_api_key_here'
 shipment_data = { ... } # Your shipment data
 
 headers = {'Authorization': f'Bearer {api_key}'}
@@ -374,7 +373,7 @@ print(response.json())`}
 								</h4>
 								<CodeBlock
 									code={`curl -X GET ${process.env.NEXT_PUBLIC_API_URL}/shipments/track/OBANA-20260303-ABC123 \\
-  -H "Authorization: Bearer obana_your_api_key_here"`}
+  -H "Authorization: Bearer OBN-your_api_key_here"`}
 									language="bash"
 									id="get-shipment-request"
 								/>
