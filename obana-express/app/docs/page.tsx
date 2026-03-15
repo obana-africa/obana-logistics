@@ -169,7 +169,7 @@ export default function DocsPage() {
 							<ol className="space-y-2 text-gray-700">
 								<li>
 									<strong>1. Register:</strong> Go to the{" "}
-									<Link href="/onboarding/business" className="text-blue-600 hover:underline">
+									<Link href="/auth/signup" className="text-blue-600 hover:underline">
 										customer onboarding page
 									</Link>{" "}
 									and register your application
@@ -504,7 +504,7 @@ print(response.json())`}
 								<li>
 									<strong>Documentation:</strong> This page
 								</li>
-								<li>
+								{/* <li>
 									<strong>Status:</strong> Check our{" "}
 									<a
 										href="https://status.obana.africa"
@@ -514,7 +514,7 @@ print(response.json())`}
 									>
 										status page
 									</a>
-								</li>
+								</li> */}
 							</ul>
 						</div>
 					</Section>
@@ -525,7 +525,7 @@ print(response.json())`}
 					<h2 className="text-2xl font-bold text-gray-900 mb-4">
 						Ready to get started?
 					</h2>
-					<Link href="/onboarding/business">
+					<Link href="/auth/signup">
 						<Button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold">
 							Register Your Business
 						</Button>

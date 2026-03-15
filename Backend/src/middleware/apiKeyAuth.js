@@ -1,4 +1,4 @@
-const tenantController = require('../controllers/tenantController');
+const db = require('../models/db');
 
 /**
  * Middleware to authenticate API requests using API key
@@ -6,7 +6,7 @@ const tenantController = require('../controllers/tenantController');
  */
 const authenticateApiKey = async (req, res, next) => {
     try {
-        const apiKey = req.headers['x-api-key'];
+        let apiKey = req.headers['x-api-key'];
  
         
         if (!apiKey || !apiKey.startsWith('Bearer ')) {
@@ -17,15 +17,27 @@ const authenticateApiKey = async (req, res, next) => {
         }
         
         apiKey = apiKey.substring(7);
-        const tenant = await tenantController.validateApiKey(apiKey);
+        
+        // Find the user attribute by API key
+        const apiKeyAttribute = await db.attributes.findOne({ where: { slug: 'api_key' } });
 
-        if (!tenant) {
+        if (!apiKeyAttribute) {
+          return res.status(500).json({ success: false, message: 'API Key attribute not found' });
+        }
+
+        const userAttribute = await db.user_attributes.findOne({
+          where: { attribute_id: apiKeyAttribute.id, value: apiKey },
+          include: [{ model: db.users, as: 'user' }]
+        });
+
+        if (!userAttribute || !userAttribute.user) {
             return res.status(401).json({
                 success: false,
                 message: 'Invalid or inactive API key'
             });
         }
 
+        const tenant = userAttribute.user;
         req.tenant = tenant;
         next();
     } catch (error) {

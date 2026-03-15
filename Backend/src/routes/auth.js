@@ -209,7 +209,7 @@ router.get(
       }
 
       try {
-        // Success → generate tokens
+        
         const authDetail = await userController.createAuthDetail(
           user.toJSON ? user.toJSON() : user
         );
@@ -241,12 +241,34 @@ const authenticateToken = async (req, res, next) => {
   const storeName = req.query.store_name
   const { tenant, endpoint } = req.params.tenant ? await getTenantAndEndpoint(req.params, res) : { endpoint: null, tenant: null }
 
-  if (!(token || storeName || endpoint?.require_authentication)) {
+  if (!(token)) {
     return res.status(401).send(
       utils.responseError('Authentication failed')
     )
   }
   if (token) {
+    if (token.startsWith('OBN-')) {
+        try {
+            const apiKeyAttribute = await db.attributes.findOne({ where: { slug: 'api_key' } });
+            if (apiKeyAttribute) {
+                const userAttribute = await db.user_attributes.findOne({
+                    where: { attribute_id: apiKeyAttribute.id, value: token },
+                    include: [{ model: db.users, as: 'user' }]
+                });
+
+                if (userAttribute && userAttribute.user) {
+                    const user = await getUser(null, null, true, req, res, userAttribute.user.id);
+                    req.user = user;
+                    return next();
+                }
+            }
+        } catch (error) {
+            console.error('API Key authentication error:', error);
+        }
+        return res.status(403).send(utils.responseError('Invalid or inactive API key'));
+    }
+
+    
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (error, user) => {
       if (error) {
 
@@ -260,23 +282,7 @@ const authenticateToken = async (req, res, next) => {
     return
   }
 
-  if (storeName) {
-    const store = await storeController.authStore(storeName)
-    if (!store) {
-      return res.status(403).send(
-        utils.responseError('Access denied')
-      )
-    }
 
-    req.user = store.user
-    next()
-  } else if (endpoint.require_authentication) {
-    if (endpoint.require_authentication !== 'false')
-      return res.status(403).send(
-        utils.responseError('Access denied')
-      )
-    next()
-  }
 }
 
 const verifyRole = allowedRoles => {
