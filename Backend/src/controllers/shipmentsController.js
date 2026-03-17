@@ -206,8 +206,7 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
             pickup_country: pickupAddress.country,
             pickup_phone: pickupAddress.phone,
             pickup_instructions: pickupAddress.instructions || '',
-            
-            
+
             delivery_contact_name: deliveryAddress.name || 'Customer',
             delivery_address_line: `${deliveryAddress.line1}${deliveryAddress.line2 ? ', ' + deliveryAddress.line2 : ''}`,
             delivery_city: deliveryAddress.city,
@@ -234,6 +233,8 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
         // 3. Define Recipients (Admin, Agent, Customer)
         const recipients = new Set();
         recipients.add('obana.africa@gmail.com');
+        recipients.add('product@obana.africa');
+
         if (agentData.email) recipients.add(agentData.email);
         if (customerEmail) recipients.add(customerEmail);
         
