@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const db = require('../models/db.js')
 const utils = require('../../utils.js')
-const nodemailer = require('../mailer/nodemailer')
+const mailer = require('../mailer/sendgrid')
 const requestController = require('./requestController.js')
 const fs = require('fs')
 const { uploadImage } = require('../helpers/cloudinary')
@@ -115,21 +115,11 @@ const createUser = async (payload, req, res) => {
 
     
     if (role === 'agent') {
-        let governmentIdImageUrl = null;
-        if (payload.government_id_image && payload.government_id_image.startsWith('data:')) {
-            governmentIdImageUrl = await uploadImage(payload.government_id_image, 'obana/agents/documents');
-        }
-
-        let profilePhotoUrl = null;
-        if (payload.profile_photo && payload.profile_photo.startsWith('data:')) {
-            profilePhotoUrl = await uploadImage(payload.profile_photo, 'obana/agents/photos');
-        }
-
         await Agents.create({
             agent_code: `OBANA-AGT-${String(user.id).padStart(3, '0')}`,
-            user_id: user.id,
-            verification_status: 'pending', // Admin still needs to verify docs
-            status: 'pending_verification', // Should be pending until admin verifies
+            user_id: user.id,                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
+            verification_status: 'pending', 
+            status: 'pending_verification', 
             country: payload.country || 'Nigeria',
             state: payload.state,
             city: payload.city,
@@ -140,8 +130,8 @@ const createUser = async (payload, req, res) => {
             service_radius: parseFloat(payload.service_radius) || 0,
             government_id_type: payload.government_id_type,
             government_id_number: payload.government_id_number,
-            government_id_image: governmentIdImageUrl,
-            profile_photo: profilePhotoUrl
+            government_id_image: payload.government_id_image,
+            profile_photo: payload.profile_photo
         });
     }
 
@@ -934,7 +924,7 @@ const addAdminUser = async (req, res) => {
     const subject = "Welcome to Obana! Your Salesforce Account i"
     const userCreated = await createUser(payload, req, res)
     if (userCreated?.id) {
-        await nodemailer.sendMail({
+        await mailer.sendMail({
             email: payload.email, content:
                 { user: payload.email, email: payload.email, password: tempPassword, url: payload.callback_url ?? "" },
             subject: subject, template: 'addAdmin'

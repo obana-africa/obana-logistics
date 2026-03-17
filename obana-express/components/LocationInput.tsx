@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { MapPin, ChevronDown, Search, X } from "lucide-react";
-import { locationService, City, Country } from "@/lib/locationService";
+import { Country, State, City } from 'country-state-city';
 
 interface LocationInputProps {
 	label: string;
@@ -11,12 +11,14 @@ interface LocationInputProps {
 		state: string;
 		country: string;
 		countryCode?: string;
+		stateCode?: string;
 	};
 	onChange: (location: {
 		city: string;
 		state: string;
 		country: string;
 		countryCode: string;
+		stateCode: string;
 	}) => void;
 	required?: boolean;
 	placeholder?: string;
@@ -29,41 +31,56 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 	required = false,
 	placeholder = "Start typing city name...",
 }) => {
-	const [countries, setCountries] = useState<Country[]>([]);
+	const [countries, setCountries] = useState<any[]>([]);
+	const [states, setStates] = useState<any[]>([]);
+	const [cities, setCities] = useState<any[]>([]);
+	
+	// Queries for filtering
+	const [countryQuery, setCountryQuery] = useState("");
+	const [stateQuery, setStateQuery] = useState("");
 	const [cityQuery, setCityQuery] = useState("");
-	const [cityResults, setCityResults] = useState<City[]>([]);
+	
+	// Dropdown visibility
 	const [showCityDropdown, setShowCityDropdown] = useState(false);
+	const [showStateDropdown, setShowStateDropdown] = useState(false);
 	const [showCountryDropdown, setShowCountryDropdown] = useState(false);
-	const [isLoadingCities, setIsLoadingCities] = useState(false);
+	
+	// Refs
 	const cityInputRef = useRef<HTMLInputElement>(null);
+	const stateInputRef = useRef<HTMLInputElement>(null);
 	const countryInputRef = useRef<HTMLInputElement>(null);
 	const cityDropdownRef = useRef<HTMLDivElement>(null);
+	const stateDropdownRef = useRef<HTMLDivElement>(null);
 	const countryDropdownRef = useRef<HTMLDivElement>(null);
 
 	// Load countries on mount
 	useEffect(() => {
-		locationService.getCountries().then(setCountries);
+		setCountries(Country.getAllCountries());
 	}, []);
 
-	// Search cities when query changes
+	// Load states when country changes
 	useEffect(() => {
-		const searchCities = async () => {
-			if (cityQuery.length >= 2) {
-				setIsLoadingCities(true);
-				const results = await locationService.searchCities(
-					cityQuery,
-					value.countryCode
-				);
-				setCityResults(results);
-				setIsLoadingCities(false);
-			} else {
-				setCityResults([]);
+		if (value.countryCode) {
+			const countryStates = State.getStatesOfCountry(value.countryCode);
+			setStates(countryStates);
+			// If current state is not in the new list (e.g. country changed), clear it
+			if (value.stateCode && !countryStates.find(s => s.isoCode === value.stateCode)) {
+				// We don't auto-clear here to avoid loops, but UI will show empty or invalid if mismatch
 			}
-		};
+		} else {
+			setStates([]);
+		}
+	}, [value.countryCode]);
 
-		const debounce = setTimeout(searchCities, 300);
-		return () => clearTimeout(debounce);
-	}, [cityQuery, value.countryCode]);
+	// Load cities when state changes
+	useEffect(() => {
+		if (value.countryCode && value.stateCode) {
+			const stateCities = City.getCitiesOfState(value.countryCode, value.stateCode);
+			setCities(stateCities);
+		} else {
+			setCities([]);
+		}
+	}, [value.countryCode, value.stateCode]);
 
 	// Close dropdowns when clicking outside
 	useEffect(() => {
@@ -75,6 +92,14 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 				!cityInputRef.current.contains(event.target as Node)
 			) {
 				setShowCityDropdown(false);
+			}
+			if (
+				stateDropdownRef.current &&
+				!stateDropdownRef.current.contains(event.target as Node) &&
+				stateInputRef.current &&
+				!stateInputRef.current.contains(event.target as Node)
+			) {
+				setShowStateDropdown(false);
 			}
 			if (
 				countryDropdownRef.current &&
@@ -90,24 +115,39 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 		return () => document.removeEventListener("mousedown", handleClickOutside);
 	}, []);
 
-	const handleCountrySelect = (country: Country) => {
+	const handleCountrySelect = (country: any) => {
 		onChange({
 			city: "",
 			state: "",
-			country: country.countryName,
-			countryCode: country.countryCode,
+			country: country.name,
+			countryCode: country.isoCode,
+			stateCode: "",
 		});
+		setCountryQuery("");
+		setStateQuery("");
 		setCityQuery("");
-		setCityResults([]);
 		setShowCountryDropdown(false);
 	};
 
-	const handleCitySelect = (city: City) => {
+	const handleStateSelect = (state: any) => {
 		onChange({
+			...value,
+			state: state.name,
+			stateCode: state.isoCode,
+			city: "",
+			countryCode: value.countryCode || "", // Ensure string
+		});
+		setStateQuery("");
+		setCityQuery("");
+		setShowStateDropdown(false);
+	};
+
+	const handleCitySelect = (city: any) => {
+		onChange({
+			...value,
 			city: city.name,
-			state: city.adminName1,
-			country: city.countryName,
-			countryCode: city.countryCode,
+			countryCode: value.countryCode || "",
+			stateCode: value.stateCode || "",
 		});
 		setCityQuery(city.name);
 		setShowCityDropdown(false);
@@ -119,13 +159,23 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 			state: "",
 			country: "",
 			countryCode: "",
+			stateCode: "",
 		});
+		setCountryQuery("");
+		setStateQuery("");
 		setCityQuery("");
-		setCityResults([]);
 	};
 
 	const filteredCountries = countries.filter((c) =>
-		c.countryName.toLowerCase().includes(value.country.toLowerCase())
+		c.name.toLowerCase().includes((countryQuery || value.country).toLowerCase())
+	);
+
+	const filteredStates = states.filter((s) =>
+		s.name.toLowerCase().includes((stateQuery || value.state).toLowerCase())
+	);
+
+	const filteredCities = cities.filter((c) =>
+		c.name.toLowerCase().includes((cityQuery || value.city).toLowerCase())
 	);
 
 	return (
@@ -140,17 +190,16 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 					<input
 						ref={countryInputRef}
 						type="text"
-						value={value.country}
+						value={countryQuery || value.country}
 						onChange={(e) => {
-							onChange({
-								...value,
-								country: e.target.value,
-								countryCode: value.countryCode || "",
-							});
+							setCountryQuery(e.target.value);
 							setShowCountryDropdown(true);
+							if (!e.target.value) {
+								onChange({ ...value, country: '', countryCode: '', state: '', stateCode: '', city: '' });
+							}
 						}}
 						onFocus={() => setShowCountryDropdown(true)}
-						placeholder="Select country..."
+						placeholder="Select Country..."
 						className="w-full px-4 py-2.5 pr-10 border border-gray-300 text-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 						required={required}
 					/>
@@ -160,28 +209,68 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 				{showCountryDropdown && filteredCountries.length > 0 && (
 					<div
 						ref={countryDropdownRef}
-						className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto"
+						className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto cursor-pointer"
 					>
 						{filteredCountries.slice(0, 10).map((country) => (
-							<button
-								key={country.geonameId}
-								type="button"
+							<div
+								key={country.isoCode}
 								onClick={() => handleCountrySelect(country)}
-								className="w-full px-4 py-2.5 text-left hover:bg-blue-50 flex items-center text-slate-800 gap-2 transition-colors"
+								className="px-4 py-2.5 text-left hover:bg-blue-50 flex items-center text-slate-800 gap-2 transition-colors"
 							>
 								<MapPin className="h-4 w-4 text-gray-400" />
-								<span className="font-medium">{country.countryName}</span>
+								<span className="font-medium">{country.name}</span>
 								<span className="text-sm text-gray-500">
-									({country.countryCode})
+									({country.isoCode})
 								</span>
-							</button>
+							</div>
 						))}
 					</div>
 				)}
 			</div>
 
-			{/* City Search (only show if country is selected) */}
+			{/* State Selection (only if country selected) */}
 			{value.countryCode && (
+				<div className="relative">
+					<div className="relative">
+						<input
+							ref={stateInputRef}
+							type="text"
+							value={stateQuery || value.state}
+							onChange={(e) => {
+								setStateQuery(e.target.value);
+								setShowStateDropdown(true);
+								if (!e.target.value) onChange({ ...value, state: '', stateCode: '', city: '' });
+							}}
+							onFocus={() => setShowStateDropdown(true)}
+							placeholder={states.length > 0 ? "Select State/Province..." : "No states available"}
+							className="w-full px-4 py-2.5 pr-10 border border-gray-300 text-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+							required={required}
+							disabled={states.length === 0}
+						/>
+						<ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
+					</div>
+
+					{showStateDropdown && filteredStates.length > 0 && (
+						<div
+							ref={stateDropdownRef}
+							className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto cursor-pointer"
+						>
+							{filteredStates.map((state) => (
+								<div
+									key={state.isoCode}
+									onClick={() => handleStateSelect(state)}
+									className="px-4 py-2.5 text-left hover:bg-blue-50 text-slate-800 transition-colors"
+								>
+									{state.name}
+								</div>
+							))}
+						</div>
+					)}
+				</div>
+			)}
+
+			{/* City Selection (only if state selected) */}
+			{value.stateCode && (
 				<div className="relative">
 					<div className="relative">
 						<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -192,9 +281,10 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 							onChange={(e) => {
 								setCityQuery(e.target.value);
 								setShowCityDropdown(true);
+								if (!e.target.value) onChange({ ...value, city: '' });
 							}}
 							onFocus={() => setShowCityDropdown(true)}
-							placeholder={placeholder}
+							placeholder={cities.length > 0 ? "Select City..." : "Type city name..."}
 							className="w-full pl-10 pr-10 py-2.5 border text-slate-800 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 							required={required}
 						/>
@@ -209,39 +299,22 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 						)}
 					</div>
 
-					{showCityDropdown && (cityResults.length > 0 || isLoadingCities) && (
+					{showCityDropdown && filteredCities.length > 0 && (
 						<div
 							ref={cityDropdownRef}
-							className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto"
+							className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto cursor-pointer"
 						>
-							{isLoadingCities ? (
-								<div className="px-4 py-3 text-center text-gray-500">
-									<div className="inline-block animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-blue-600"></div>
-									<span className="ml-2">Searching...</span>
+							{filteredCities.map((city, index) => (
+								<div
+									key={`${city.name}-${index}`}
+									onClick={() => handleCitySelect(city)}
+									className="px-4 py-2.5 text-left hover:bg-blue-50 text-slate-800 transition-colors"
+								>
+									<div className="font-medium text-gray-900">
+										{city.name}
+									</div>
 								</div>
-							) : (
-								cityResults.map((city) => (
-									<button
-										key={city.geonameId}
-										type="button"
-										onClick={() => handleCitySelect(city)}
-										className="w-full px-4 py-2.5 text-left hover:bg-blue-50 transition-colors"
-									>
-										<div className="flex items-start gap-2">
-											<MapPin className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
-											<div className="flex-1 min-w-0">
-												<div className="font-medium text-gray-900">
-													{city.name}
-												</div>
-												<div className="text-sm text-gray-600">
-													{city.adminName1 && `${city.adminName1}, `}
-													{city.countryName}
-												</div>
-											</div>
-										</div>
-									</button>
-								))
-							)}
+							))}
 						</div>
 					)}
 				</div>

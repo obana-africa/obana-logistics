@@ -1,6 +1,5 @@
 const db = require('../models/db.js');
 const utils = require('../../utils.js');
-const { uploadImage } = require('../helpers/cloudinary');
 const { createUserAttributes } = require('./userController');
 
 const Agent = db.agents;
@@ -83,16 +82,7 @@ const updateAgent = async (req, res) => {
             return res.status(404).send(utils.responseError('Agent not found'));
         }
 
-        const { government_id_image, profile_photo, ...updateData } = req.body;
-
-        // Handle image uploads if new base64 strings are provided
-        if (government_id_image && government_id_image.startsWith('data:')) {
-            updateData.government_id_image = await uploadImage(government_id_image, 'obana/agents/documents');
-        }
-        if (profile_photo && profile_photo.startsWith('data:')) {
-            updateData.profile_photo = await uploadImage(profile_photo, 'obana/agents/photos');
-        }
-
+        const updateData = req.body;
         await agent.update(updateData);
 
         const updatedAgent = await Agent.findByPk(id);

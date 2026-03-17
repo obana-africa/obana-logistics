@@ -21,6 +21,7 @@
   "author": "Chimebuka Anyanwu",
   "license": "ISC",
   "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
     "axios": "^0.27.2",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.9.0",
@@ -30,6 +31,7 @@
     "express": "^4.18.1",
     "express-session": "^1.18.2",
     "express-validator": "^6.14.2",
+    "handlebars": "^4.7.8",
     "jsonwebtoken": "^8.5.1",
     "mysql2": "^2.3.3",
     "nodemailer": "^6.7.7",

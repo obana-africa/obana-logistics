@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useAuth } from "@/lib/authContext";
+import { uploadToCloudinary } from "@/lib/cloudinary";
 import { useRouter } from "next/navigation";
 import { Button, Card, Alert, Select, Input } from "@/components/ui";
 import PhoneInput from "@/components/PhoneInput";
@@ -40,7 +41,7 @@ export default function SignupPage() {
 		confirmPassword: "",
 	});
 
-	// Agent specific state
+	
 	const [agentData, setAgentData] = useState({
 		government_id_type: 'NIN',
 		government_id_number: '',
@@ -55,6 +56,12 @@ export default function SignupPage() {
 		government_id_image: '',
 		profile_photo: ''
 	});
+
+	
+	const [agentFiles, setAgentFiles] = useState<{
+		government_id_image: File | null;
+		profile_photo: File | null;
+	}>({ government_id_image: null, profile_photo: null });
 
 	const roles = [
 		{
@@ -103,14 +110,12 @@ export default function SignupPage() {
 	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
 		const file = e.target.files?.[0];
 		if (file) {
-			const reader = new FileReader();
-			reader.onloadend = () => {
-				setAgentData(prev => ({
-					...prev,
-					[field]: reader.result as string
-				}));
-			};
-			reader.readAsDataURL(file);
+			setAgentFiles(prev => ({ ...prev, [field]: file }));
+			// Store object URL for preview/truthiness check in UI
+			setAgentData(prev => ({
+				...prev,
+				[field]: URL.createObjectURL(file)
+			}));
 		}
 	};
 
@@ -128,12 +133,23 @@ export default function SignupPage() {
 			return;
 		}
 
-		
-		const payload = { ...formData };
-		const additionalData = selectedRole === 'agent' ? agentData : {};
-
 		setLoading(true);
+		const payload = { ...formData };
+		let additionalData = selectedRole === 'agent' ? { ...agentData } : {};
+
 		try {
+			
+			if (selectedRole === 'agent') {
+				if (agentFiles.government_id_image) {
+					const url = await uploadToCloudinary(agentFiles.government_id_image);
+					additionalData = { ...additionalData, government_id_image: url };
+				}
+				if (agentFiles.profile_photo) {
+					const url = await uploadToCloudinary(agentFiles.profile_photo);
+					additionalData = { ...additionalData, profile_photo: url };
+				}
+			}
+
 			const response = await signup(
 				formData.first_name,
 				formData.last_name,
@@ -394,27 +410,27 @@ const route = roleRoutes[role];
 									</div>
 
 									<div className="grid grid-cols-2 gap-4">
-										<Input
+										{/* <Input
 											label="LGA"
 											placeholder="Ikeja"
 											value={agentData.lga}
 											onChange={(e) => setAgentData({...agentData, lga: e.target.value})}
-										/>
-										<Input
+										/> */}
+										{/*<Input
 											label="Zone"
 											placeholder="Zone A"
 											value={agentData.assigned_zone}
 											onChange={(e) => setAgentData({...agentData, assigned_zone: e.target.value})}
-										/>
+										/> */}
 									</div>
 
-									<Input
+									{/* <Input
 										label="Service Radius (km)"
 										type="number"
 										placeholder="e.g. 10"
 										value={agentData.service_radius}
 										onChange={(e) => setAgentData({...agentData, service_radius: e.target.value})}
-									/>
+									/> */}
 
 									<div className="space-y-2">
 										<label className="block text-sm font-medium text-gray-700">Upload Government ID</label>

@@ -39,7 +39,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		email: string,
 		phone: string,
 		password: string,
-		role: string
+		role: string,
+		additionalData: any
 	) => {
 		try {
 			setError(null);
@@ -50,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 				phone,
 				password,
 				role,
-				// additionalData
+				additionalData
 			);
 			const authResponse = response.data;
 			if ((authResponse.success || authResponse.status === 'success') && authResponse.data) {

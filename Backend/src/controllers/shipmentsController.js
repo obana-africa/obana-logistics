@@ -1,7 +1,7 @@
 const { Op } = require('sequelize');
 const crypto = require('crypto');
 const db = require('../models/db');
-const nodemailer = require('../mailer/nodemailer');
+const mailer = require('../mailer/sendgrid');
 
 const validateShipmentPayload = (payload) => {
     const errors = [];
@@ -134,7 +134,7 @@ const notifyPickupTeam = async (shipmentId) => {
         });
         
         if (shipment && shipment.carrier_type === 'internal') {
-            console.log(`[DRIVER NOTIFICATION] New internal shipment ${shipment.shipment_reference} needs pickup from ${shipment.pickup_address?.line1}`);
+            console.log(`[AGENT NOTIFICATION] New internal shipment ${shipment.shipment_reference} needs pickup from ${shipment.pickup_address?.line1}`);
             
         }
     } catch (error) {
@@ -155,6 +155,39 @@ const updateOrderStatus = async (shipmentId) => {
  */
 const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) => {
     try {
+        
+        let agentData = { name: 'Unassigned', email: '', code: '' };
+        if (shipment.agent_id) {
+            const agent = await db.agents.findByPk(shipment.agent_id, {
+                include: [{ model: db.users, as: 'user' }]
+            });
+            
+            if (agent && agent.user) {
+                // Fetch attributes to get agent's name
+                const attributes = await db.user_attributes.findAll({
+                    where: { user_id: agent.user.id },
+                    include: [{ model: db.attributes, as: 'attribute' }]
+                });
+                
+                const attrMap = {};
+                attributes.forEach(a => { if (a.attribute) attrMap[a.attribute.slug] = a.value; });
+                
+                agentData = {
+                    name: `${attrMap.first_name || ''} ${attrMap.last_name || ''}`.trim() || 'Agent',
+                    email: agent.user.email,
+                    code: agent.agent_code
+                };
+            }
+        }
+
+        
+        let customerEmail = deliveryAddress.contact_email;
+        if (shipment.user_id) {
+             const user = await db.users.findByPk(shipment.user_id);
+             if (user && user.email) {
+                 customerEmail = user.email;
+             }
+        }
         
         const emailData = {
             shipment_reference: shipment.shipment_reference,
@@ -183,6 +216,10 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
             delivery_phone: deliveryAddress.phone,
             delivery_instructions: deliveryAddress.instructions || '',
             
+            // Agent Information
+            agent_name: agentData.name,
+            agent_email: agentData.email,
+            agent_code: agentData.code,
             
             is_insured: shipment.is_insured,
             insurance_amount: shipment.insurance_amount,
@@ -191,20 +228,26 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
             notes: shipment.notes || '',
             
             
-            dashboard_url: process.env.DASHBOARD_URL || 'https://obana.africa'
+            dashboard_url: process.env.DASHBOARD_URL || 'https://logistics.obana.africa/dashboard/customer/shipments'
         };
 
+        // 3. Define Recipients (Admin, Agent, Customer)
+        const recipients = new Set();
+        recipients.add('obana.africa@gmail.com');
+        if (agentData.email) recipients.add(agentData.email);
+        if (customerEmail) recipients.add(customerEmail);
         
-        await nodemailer.sendMail({
-            email: 'obana.africa@gmail.com', 
-            subject: `New Shipment: ${shipment.shipment_reference} - ${shipment.vendor_name}`,
-            content: emailData,
-            template: 'newShipment'
-        });
-
+        for (const email of recipients) {
+            if (!email) continue;
+            await mailer.sendMail({
+                email: email, 
+                subject: `New Shipment: ${shipment.shipment_reference} - ${shipment.vendor_name}`,
+                content: emailData,
+                template: 'newShipment'
+            });
+        }
         
-
-        console.log(`Email sent for shipment ${shipment.shipment_reference}`);
+        console.log(`Emails sent for shipment ${shipment.shipment_reference} to: ${Array.from(recipients).join(', ')}`);
 
     } catch (error) {
         console.error('Error sending shipment email:', error);
@@ -240,7 +283,7 @@ const sendStatusUpdateEmail = async (shipment, status, trackingEvent) => {
         };
 
         for (const email of emails) {
-            await nodemailer.sendMail({
+            await mailer.sendMail({
                 email: email,
                 subject: ` Shipment Update: ${shipment.shipment_reference} - ${status.toUpperCase()}`,
                 content: emailData,
@@ -625,10 +668,10 @@ const shipmentController = {
                 }
 
                 await transaction.commit();
+                
+                
                 sendNewShipmentEmail(shipment, deliveryAddress, pickupAddress);
-                // Send email asynchronously to prevent timeout blocking
-                sendNewShipmentEmail(shipment, deliveryAddress, pickupAddress);
-                // 10. Trigger async post-creation processes
+                
                 triggerPostCreationProcesses(shipment.id, isInternal);
 
                 return res.status(201).json({

@@ -97,7 +97,7 @@ class ApiClient {
     );
   }
 
-  // Auth endpoints
+  
   async signup(first_name: string, last_name: string, email: string, phone: string, password: string, role: string, additionalData?: any) {
     const response = await this.client.post<ApiResponse>('/users/signup', {
       first_name,

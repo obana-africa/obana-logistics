@@ -30,6 +30,7 @@ export default function CreateShipmentPage() {
       state: '',
       country: '',
       countryCode: '',
+      stateCode: '',
       phone: '',
       contact_name: '',
       email: '',
@@ -42,6 +43,7 @@ export default function CreateShipmentPage() {
       state: '',
       country: '',
       countryCode: '',
+      stateCode: '',
       phone: '',
       first_name: '',
       last_name: '',
@@ -79,11 +81,11 @@ export default function CreateShipmentPage() {
       transport_mode: '',
       service_level: '',
       pickup_address: {
-        line1: '', line2: '', city: '', state: '', country: '', countryCode: '', 
+        line1: '', line2: '', city: '', state: '', country: '', countryCode: '', stateCode: '',
         phone: '', contact_name: '', email: '', zip_code: ''
       },
       delivery_address: {
-        line1: '', line2: '', city: '', state: '', country: '', countryCode: '', 
+        line1: '', line2: '', city: '', state: '', country: '', countryCode: '', stateCode: '',
         phone: '', first_name: '', last_name: '', email: '', zip_code: ''
       },
       carrier_slug: 'obana',
@@ -348,6 +350,7 @@ export default function CreateShipmentPage() {
                       state: formData.pickup_address.state,
                       country: formData.pickup_address.country,
                       countryCode: formData.pickup_address.countryCode,
+                      stateCode: formData.pickup_address.stateCode,
                     }}
                     onChange={(location) => setFormData({
                       ...formData,
@@ -442,6 +445,7 @@ export default function CreateShipmentPage() {
                       state: formData.delivery_address.state,
                       country: formData.delivery_address.country,
                       countryCode: formData.delivery_address.countryCode,
+                      stateCode: formData.delivery_address.stateCode,
                     }}
                     onChange={(location) => setFormData({
                       ...formData,
