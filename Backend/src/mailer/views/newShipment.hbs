@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; }
+        .header { background-color: #f8f9fa; padding: 25px; text-align: center; border-bottom: 4px solid #1B3E5D; }
+        .header h2 { margin: 0; color: #1B3E5D; }
+        .reference { color: #666; margin-top: 5px; font-size: 14px; }
+        .content { padding: 20px; }
+        .section { margin-bottom: 25px; border: 1px solid #e1e4e8; padding: 20px; border-radius: 8px; }
+        .section-title { font-weight: bold; margin-bottom: 15px; color: #1B3E5D; border-bottom: 1px solid #e1e4e8; padding-bottom: 8px; font-size: 16px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .agent-section { background-color: #f0f7ff; border: 1px solid #cce5ff; }
+        .row { margin-bottom: 8px; display: flex; }
+        .label { font-weight: bold; color: #555; width: 100px; flex-shrink: 0; }
+        .value { flex-grow: 1; }
+        .footer { text-align: center; font-size: 12px; color: #999; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }
+        .btn { display: inline-block; padding: 12px 24px; background-color: #1B3E5D; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>New Shipment Created</h2>
+            <div class="reference">Ref: {{shipment_reference}}</div>
+        </div>
+        
+        <div class="content">
+            <p>Hello,</p>
+            <p>A new shipment request has been successfully created and is ready for processing.</p>
+
+            {{#if agent_name}}
+            <div class="section agent-section">
+                <div class="section-title">Assigned Agent</div>
+                <div class="row"><span class="label">Name:</span> <span class="value">{{agent_name}}</span></div>
+                <div class="row"><span class="label">Agent Code:</span> <span class="value">{{agent_code}}</span></div>
+                <div class="row"><span class="label">Email:</span> <span class="value">{{agent_email}}</span></div>
+            </div>
+            {{/if}}
+
+            <div class="section">
+                <div class="section-title">Shipment Details</div>
+                <div class="row"><span class="label">Vendor:</span> <span class="value">{{vendor_name}}</span></div>
+                <div class="row"><span class="label">Order Ref:</span> <span class="value">{{order_reference}}</span></div>
+                <div class="row"><span class="label">Items:</span> <span class="value">{{total_items}}</span></div>
+                <div class="row"><span class="label">Weight:</span> <span class="value">{{total_weight}} kg</span></div>
+                <div class="row"><span class="label">Value:</span> <span class="value">{{currency}} {{product_value}}</span></div>
+                <div class="row"><span class="label">Fee:</span> <span class="value">{{currency}} {{shipping_fee}}</span></div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Pickup From</div>
+                <div class="row"><span class="label">Contact:</span> <span class="value">{{pickup_contact_name}}</span></div>
+                <div class="row"><span class="label">Phone:</span> <span class="value">{{pickup_phone}}</span></div>
+                <div class="row"><span class="label">Address:</span> <span class="value">{{pickup_address_line}}</span></div>
+                <div class="row"><span class="label">Location:</span> <span class="value">{{pickup_city}}, {{pickup_state}}</span></div>
+                {{#if pickup_instructions}}
+                <div class="row"><span class="label">Note:</span> <span class="value">{{pickup_instructions}}</span></div>
+                {{/if}}
+            </div>
+
+            <div class="section">
+                <div class="section-title">Deliver To</div>
+                <div class="row"><span class="label">Contact:</span> <span class="value">{{delivery_contact_name}}</span></div>
+                <div class="row"><span class="label">Phone:</span> <span class="value">{{delivery_phone}}</span></div>
+                <div class="row"><span class="label">Address:</span> <span class="value">{{delivery_address_line}}</span></div>
+                <div class="row"><span class="label">Location:</span> <span class="value">{{delivery_city}}, {{delivery_state}}</span></div>
+                {{#if delivery_instructions}}
+                <div class="row"><span class="label">Note:</span> <span class="value">{{delivery_instructions}}</span></div>
+                {{/if}}
+            </div>
+            
+            <div style="text-align: center;">
+                <a href="{{dashboard_url}}" class="btn">View Shipment</a>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>&copy; Obana Logistics. All rights reserved.</p>
+            <p>This is an automated message. Please do not reply directly to this email.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -239,7 +239,7 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 							onChange={(e) => {
 								setStateQuery(e.target.value);
 								setShowStateDropdown(true);
-								if (!e.target.value) onChange({ ...value, state: '', stateCode: '', city: '' });
+							if (!e.target.value) onChange({ ...value, state: '', stateCode: '', city: '', countryCode: value.countryCode || '' });
 							}}
 							onFocus={() => setShowStateDropdown(true)}
 							placeholder={states.length > 0 ? "Select State/Province..." : "No states available"}
@@ -281,7 +281,7 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 							onChange={(e) => {
 								setCityQuery(e.target.value);
 								setShowCityDropdown(true);
-								if (!e.target.value) onChange({ ...value, city: '' });
+							if (!e.target.value) onChange({ ...value, city: '', countryCode: value.countryCode || '', stateCode: value.stateCode || '' });
 							}}
 							onFocus={() => setShowCityDropdown(true)}
 							placeholder={cities.length > 0 ? "Select City..." : "Type city name..."}

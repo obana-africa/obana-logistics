@@ -28,6 +28,7 @@ export default function SignupPage() {
 	const router = useRouter();
 	const { signup, error, clearError } = useAuth();
 	const [loading, setLoading] = useState(false);
+	const [formError, setFormError] = useState("");
 	const [step, setStep] = useState<"role" | "info">("role");
 	const [selectedRole, setSelectedRole] = useState<string>("");
 	const [showPassword, setShowPassword] = useState(false);
@@ -134,6 +135,7 @@ export default function SignupPage() {
 		}
 
 		setLoading(true);
+		setFormError(""); // Clear previous errors
 		const payload = { ...formData };
 		let additionalData = selectedRole === 'agent' ? { ...agentData } : {};
 
@@ -141,12 +143,22 @@ export default function SignupPage() {
 			
 			if (selectedRole === 'agent') {
 				if (agentFiles.government_id_image) {
-					const url = await uploadToCloudinary(agentFiles.government_id_image);
-					additionalData = { ...additionalData, government_id_image: url };
+					try {
+						const url = await uploadToCloudinary(agentFiles.government_id_image);
+						additionalData = { ...additionalData, government_id_image: url };
+					} catch (e) {
+						console.error("Government ID upload failed", e);
+						additionalData = { ...additionalData, government_id_image: '' };
+					}
 				}
 				if (agentFiles.profile_photo) {
-					const url = await uploadToCloudinary(agentFiles.profile_photo);
-					additionalData = { ...additionalData, profile_photo: url };
+					try {
+						const url = await uploadToCloudinary(agentFiles.profile_photo);
+						additionalData = { ...additionalData, profile_photo: url };
+					} catch (e) {
+						console.error("Profile photo upload failed", e);
+						additionalData = { ...additionalData, profile_photo: '' };
+					}
 				}
 			}
 
@@ -177,7 +189,9 @@ const route = roleRoutes[role];
 					: '/'
 			);
 		} catch (err) {
-			console.error(err);
+			console.error("Signup Error:", err);
+			// Display error to user
+			setFormError(err instanceof Error ? err.message : "An error occurred during signup");
 		} finally {
 			setLoading(false);
 		}
@@ -217,13 +231,16 @@ const route = roleRoutes[role];
 						</p>
 					</div>
 
-					{error && (
+					{(error || formError) && (
 						<Alert
 							type="error"
 							className="mb-6 cursor-pointer bg-red-50 border-red-200"
-							onClick={clearError}
+							onClick={() => {
+								clearError();
+								setFormError("");
+							}}
 						>
-							{error}
+							{error || formError}
 						</Alert>
 					)}
 

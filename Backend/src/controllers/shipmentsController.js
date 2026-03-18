@@ -227,13 +227,14 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
             notes: shipment.notes || '',
             
             
-            dashboard_url: process.env.DASHBOARD_URL || 'https://logistics.obana.africa/dashboard/customer/shipments'
+            dashboard_url: process.env.DASHBOARD_URL || 'https://logistics.obana.africa'
         };
 
         // 3. Define Recipients (Admin, Agent, Customer)
         const recipients = new Set();
-        recipients.add('obana.africa@gmail.com');
+        recipients.add('shipment@obana.africa');
         recipients.add('product@obana.africa');
+        // recipients.add('chimebukaanyanwu@gmail.com');
 
         if (agentData.email) recipients.add(agentData.email);
         if (customerEmail) recipients.add(customerEmail);
@@ -261,14 +262,18 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
  */
 const sendStatusUpdateEmail = async (shipment, status, trackingEvent) => {
     try {
-        const statusEmails = {
-            'pickup_assigned': ['obana.africa@gmail.com', process.env.DRIVER_MANAGER_EMAIL],
-            'picked_up': ['obana.africa@gmail.com'],
-            'delivered': ['obana.africa@gmail.com', process.env.ACCOUNTS_EMAIL],
-            'failed': ['obana.africa@gmail.com', process.env.SUPPORT_EMAIL]
-        };
-
-        const emails = statusEmails[status] || ['obana.africa@gmail.com'];
+        let customerEmail = null;
+        if (shipment.user_id) {
+            const user = await db.users.findByPk(shipment.user_id);
+            if (user) customerEmail = user.email;
+        }
+        
+        if (!customerEmail && shipment.delivery_address_id) {
+            const address = await db.addresses.findByPk(shipment.delivery_address_id);
+            if (address) customerEmail = address.contact_email;
+        }
+        
+        const emails = customerEmail ? [customerEmail] : [];
         
         const emailData = {
             shipment_reference: shipment.shipment_reference,
@@ -280,7 +285,7 @@ const sendStatusUpdateEmail = async (shipment, status, trackingEvent) => {
             notes: trackingEvent.notes || '',
             updated_by: trackingEvent.performed_by || 'System',
             updated_at: new Date(trackingEvent.createdAt).toLocaleString(),
-            dashboard_url: process.env.DASHBOARD_URL || 'https://obana.africa'
+            dashboard_url: process.env.DASHBOARD_URL || 'https://logistics.obana.africa'
         };
 
         for (const email of emails) {
@@ -288,7 +293,7 @@ const sendStatusUpdateEmail = async (shipment, status, trackingEvent) => {
                 email: email,
                 subject: ` Shipment Update: ${shipment.shipment_reference} - ${status.toUpperCase()}`,
                 content: emailData,
-                template: 'statusUpdate' // You'll need to create this template
+                template: 'statusUpdate' 
             });
         }
 
