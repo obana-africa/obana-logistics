@@ -23,9 +23,9 @@ const navigationByRole = {
   ],
   driver: [
     { name: 'Dashboard', href: '/dashboard/driver', icon: Home },
-    { name: 'Available Jobs', href: '/dashboard/driver/jobs', icon: Home },
-    { name: 'My Deliveries', href: '/dashboard/driver/deliveries', icon: Home },
-    { name: 'Earnings', href: '/dashboard/driver/earnings', icon: Home },
+    // { name: 'Available Jobs', href: '/dashboard/driver/jobs', icon: Home },
+    // { name: 'My Deliveries', href: '/dashboard/driver/deliveries', icon: Home },
+    // { name: 'Earnings', href: '/dashboard/driver/earnings', icon: Home },
     { name: 'Profile', href: '/dashboard/driver/profile', icon: Settings },
   ],
   admin: [

@@ -26,6 +26,7 @@ interface AuthContextType {
 	) => Promise<any>;
 	logout: () => Promise<void>;
 	clearError: () => void;
+	refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -107,6 +108,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		}
 	};
 
+	const refreshProfile = async () => {
+		try {
+			const response = await apiClient.getProfile();
+			if ((response.success || response.status === 'success') && response.data) {
+				store.setUser(response.data);
+			}
+		} catch (err) {
+			console.error("Failed to refresh profile:", err);
+		}
+	};
+
 
 	const logout = async () => {
 		try {
@@ -133,6 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 				login,
 				logout,
 				clearError,
+				refreshProfile,
 			}}
 		>
 			{children}

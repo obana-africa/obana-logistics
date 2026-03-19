@@ -9,7 +9,7 @@ import { apiClient } from '@/lib/api';
 import { Eye, EyeOff, Copy, Check } from 'lucide-react';
 
 export default function CustomerProfilePage() {
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -30,6 +30,7 @@ export default function CustomerProfilePage() {
 
     try {
       await apiClient.updateProfile(formData);
+      await refreshProfile();
       setMessage('Profile updated successfully!');
       setTimeout(() => setMessage(''), 3000);
     } catch (err) {

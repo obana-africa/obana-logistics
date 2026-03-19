@@ -33,7 +33,7 @@ export default function DriverDashboard() {
   const loadShipments = async () => {
     try {
       if (!user?.id) return;
-      // The first argument must be the user's ID (a number), and the second is for filters.
+      
       const response = await apiClient.listShipments(Number(user.id), { role: 'driver', limit: 10 });
       const data = response.data?.shipments || [];
       setShipments(data);
@@ -45,7 +45,7 @@ export default function DriverDashboard() {
       setStats({
         active,
         completed,
-        earnings: completed * 5000, // Demo calculation
+        earnings: completed * 5000, 
       });
     } catch (err) {
       console.error('Error loading shipments:', err);

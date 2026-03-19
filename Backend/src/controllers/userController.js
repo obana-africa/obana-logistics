@@ -403,6 +403,22 @@ const updateProfile = async (req, res) => {
         if (hasUpdate) await agent.save();
     }
 
+    // Update Driver Profile if exists
+    const driver = await Drivers.findOne({ where: { user_id: user.id } });
+    if (driver) {
+        const driverFields = ['vehicle_type', 'vehicle_registration'];
+        let hasUpdate = false;
+        
+        driverFields.forEach(field => {
+            if (attributes[field] !== undefined) {
+                driver[field] = attributes[field];
+                hasUpdate = true;
+            }
+        });
+        
+        if (hasUpdate) await driver.save();
+    }
+
     // After a successful update, return the updated user profile.
     // Issuing new tokens here is unnecessary and can cause session problems.
     return res.status(200).send(utils.responseSuccess(user));
