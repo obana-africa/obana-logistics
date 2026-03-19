@@ -118,6 +118,8 @@ module.exports = (sequelize, DataTypes) => {
         status: {
             type: DataTypes.ENUM(
                 'pending',           // Created but not processed
+                'picked_up',
+                'dispatched',
                 'in_transit',        // On the way to hub/customer
                 'delivered',         // Successfully delivered
                 'failed',            // Delivery failed
