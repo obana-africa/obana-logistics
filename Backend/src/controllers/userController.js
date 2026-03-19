@@ -86,11 +86,13 @@ const createUser = async (payload, req, res) => {
 
     const { first_name, last_name, vehicle_type, vehicle_registration, role,  ...userData } = payload
     
+    const hashedPassword = await hashPassword(userData.password)
+
     // Create user
     user = await User.create({
         email: userData.email,
         phone: userData.phone,
-        password: userData.password
+        password: hashedPassword
     })
 
     const attributesToSave = { first_name, last_name, role };
@@ -287,7 +289,7 @@ const loginRequest = async (req, res) => {
 
     bcrypt.compare(req.body.password, user.password, async (error, isMatch) => {
         if (isMatch) {
-            // After password verification, fetch the full user profile for token generation.
+            
             const userProfile = await getUser(user.email, user.phone, true, req, res);
             const rememberMe = req.body.hasOwnProperty('remember_me') ? req.body.remember_me : false;
             const authData = await createAuthDetail(userProfile, rememberMe);
@@ -389,7 +391,7 @@ const updateProfile = async (req, res) => {
 
   
 
-    // Update Agent Profile if exists
+    
     const agent = await Agents.findOne({ where: { user_id: user.id } });
     if (agent) {
         const agentFields = ['country', 'state', 'city', 'lga', 'assigned_zone', 'latitude', 'longitude', 'service_radius', 'government_id_type', 'government_id_number'];
@@ -932,7 +934,7 @@ const getRolesAndScopes = async (role_id) => {
 
 const addAdminUser = async (req, res) => {
     const tempPassword = utils.temPassword()
-    req.body.password = await hashPassword(tempPassword)
+    req.body.password = tempPassword
 
     const payload = req.body
     if (!req.body.attributes && req.body.attributes.account_types !== "admin")

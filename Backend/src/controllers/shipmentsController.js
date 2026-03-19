@@ -284,7 +284,7 @@ const sendStatusUpdateEmail = async (shipment, status, trackingEvent) => {
             location: trackingEvent.location || 'Not specified',
             notes: trackingEvent.notes || '',
             updated_by: trackingEvent.performed_by || 'System',
-            updated_at: new Date(trackingEvent.createdAt).toLocaleString(),
+            updated_at: new Date().toLocaleString(),
             dashboard_url: process.env.DASHBOARD_URL || 'https://logistics.obana.africa'
         };
 
