@@ -121,17 +121,25 @@ export default function AgentDetailPage() {
             <div><Label htmlFor="state">State</Label><Input id="state" name="state" value={agent.state || ''} disabled /></div>
 
             <div className="md:col-span-2">
-              <h3 className="font-medium mb-2">Documents</h3>
-              <div className="space-y-2">
-                {agent.profile_photo ? (
-                  <a href={agent.profile_photo} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">View Profile Photo</a>
-                ) : <p className="text-sm text-gray-500">No profile photo uploaded.</p>}
-                
-                {agent.government_id_image ? (
-                  <div className="block mt-2">
-                    <a href={agent.government_id_image} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">View Government ID</a>
-                  </div>
-                ) : <p className="text-sm text-gray-500">No government ID uploaded.</p>}
+              <h3 className="font-medium mb-4">Documents</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label className="mb-2 block">Profile Photo</Label>
+                  {agent.profile_photo ? (
+                    <a href={agent.profile_photo} target="_blank" rel="noopener noreferrer" className="block">
+                      <img src={agent.profile_photo} alt="Profile Photo" className="h-48 w-auto object-cover rounded-lg border border-gray-200 hover:opacity-90 transition-opacity" />
+                    </a>
+                  ) : <p className="text-sm text-gray-500">No profile photo uploaded.</p>}
+                </div>
+
+                <div>
+                  <Label className="mb-2 block">Government ID</Label>
+                  {agent.government_id_image ? (
+                    <a href={agent.government_id_image} target="_blank" rel="noopener noreferrer" className="block">
+                      <img src={agent.government_id_image} alt="Government ID" className="h-48 w-auto object-cover rounded-lg border border-gray-200 hover:opacity-90 transition-opacity" />
+                    </a>
+                  ) : <p className="text-sm text-gray-500">No government ID uploaded.</p>}
+                </div>
               </div>
             </div>
           </div>

@@ -3,7 +3,7 @@ export const uploadToCloudinary = async (file: File) => {
   formData.append("file", file);
   // Ensure you have an unsigned upload preset named 'obana_preset' in Cloudinary settings
   formData.append("upload_preset", "obana_preset");
-  const cloudName = "deh6kg4sk"; 
+  const cloudName = "dgwmkzgsb"; 
   const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
     method: "POST",
     body: formData,

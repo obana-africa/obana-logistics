@@ -23,6 +23,10 @@ export default function AgentProfilePage() {
     service_radius: '',
     government_id_number: ''
   });
+  const [images, setImages] = useState({
+    profile_photo: '',
+    government_id_image: ''
+  });
 
   useEffect(() => {
     loadProfile();
@@ -46,6 +50,10 @@ export default function AgentProfilePage() {
           assigned_zone: agent.assigned_zone || '',
           service_radius: agent.service_radius || '',
           government_id_number: agent.government_id_number || ''
+        });
+        setImages({
+          profile_photo: agent.profile_photo || '',
+          government_id_image: agent.government_id_image || ''
         });
       }
     } catch (error) {
@@ -103,6 +111,28 @@ export default function AgentProfilePage() {
                   {/* <Input label="LGA" name="lga" value={formData.lga} onChange={handleChange} />
                   <Input label="Zone" name="assigned_zone" value={formData.assigned_zone} onChange={handleChange} />
                   <Input label="Service Radius (km)" name="service_radius" type="number" value={formData.service_radius} onChange={handleChange} /> */}
+                </div>
+              </div>
+
+              <div className="border-t border-gray-100 pt-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Documents</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Profile Photo</label>
+                    {images.profile_photo ? (
+                      <img src={images.profile_photo} alt="Profile Photo" className="h-48 w-auto object-cover rounded-lg border border-gray-200" />
+                    ) : (
+                      <p className="text-sm text-gray-500">No profile photo uploaded.</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Government ID</label>
+                    {images.government_id_image ? (
+                      <img src={images.government_id_image} alt="Government ID" className="h-48 w-auto object-cover rounded-lg border border-gray-200" />
+                    ) : (
+                      <p className="text-sm text-gray-500">No government ID uploaded.</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
