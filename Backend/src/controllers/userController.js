@@ -232,7 +232,7 @@ const resetPasswordRequest = async (req, res) => {
     req.body.email = user.email
     req.body.phone = user.phone
 
-    createVerificationRequest(req.body, res, 'resetPasswordHelper')
+    // createVerificationRequest(req.body, res, 'resetPasswordHelper')
 
 }
 
