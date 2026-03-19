@@ -196,11 +196,20 @@ export default function DriverDashboard() {
                 <Select
                   label="New Status"
                   value={updateForm.status}
-                  onChange={(e) => setUpdateForm({ ...updateForm, status: e.target.value })}
+                  onChange={(e) => {
+                    const newStatus = e.target.value;
+                    let newLocation = updateForm.location;
+                    if (newStatus === 'delivered' && selectedShipment) {
+                       newLocation = `${selectedShipment.delivery_address?.city || ''}, ${selectedShipment.delivery_address?.state || ''}`.trim().replace(/^, /, '');
+                    }
+                    setUpdateForm({ ...updateForm, status: newStatus, location: newLocation });
+                  }}
                   options={[
                     { value: 'pending', label: 'Pending' },
-                    { value: 'delivered', label: 'Delivered' },
+                    { value: 'picked_up', label: 'Picked Up' },
+                    { value: 'dispatched', label: 'Dispatched' },
                     { value: 'in_transit', label: 'In Transit' },
+                    { value: 'delivered', label: 'Delivered' },
                     { value: 'cancelled', label: 'Cancelled' },
                     { value: 'returned', label: 'Returned' },
                   ]}
@@ -211,6 +220,7 @@ export default function DriverDashboard() {
                   placeholder="e.g. Ikeja, Lagos"
                   value={updateForm.location}
                   onChange={(e) => setUpdateForm({ ...updateForm, location: e.target.value })}
+                  disabled={updateForm.status === 'delivered'}
                   required
                 />
 

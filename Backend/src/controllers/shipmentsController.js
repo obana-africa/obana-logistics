@@ -1040,7 +1040,7 @@ getAllShipments: async (req, res) => {
             const { status, description, location, notes, source = 'system', performed_by } = req.body;
             
             // Validate status
-            const validStatuses = ['pending', 'picked_up', 'in_transit', 'delivered', 'failed', 'cancelled', 'returned'];
+            const validStatuses = ['pending', 'picked_up', 'dispatched', 'in_transit', 'delivered', 'failed', 'cancelled', 'returned'];
             if (!validStatuses.includes(status)) {
                 return res.status(400).json({
                     success: false,

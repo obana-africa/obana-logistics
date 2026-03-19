@@ -160,7 +160,7 @@ router.post('/signup', userController.signup)
 *                 $ref: '#/components/schemas/reset_password_details'
  */
 // Password reset endpoints removed in simplified auth. Keep minimal endpoints below.
-
+router.post('/reset-password', userController.resetPasswordRequest)
 
 /**
  * @swagger

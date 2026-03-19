@@ -201,13 +201,20 @@ export default function AgentShipmentDetailsPage() {
             <form onSubmit={handleUpdateSubmit} className="space-y-4">
               <div>
                 <Label className="mb-2 block">Status</Label>
-                <SelectP value={updateForm.status} onValueChange={(value) => setUpdateForm({ ...updateForm, status: value })}>
+                <SelectP value={updateForm.status} onValueChange={(value) => {
+                  const isDelivered = value === 'delivered';
+                  const newLocation = isDelivered 
+                    ? `${shipment.delivery_address?.city || ''}, ${shipment.delivery_address?.state || ''}`.trim().replace(/^, /, '')
+                    : updateForm.location;
+                  setUpdateForm({ ...updateForm, status: value, location: newLocation });
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="picked_up">Picked Up</SelectItem>
+                    <SelectItem value="dispatched">Dispatched</SelectItem>
                     <SelectItem value="in_transit">In Transit</SelectItem>
                     <SelectItem value="delivered">Delivered</SelectItem>
                     <SelectItem value="failed">Failed</SelectItem>
@@ -220,9 +227,10 @@ export default function AgentShipmentDetailsPage() {
                 <label className="block text-sm font-medium text-gray-700">Location (optional)</label>
                 <input
                   type="text"
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 disabled:bg-gray-100 disabled:text-gray-500"
                   value={updateForm.location}
                   onChange={(e) => setUpdateForm({ ...updateForm, location: e.target.value })}
+                  disabled={updateForm.status === 'delivered'}
                 />
               </div>
               <div>

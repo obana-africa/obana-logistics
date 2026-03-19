@@ -337,12 +337,20 @@ export default function ShipmentDetailsPage() {
               <form onSubmit={handleUpdateSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label>New Status</Label>
-                  <SelectP value={updateForm.status} onValueChange={(value) => setUpdateForm({ ...updateForm, status: value })}>
+                  <SelectP value={updateForm.status} onValueChange={(value) => {
+                    const isDelivered = value === 'delivered';
+                    const newLocation = isDelivered 
+                      ? `${shipment.delivery_address?.city || ''}, ${shipment.delivery_address?.state || ''}`.trim().replace(/^, /, '')
+                      : updateForm.location;
+                    setUpdateForm({ ...updateForm, status: value, location: newLocation });
+                  }}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select status" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="picked_up">Picked Up</SelectItem>
+                      <SelectItem value="dispatched">Dispatched</SelectItem>
                       <SelectItem value="in_transit">In Transit</SelectItem>
                       <SelectItem value="delivered">Delivered</SelectItem>
                       <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -356,6 +364,7 @@ export default function ShipmentDetailsPage() {
                   placeholder="e.g. Ikeja, Lagos"
                   value={updateForm.location}
                   onChange={(e) => setUpdateForm({ ...updateForm, location: e.target.value })}
+                  disabled={updateForm.status === 'delivered'}
                 />
 
                 <div>

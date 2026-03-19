@@ -57,7 +57,7 @@ const sendMail = async (payload) => {
         html: html,
     };
 
-    console.log(msg)
+    // console.log(msg)
     try {
         await sgMail.send(msg);
         console.log(`Message sent to ${email}`);

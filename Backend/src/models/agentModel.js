@@ -24,7 +24,7 @@ module.exports = (sequelize, DataTypes) => {
         assigned_zone: DataTypes.STRING,
         latitude: DataTypes.FLOAT,
         longitude: DataTypes.FLOAT,
-        service_radius: DataTypes.FLOAT, // in km
+        service_radius: DataTypes.FLOAT, 
         status: DataTypes.ENUM('pending_verification', 'active', 'suspended', 'deactivated')
     });
     return Agent;

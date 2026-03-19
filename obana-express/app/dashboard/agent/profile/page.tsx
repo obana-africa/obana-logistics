@@ -5,6 +5,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { Card, Button, Input, Loader, Alert } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import { useAuth } from '@/lib/authContext';
+import { uploadToCloudinary } from '@/lib/cloudinary';
 
 export default function AgentProfilePage() {
   const { user } = useAuth();
@@ -27,6 +28,10 @@ export default function AgentProfilePage() {
     profile_photo: '',
     government_id_image: ''
   });
+  const [files, setFiles] = useState<{
+    profile_photo: File | null;
+    government_id_image: File | null;
+  }>({ profile_photo: null, government_id_image: null });
 
   useEffect(() => {
     loadProfile();
@@ -68,12 +73,47 @@ export default function AgentProfilePage() {
     setSaving(true);
     setMessage({ type: '', text: '' });
     try {
-      await apiClient.updateProfile(formData);
+      let updatedData = { ...formData };
+      
+      // Handle file uploads if any
+      if (files.profile_photo) {
+        try {
+          const url = await uploadToCloudinary(files.profile_photo);
+          updatedData = { ...updatedData, profile_photo: url } as any;
+          setImages(prev => ({ ...prev, profile_photo: url }));
+        } catch (e) {
+          console.error("Profile photo upload failed", e);
+          throw new Error("Failed to upload profile photo");
+        }
+      }
+
+      if (files.government_id_image) {
+        try {
+          const url = await uploadToCloudinary(files.government_id_image);
+          updatedData = { ...updatedData, government_id_image: url } as any;
+          setImages(prev => ({ ...prev, government_id_image: url }));
+        } catch (e) {
+          console.error("ID image upload failed", e);
+          throw new Error("Failed to upload ID document");
+        }
+      }
+
+      await apiClient.updateProfile(updatedData);
       setMessage({ type: 'success', text: 'Profile updated successfully' });
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to update profile' });
+      setFiles({ profile_photo: null, government_id_image: null });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || 'Failed to update profile' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: 'profile_photo' | 'government_id_image') => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFiles(prev => ({ ...prev, [field]: file }));
+      // Create preview
+      setImages(prev => ({ ...prev, [field]: URL.createObjectURL(file) }));
     }
   };
 
@@ -119,6 +159,12 @@ export default function AgentProfilePage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Profile Photo</label>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={(e) => handleFileChange(e, 'profile_photo')}
+                      className="block w-full text-sm text-gray-500 mb-2 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    />
                     {images.profile_photo ? (
                       <img src={images.profile_photo} alt="Profile Photo" className="h-48 w-auto object-cover rounded-lg border border-gray-200" />
                     ) : (
@@ -127,6 +173,12 @@ export default function AgentProfilePage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Government ID</label>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={(e) => handleFileChange(e, 'government_id_image')}
+                      className="block w-full text-sm text-gray-500 mb-2 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    />
                     {images.government_id_image ? (
                       <img src={images.government_id_image} alt="Government ID" className="h-48 w-auto object-cover rounded-lg border border-gray-200" />
                     ) : (

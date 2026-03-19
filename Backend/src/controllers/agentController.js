@@ -1,11 +1,12 @@
 const db = require('../models/db.js');
 const utils = require('../../utils.js');
 const { createUserAttributes } = require('./userController');
+const mailer = require('../mailer/sendgrid');
 
 const Agent = db.agents;
 const User = db.users;
 
-// List all agents
+
 const listAgents = async (req, res) => {
     try {
         const agents = await Agent.findAll({
@@ -17,7 +18,7 @@ const listAgents = async (req, res) => {
             order: [['createdAt', 'DESC']]
         });
 
-        // Fetch attributes for each user to get names
+        
         const agentData = await Promise.all(agents.map(async (agent) => {
             const userAttributes = await db.user_attributes.findAll({
                 where: { user_id: agent.user_id },
@@ -76,14 +77,49 @@ const getAgent = async (req, res) => {
 const updateAgent = async (req, res) => {
     try {
         const { id } = req.params;
-        const agent = await Agent.findByPk(id);
+        const agent = await Agent.findByPk(id, {
+            include: [{ model: User, as: 'user' }]
+        });
 
         if (!agent) {
             return res.status(404).send(utils.responseError('Agent not found'));
         }
 
+        const previousVerificationStatus = agent.verification_status;
+        const previousStatus = agent.status;
+
         const updateData = req.body;
         await agent.update(updateData);
+
+        // Handle Notifications
+        if (agent.user && agent.user.email) {
+            // 1. Verification Status Change
+            if (previousVerificationStatus !== agent.verification_status) {
+                await mailer.sendMail({
+                    email: agent.user.email,
+                    subject: `Agent Verification Update: ${agent.verification_status.toUpperCase()}`,
+                    template: 'agentVerified', // Using a generic template for verification outcomes
+                    content: {
+                        verification_status: agent.verification_status,
+                        is_verified: agent.verification_status === 'verified',
+                        agent_code: agent.agent_code
+                    }
+                });
+            }
+
+            // 2. Account Status Change (e.g., suspended, active)
+            if (previousStatus !== agent.status) {
+                await mailer.sendMail({
+                    email: agent.user.email,
+                    subject: `Account Status Update: ${agent.status.replace('_', ' ').toUpperCase()}`,
+                    template: 'agentStatusUpdate',
+                    content: {
+                        status: agent.status,
+                        agent_code: agent.agent_code
+                    }
+                });
+            }
+        }
 
         const updatedAgent = await Agent.findByPk(id);
         return res.status(200).send(utils.responseSuccess(updatedAgent));

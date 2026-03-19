@@ -117,7 +117,7 @@ const createUser = async (payload, req, res) => {
 
     
     if (role === 'agent') {
-        await Agents.create({
+        const newAgent = await Agents.create({
             agent_code: `OBANA-AGT-${String(user.id).padStart(3, '0')}`,
             user_id: user.id,                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
             verification_status: 'pending', 
@@ -134,6 +134,16 @@ const createUser = async (payload, req, res) => {
             government_id_number: payload.government_id_number,
             government_id_image: payload.government_id_image,
             profile_photo: payload.profile_photo
+        });
+
+        await mailer.sendMail({
+            email: userData.email,
+            subject: 'Welcome to Obana Logistics - Agent Application Received',
+            template: 'agentWelcome',
+            content: {
+                name: `${first_name} ${last_name}`,
+                agent_code: newAgent.agent_code
+            }
         });
     }
 
@@ -394,11 +404,16 @@ const updateProfile = async (req, res) => {
     
     const agent = await Agents.findOne({ where: { user_id: user.id } });
     if (agent) {
-        const agentFields = ['country', 'state', 'city', 'lga', 'assigned_zone', 'latitude', 'longitude', 'service_radius', 'government_id_type', 'government_id_number'];
+        const agentFields = ['country', 'state', 'city', 'lga', 'assigned_zone', 'latitude', 'longitude', 'service_radius', 'government_id_type', 'government_id_number', 'profile_photo', 'government_id_image'];
+        const numericFields = ['latitude', 'longitude', 'service_radius'];
         let hasUpdate = false;
         agentFields.forEach(field => {
             if (attributes[field] !== undefined) {
-                agent[field] = attributes[field];
+                let val = attributes[field];
+                if (numericFields.includes(field) && (val === "" || val === null)) {
+                    val = 0;
+                }
+                agent[field] = val;
                 hasUpdate = true;
             }
         });
@@ -965,6 +980,7 @@ module.exports = {
     // Auth endpoints
     signup: createUserRequest,
     signin: loginRequest,
+    resetPasswordRequest,
     
     // Original function names (deprecated)
     createUserRequest,
