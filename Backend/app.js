@@ -7,6 +7,7 @@ const requestsRoute = require("./src/routes/requests");
 const shipmentRoutes = require("./src/routes/shipments");
 const routesManagement = require("./src/routes/routes");
 const agentRoutes = require("./src/routes/agents");
+const locations = require("./src/routes/locations")
 
 const PORT = process.env.PORT;
 const app = express();
@@ -106,11 +107,8 @@ app.use("/requests", requestsRoute);
 app.use("/routes", routesManagement);
 app.use("/tenants", require("./src/routes/tenants"));
 app.use("/agents", agentRoutes);
-// app.listen(PORT, () => {
-//     console.log(`Obana is running on port ${PORT}`);
-// })
-
-// Update your app.listen to use server instead of app
+app.use("/locations", locations)
+ 
 server.listen(PORT, () => {
 	console.log(`Obana is running on port ${PORT}`);
 });

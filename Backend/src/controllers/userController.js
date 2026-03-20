@@ -217,27 +217,83 @@ const createUserAttributes = async (user_id, attributes, parent_id = null) => {
  * @param res 
  **/
 const resetPasswordRequest = async (req, res) => {
-    req.body.user_identification = req.body?.user_identification.toLowerCase()
-    const user = await getUser(req.body.user_identification, req.body.user_identification, true)
+    try {
+        req.body.user_identification = req.body?.user_identification?.toLowerCase();
+        const user = await getUser(req.body.user_identification, req.body.user_identification, true);
 
-    if (!user) {
-        return res.status(401).send(
-            utils.responseError('User not found. Check your user_identification and try again')
-        )
+        if (!user) {
+            return res.status(404).send(
+                utils.responseError('User not found. Check your email or phone and try again')
+            );
+        }
+
+        // Generate Reset Token (valid for 1 hour)
+        const secret = process.env.ACCESS_TOKEN_SECRET || 'secret'; 
+        const token = jwt.sign(
+            { id: user.id, email: user.email, scope: 'password_reset' },
+            secret,
+            { expiresIn: '1h' }
+        );
+
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const resetLink = `${frontendUrl}/auth/reset-password?token=${token}`;
+
+        await mailer.sendMail({
+            email: user.email,
+            subject: 'Reset Your Password - Obana Logistics',
+            template: 'resetPassword',
+            content: {
+                name: user.attributes?.first_name || 'User',
+                link: resetLink
+            }
+        });
+
+        return res.status(200).send(utils.responseSuccess('Password reset link sent to your email.'));
+    } catch (error) {
+        console.error("Reset Password Request Error:", error);
+        return res.status(500).send(utils.responseError(error.message));
     }
+}
 
-    if (req.body.platform && !utils.flattenObj(user)?.account_types.split(',').includes(req.body.platform))
-        return res.status(401).send(utils.responseError('User not found. Check your user_identification and try again'))
+const resetPasswordConfirm = async (req, res) => {
+    try {
+        const { token, password } = req.body;
+        if (!token || !password) {
+            return res.status(400).send(utils.responseError('Token and new password are required'));
+        }
 
-    req.body.email = user.email
-    req.body.phone = user.phone
+        const secret = process.env.ACCESS_TOKEN_SECRET || 'secret';
+        
+        let decoded;
+        try {
+            decoded = jwt.verify(token, secret);
+        } catch (e) {
+            return res.status(400).send(utils.responseError('Invalid or expired reset token'));
+        }
 
-    // createVerificationRequest(req.body, res, 'resetPasswordHelper')
+        if (decoded.scope !== 'password_reset') {
+            return res.status(400).send(utils.responseError('Invalid token type'));
+        }
 
+        const user = await User.findByPk(decoded.id);
+        if (!user) {
+            return res.status(404).send(utils.responseError('User not found'));
+        }
+
+        const hashedPassword = await hashPassword(password);
+        user.password = hashedPassword;
+        await user.save();
+
+        return res.status(200).send(utils.responseSuccess('Password has been reset successfully. You can now login.'));
+
+    } catch (error) {
+        console.error("Reset Password Confirm Error:", error);
+        return res.status(500).send(utils.responseError(error.message));
+    }
 }
 
 /**
- * Method to complete reset password request
+ * Method to complete reset password request (Internal helper, kept for backward compat if needed)
  * @param payload
  *   Required 
  *     email: string
@@ -981,6 +1037,7 @@ module.exports = {
     signup: createUserRequest,
     signin: loginRequest,
     resetPasswordRequest,
+    resetPasswordConfirm,
     
     // Original function names (deprecated)
     createUserRequest,

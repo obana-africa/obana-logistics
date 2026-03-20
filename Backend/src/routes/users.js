@@ -161,6 +161,7 @@ router.post('/signup', userController.signup)
  */
 // Password reset endpoints removed in simplified auth. Keep minimal endpoints below.
 router.post('/reset-password', userController.resetPasswordRequest)
+router.post('/reset-password-confirm', userController.resetPasswordConfirm)
 
 /**
  * @swagger

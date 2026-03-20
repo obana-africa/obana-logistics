@@ -337,6 +337,22 @@ class ApiClient {
     const response = await this.client.get<ApiResponse>(`/requests/${id}`);
     return response.data;
   }
+
+  // Location endpoints (Terminal Africa)
+  async getCountries() {
+    const response = await this.client.get<ApiResponse>('/locations/countries');
+    return response.data;
+  }
+
+  async getStates(countryCode: string) {
+    const response = await this.client.get<ApiResponse>(`/locations/states?country_code=${countryCode}`);
+    return response.data;
+  }
+
+  async getCities(countryCode: string, stateCode: string) {
+    const response = await this.client.get<ApiResponse>(`/locations/cities?country_code=${countryCode}&state_code=${stateCode}`);
+    return response.data;
+  }
 }
 
 export const apiClient = new ApiClient();

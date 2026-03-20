@@ -1,8 +1,9 @@
+
+
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
 import { MapPin, ChevronDown, Search, X } from "lucide-react";
-import { Country, State, City } from 'country-state-city';
 
 interface LocationInputProps {
 	label: string;
@@ -32,6 +33,13 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 	placeholder = "Start typing city name...",
 }) => {
 	const [countries, setCountries] = useState<any[]>([]);
+	const TERMINAL_AFRICA_BASE_URL = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_BASE_URL || 'https://sandbox.terminal.africa/v1';
+	const TERMINAL_AFRICA_SECRET_KEY = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_SECRET_KEY || 'sk_test_u9dHWJILEe6F9b4etSZ5gPvO6qTXiG1i';
+	const apiHeaders = {
+		'Authorization': `Bearer ${TERMINAL_AFRICA_SECRET_KEY}`,
+		'Content-Type': 'application/json'
+	};
+
 	const [states, setStates] = useState<any[]>([]);
 	const [cities, setCities] = useState<any[]>([]);
 	
@@ -45,6 +53,9 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 	const [showStateDropdown, setShowStateDropdown] = useState(false);
 	const [showCountryDropdown, setShowCountryDropdown] = useState(false);
 	
+	const [loadingStates, setLoadingStates] = useState(false);
+	const [loadingCities, setLoadingCities] = useState(false);
+
 	// Refs
 	const cityInputRef = useRef<HTMLInputElement>(null);
 	const stateInputRef = useRef<HTMLInputElement>(null);
@@ -55,18 +66,41 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 
 	// Load countries on mount
 	useEffect(() => {
-		setCountries(Country.getAllCountries());
+		const fetchCountries = async () => {
+			try {
+				const response = await fetch(`${TERMINAL_AFRICA_BASE_URL}/countries`, { headers: apiHeaders });
+				const data = await response.json();
+				if (data.status && Array.isArray(data.data)) {
+					setCountries(data.data);
+				}
+			} catch (error) {
+				console.error("Failed to load countries", error);
+			}
+		};
+		fetchCountries();
 	}, []);
 
 	// Load states when country changes
 	useEffect(() => {
 		if (value.countryCode) {
-			const countryStates = State.getStatesOfCountry(value.countryCode);
-			setStates(countryStates);
-			// If current state is not in the new list (e.g. country changed), clear it
-			if (value.stateCode && !countryStates.find(s => s.isoCode === value.stateCode)) {
-				// We don't auto-clear here to avoid loops, but UI will show empty or invalid if mismatch
-			}
+			setLoadingStates(true);
+			const fetchStates = async () => {
+				try {
+					const response = await fetch(`${TERMINAL_AFRICA_BASE_URL}/states?country_code=${value.countryCode}`, { headers: apiHeaders });
+					const data = await response.json();
+					if (data.status && Array.isArray(data.data)) {
+						setStates(data.data);
+					} else {
+						setStates([]);
+					}
+				} catch (error) {
+					console.error("Failed to load states", error);
+					setStates([]);
+				} finally {
+					setLoadingStates(false);
+				}
+			};
+			fetchStates();
 		} else {
 			setStates([]);
 		}
@@ -75,8 +109,24 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 	// Load cities when state changes
 	useEffect(() => {
 		if (value.countryCode && value.stateCode) {
-			const stateCities = City.getCitiesOfState(value.countryCode, value.stateCode);
-			setCities(stateCities);
+			setLoadingCities(true);
+			const fetchCities = async () => {
+				try {
+					const response = await fetch(`${TERMINAL_AFRICA_BASE_URL}/cities?country_code=${value.countryCode}&state_code=${value.stateCode}`, { headers: apiHeaders });
+					const data = await response.json();
+					if (data.status && Array.isArray(data.data)) {
+						setCities(data.data);
+					} else {
+						setCities([]);
+					}
+				} catch (error) {
+					console.error("Failed to load cities", error);
+					setCities([]);
+				} finally {
+					setLoadingCities(false);
+				}
+			};
+			fetchCities();
 		} else {
 			setCities([]);
 		}
@@ -242,10 +292,10 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 							if (!e.target.value) onChange({ ...value, state: '', stateCode: '', city: '', countryCode: value.countryCode || '' });
 							}}
 							onFocus={() => setShowStateDropdown(true)}
-							placeholder={states.length > 0 ? "Select State/Province..." : "No states available"}
+							placeholder={loadingStates ? "Loading states..." : (states.length > 0 ? "Select State/Province..." : "No states available")}
 							className="w-full px-4 py-2.5 pr-10 border border-gray-300 text-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 							required={required}
-							disabled={states.length === 0}
+							disabled={loadingStates || states.length === 0}
 						/>
 						<ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
 					</div>
@@ -284,9 +334,10 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 							if (!e.target.value) onChange({ ...value, city: '', countryCode: value.countryCode || '', stateCode: value.stateCode || '' });
 							}}
 							onFocus={() => setShowCityDropdown(true)}
-							placeholder={cities.length > 0 ? "Select City..." : "Type city name..."}
+							placeholder={loadingCities ? "Loading cities..." : (cities.length > 0 ? "Select City..." : "Type city name...")}
 							className="w-full pl-10 pr-10 py-2.5 border text-slate-800 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 							required={required}
+							disabled={loadingCities}
 						/>
 						{(value.city || cityQuery) && (
 							<button
