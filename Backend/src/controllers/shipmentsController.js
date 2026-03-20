@@ -193,6 +193,7 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
             shipment_reference: shipment.shipment_reference,
             order_reference: shipment.order_reference,
             customer_name: deliveryAddress.name || 'Customer',
+            customer_email: customerEmail,
             vendor_name: shipment.vendor_name,
             total_items: shipment.total_items,
             total_weight: shipment.total_weight,
@@ -230,26 +231,38 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
             dashboard_url: process.env.DASHBOARD_URL || 'https://logistics.obana.africa'
         };
 
-        // 3. Define Recipients (Admin, Agent, Customer)
-        const recipients = new Set();
-        recipients.add('shipment@obana.africa');
-        recipients.add('product@obana.africa');
-        // recipients.add('chimebukaanyanwu@gmail.com');
+        // 1. Send to Customer
+        if (customerEmail) {
+            await mailer.sendMail({
+                email: customerEmail, 
+                subject: `Your Shipment has been created: ${shipment.shipment_reference}`,
+                content: emailData,
+                template: 'newShipmentCustomer'
+            });
+        }
 
-        if (agentData.email) recipients.add(agentData.email);
-        if (customerEmail) recipients.add(customerEmail);
-        
-        for (const email of recipients) {
-            if (!email) continue;
+        // 2. Send to Agent
+        if (agentData.email) {
+            await mailer.sendMail({
+                email: agentData.email, 
+                subject: `New Shipment Assigned: ${shipment.shipment_reference}`,
+                content: emailData,
+                template: 'newShipmentAgent'
+            });
+        }
+
+        // 3. Send to Admins
+        const adminEmails = ['shipment@obana.africa', 'chimebukaanyanwu@gmail.com'];
+        for (const email of adminEmails) {
             await mailer.sendMail({
                 email: email, 
-                subject: `New Shipment: ${shipment.shipment_reference} - ${shipment.vendor_name}`,
+                subject: `New Shipment Alert: ${shipment.shipment_reference}`,
                 content: emailData,
-                template: 'newShipment'
+                template: 'newShipmentAdmin'
             });
         }
         
-        console.log(`Emails sent for shipment ${shipment.shipment_reference} to: ${Array.from(recipients).join(', ')}`);
+        console.log(`Role-based emails sent for shipment ${shipment.shipment_reference}`);
 
     } catch (error) {
         console.error('Error sending shipment email:', error);

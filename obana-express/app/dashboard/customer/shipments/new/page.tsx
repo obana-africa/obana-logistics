@@ -733,7 +733,7 @@ export default function CreateShipmentPage() {
 										Estimated Delivery
 									</p>
 									<p className="text-2xl sm:text-3xl font-bold text-blue-600">
-										{matchedRoute.match.eta || "N/A"} days
+										{matchedRoute.match.eta || "N/A"} 
 									</p>
 								</div>
 							</div>

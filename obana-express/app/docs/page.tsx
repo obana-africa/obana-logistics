@@ -176,7 +176,7 @@ export default function DocsPage() {
 								</li>
 								<li>
 									<strong>2. Get API Key:</strong> Copy your API key from the
-									confirmation page
+									settings of your customer dashboard
 								</li>
 								<li>
 									<strong>3. Start Integrating:</strong> Use the endpoints below

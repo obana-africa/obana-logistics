@@ -34,7 +34,7 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 }) => {
 	const [countries, setCountries] = useState<any[]>([]);
 	const TERMINAL_AFRICA_BASE_URL = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_BASE_URL || 'https://sandbox.terminal.africa/v1';
-	const TERMINAL_AFRICA_SECRET_KEY = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_SECRET_KEY || 'sk_test_u9dHWJILEe6F9b4etSZ5gPvO6qTXiG1i';
+	const TERMINAL_AFRICA_SECRET_KEY = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_SECRET_KEY;
 	const apiHeaders = {
 		'Authorization': `Bearer ${TERMINAL_AFRICA_SECRET_KEY}`,
 		'Content-Type': 'application/json'

@@ -10,7 +10,6 @@
         .content { padding: 20px; }
         .section { margin-bottom: 25px; border: 1px solid #e1e4e8; padding: 20px; border-radius: 8px; }
         .section-title { font-weight: bold; margin-bottom: 15px; color: #1B3E5D; border-bottom: 1px solid #e1e4e8; padding-bottom: 8px; font-size: 16px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .agent-section { background-color: #f0f7ff; border: 1px solid #cce5ff; }
         .row { margin-bottom: 8px; display: flex; }
         .label { font-weight: bold; color: #555; width: 100px; flex-shrink: 0; }
         .value { flex-grow: 1; }
@@ -21,37 +20,19 @@
 <body>
     <div class="container">
         <div class="header">
-                    <div style="background-color: #0047AB; padding: 20px; text-align: center;">
-            <img src="https://www.obana.africa/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Fobana.africa.6c072a90.png&w=1920&q=75" 
-                 alt="Obana Logistics Logo" style="width: 120px; height: auto;">
-            <h1 style="color: white; margin: 10px 0 0 0; font-size: 24px;">New Shipment </h1>
-        </div>
-        
-            <h2>New Shipment Created</h2>
+            <h2>New Shipment Assigned</h2>
             <div class="reference">Ref: {{shipment_reference}}</div>
         </div>
         
         <div class="content">
-            <p>Hello,</p>
-            <p>A new shipment request has been successfully created and is ready for processing.</p>
-
-            {{#if agent_name}}
-            <div class="section agent-section">
-                <div class="section-title">Assigned Agent</div>
-                <div class="row"><span class="label">Name:</span> <span class="value">{{agent_name}}</span></div>
-                <div class="row"><span class="label">Agent Code:</span> <span class="value">{{agent_code}}</span></div>
-                <div class="row"><span class="label">Email:</span> <span class="value">{{agent_email}}</span></div>
-            </div>
-            {{/if}}
+            <p>Hello <strong>{{agent_name}}</strong>,</p>
+            <p>A new shipment has been assigned to you for processing.</p>
 
             <div class="section">
                 <div class="section-title">Shipment Details</div>
                 <div class="row"><span class="label">Vendor:</span> <span class="value">{{vendor_name}}</span></div>
-                <div class="row"><span class="label">Order Ref:</span> <span class="value">{{order_reference}}</span></div>
                 <div class="row"><span class="label">Items:</span> <span class="value">{{total_items}}</span></div>
                 <div class="row"><span class="label">Weight:</span> <span class="value">{{total_weight}} kg</span></div>
-                <div class="row"><span class="label">Value:</span> <span class="value">{{currency}} {{product_value}}</span></div>
-                <div class="row"><span class="label">Fee:</span> <span class="value">{{currency}} {{shipping_fee}}</span></div>
             </div>
 
             <div class="section">
@@ -71,9 +52,6 @@
                 <div class="row"><span class="label">Phone:</span> <span class="value">{{delivery_phone}}</span></div>
                 <div class="row"><span class="label">Address:</span> <span class="value">{{delivery_address_line}}</span></div>
                 <div class="row"><span class="label">Location:</span> <span class="value">{{delivery_city}}, {{delivery_state}}</span></div>
-                {{#if delivery_instructions}}
-                <div class="row"><span class="label">Note:</span> <span class="value">{{delivery_instructions}}</span></div>
-                {{/if}}
             </div>
             
             <div style="text-align: center;">
@@ -82,8 +60,7 @@
         </div>
         
         <div class="footer">
-            <p>&copy; Obana Logistics. All rights reserved.</p>
-            <p>This is an automated message. Please do not reply directly to this email.</p>
+            <p>&copy; Obana Logistics.</p>
         </div>
     </div>
 </body>

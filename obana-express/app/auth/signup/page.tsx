@@ -6,6 +6,7 @@ import { uploadToCloudinary } from "@/lib/cloudinary";
 import { useRouter } from "next/navigation";
 import { Button, Card, Alert, Select, Input } from "@/components/ui";
 import PhoneInput from "@/components/PhoneInput";
+import { LocationInput } from "@/components/LocationInput";
 import {
 	Mail,
 	Phone,
@@ -47,7 +48,9 @@ export default function SignupPage() {
 		government_id_type: 'NIN',
 		government_id_number: '',
 		country: 'Nigeria',
+		countryCode: 'NG',
 		state: '',
+		stateCode: '',
 		city: '',
 		lga: '',
 		assigned_zone: '',
@@ -409,20 +412,22 @@ const route = roleRoutes[role];
 										/>
 									</div>
 
-									<div className="grid grid-cols-2 gap-4">
-										<Input
-											label="State"
-											placeholder="Lagos"
-											value={agentData.state}
-											onChange={(e) => setAgentData({...agentData, state: e.target.value})}
+									<div className="py-1">
+										<LocationInput
+											label="Agent Location"
+											value={{
+												city: agentData.city,
+												state: agentData.state,
+												country: agentData.country,
+												countryCode: agentData.countryCode,
+												stateCode: agentData.stateCode,
+											}}
+											onChange={(location) => setAgentData(prev => ({
+												...prev,
+												...location
+											}))}
 											required
-										/>
-										<Input
-											label="City"
-											placeholder="Ikeja"
-											value={agentData.city}
-											onChange={(e) => setAgentData({...agentData, city: e.target.value})}
-											required
+											placeholder="Search for city..."
 										/>
 									</div>
 
