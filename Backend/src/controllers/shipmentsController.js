@@ -1,7 +1,16 @@
 const { Op } = require('sequelize');
 const crypto = require('crypto');
+const axios = require('axios');
 const db = require('../models/db');
 const mailer = require('../mailer/sendgrid');
+
+const TERMINAL_AFRICA_BASE_URL = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_BASE_URL || 'https://sandbox.terminal.africa/v1';
+const TERMINAL_AFRICA_SECRET_KEY = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_SECRET_KEY || 'sk_test_u9dHWJILEe6F9b4etSZ5gPvO6qTXiG1i';
+
+const taClient = axios.create({
+    baseURL: TERMINAL_AFRICA_BASE_URL,
+    headers: { 'Authorization': `Bearer ${TERMINAL_AFRICA_SECRET_KEY}`, 'Content-Type': 'application/json' }
+});
 
 const validateShipmentPayload = (payload) => {
     const errors = [];
@@ -150,6 +159,7 @@ const updateOrderStatus = async (shipmentId) => {
         console.error('Error updating order status:', error);
     }
 };
+
 /**
  * Send email notification for new internal shipment
  */
@@ -216,7 +226,6 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
             delivery_phone: deliveryAddress.phone,
             delivery_instructions: deliveryAddress.instructions || '',
             
-            // Agent Information
             agent_name: agentData.name,
             agent_email: agentData.email,
             agent_code: agentData.code,
@@ -231,7 +240,7 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
             dashboard_url: process.env.DASHBOARD_URL || 'https://logistics.obana.africa'
         };
 
-        // 1. Send to Customer
+        
         if (customerEmail) {
             await mailer.sendMail({
                 email: customerEmail, 
@@ -241,7 +250,7 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
             });
         }
 
-        // 2. Send to Agent
+        
         if (agentData.email) {
             await mailer.sendMail({
                 email: agentData.email, 
@@ -251,7 +260,7 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
             });
         }
 
-        // 3. Send to Admins
+        
         const adminEmails = ['shipment@obana.africa', 'chimebukaanyanwu@gmail.com'];
         for (const email of adminEmails) {
             await mailer.sendMail({
@@ -682,8 +691,31 @@ const shipmentController = {
                     console.log(`[EXTERNAL CARRIER] Shipment ${shipmentReference} assigned to ${payload.dispatcher?.carrier_name || 'External Carrier'}`);
                     console.log(`[EXTERNAL CARRIER] Reference: ${payload.carrier_reference}, Rate ID: ${payload.rate_id}`);
                     
-                    // TODO: Implement actual API call to Terminal Africa or other external carriers
-                    // await callExternalCarrierAPI(payload, shipment);
+                    if (payload.rate_id && payload.external_shipment_id) {
+                        try {
+                            const pickupResponse = await taClient.post('/shipments/pickup', {
+                                rate_id: payload.rate_id,
+                                shipment_id: payload.external_shipment_id,
+                                purchase_insurance: payload.is_insured || false
+                            });
+
+                            if (pickupResponse.data && pickupResponse.data.status) {
+                                const taData = pickupResponse.data.data;
+                                await shipment.update({
+                                    external_carrier_reference: taData.extras?.tracking_number,
+                                    metadata: { ...shipment.metadata, terminal_africa: taData },
+                                    status: 'pending' // Or map from TA status 'confirmed'
+                                }, { transaction });
+                                
+                                console.log(`[EXTERNAL CARRIER] Successfully arranged pickup. Tracking: ${taData.extras?.tracking_number}`);
+                            }
+                        } catch (extError) {
+                            console.error('[EXTERNAL CARRIER ERROR]', extError?.response?.data || extError.message);
+                            // Note: We don't rollback here to avoid losing the internal record, 
+                            // but admin might need to intervene or user retry.
+                            // Alternatively, throw extError to rollback if strict.
+                        }
+                    }
                 }
 
                 await transaction.commit();
