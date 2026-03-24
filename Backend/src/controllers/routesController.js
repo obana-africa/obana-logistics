@@ -58,15 +58,6 @@ const matchTemplate = async (req, res) => {
     if (!origin_city || !destination_city || !transport_mode || !service_level || typeof weight === 'undefined')
         return res.status(400).send(utils.responseError('Missing required parameters'))
 
-    // const templates = await RouteTemplates.findAll({
-    //     where: {
-    //         origin_city: origin_city,
-    //         destination_city: destination_city,
-    //         transport_mode: transport_mode,
-    //         service_level: service_level
-    //     }
-    // })
-    // rather, the above should normalizze both the db values and the req body values to same letter casing first so comparison can work , implement the fix below:
     const templates = await RouteTemplates.findAll()
     const filteredTemplates = templates.filter(t => 
         t.origin_city.toLowerCase() === origin_city.toLowerCase() &&
@@ -88,10 +79,10 @@ const matchTemplate = async (req, res) => {
         }
     }
 
-    // Fallback: Check External Carriers (Terminal Africa)
+    
     if (pickup_address && delivery_address && items && Array.isArray(items)) {
         try {
-            // 1. Create Quick Shipment
+           
             const parcelItems = items.map(item => ({
                 name: item.name,
                 description: item.description || item.name,
@@ -136,12 +127,12 @@ const matchTemplate = async (req, res) => {
             if (quickResponse.data && quickResponse.data.status && quickResponse.data.data.shipment_id) {
                 const shipmentId = quickResponse.data.data.shipment_id;
                 
-                // 2. Get Rates
+                
                 const ratesResponse = await taClient.get(`/rates/shipment?shipment_id=${shipmentId}&currency=NGN`);
                 const rates = ratesResponse.data.data;
 
                 if (rates && rates.length > 0) {
-                    // Pick the best rate (simplest logic: first one)
+                    
                     const bestRate = rates[0]; 
                     return res.status(200).send(utils.responseSuccess({
                         external: true,
