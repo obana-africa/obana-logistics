@@ -1,8 +1,8 @@
 const axios = require('axios');
 const utils = require('../../utils');
 
-const BASE_URL = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_BASE_URL || 'https://sandbox.terminal.africa/v1';
-const SECRET_KEY = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_SECRET_KEY || 'sk_test_u9dHWJILEe6F9b4etSZ5gPvO6qTXiG1i';
+const BASE_URL = process.env.TERMINAL_AFRICA_BASE_URL ;
+const SECRET_KEY = process.env.TERMINAL_AFRICA_SECRET_KEY;
 
 const apiClient = axios.create({
     baseURL: BASE_URL,

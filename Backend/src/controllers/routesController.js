@@ -3,8 +3,8 @@ const utils = require('../../utils')
 const axios = require('axios')
 const { getCode } = require('country-list')
 
-const TERMINAL_AFRICA_BASE_URL = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_BASE_URL || 'https://sandbox.terminal.africa/v1';
-const TERMINAL_AFRICA_SECRET_KEY = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_SECRET_KEY || 'sk_test_u9dHWJILEe6F9b4etSZ5gPvO6qTXiG1i';
+const TERMINAL_AFRICA_BASE_URL = process.env.TERMINAL_AFRICA_BASE_URL ;
+const TERMINAL_AFRICA_SECRET_KEY = process.env.TERMINAL_AFRICA_SECRET_KEY ;
 
 const taClient = axios.create({
     baseURL: TERMINAL_AFRICA_BASE_URL,
