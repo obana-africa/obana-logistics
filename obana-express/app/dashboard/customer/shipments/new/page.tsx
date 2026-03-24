@@ -127,13 +127,12 @@ export default function CreateShipmentPage() {
         0
       );
 
-      const response = await apiClient.matchRoute(
-        totalWeight,
-        formData.pickup_address.city,
-        formData.delivery_address.city,
-        formData.transport_mode,
-        formData.service_level
-      );
+      const response = await apiClient.matchRoute({
+        ...formData,
+        weight: totalWeight,
+        origin_city: formData.pickup_address.city,
+        destination_city: formData.delivery_address.city
+      });
 
       if (response.data) {
         setMatchedRoute(response.data);
@@ -150,7 +149,7 @@ export default function CreateShipmentPage() {
   };
 
   const handleCreateShipment = async () => {
-    if (!matchedRoute) return;
+  if (!matchedRoute) return;
 
     if (!formData.pickup_address.line1 || !formData.pickup_address.phone) {
       showError('Please fill in required pickup address fields: Street Address and Phone Number');
@@ -181,6 +180,8 @@ export default function CreateShipmentPage() {
         service_level: formData.service_level,
         vendor_name: 'obana.africa',
         carrier_slug: 'obana',
+        external_shipment_id: matchedRoute.shipment_id,
+        rate_id: matchedRoute.rate_id,
         shipping_fee: matchedRoute.match.price,
         estimated_delivery: matchedRoute.match.estimated_delivery,
       });

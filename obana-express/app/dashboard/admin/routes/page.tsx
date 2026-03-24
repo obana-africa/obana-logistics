@@ -30,19 +30,21 @@ export default function RoutesManagement() {
 			state: string;
 			country: string;
 			countryCode: string;
+			stateCode: string;
 		};
 		destination: {
 			city: string;
 			state: string;
 			country: string;
 			countryCode: string;
+			stateCode: string;
 		};
 		transport_mode: string;
 		service_level: string;
 		weight_brackets: { min: string; max: string; price: string; eta: string }[];
 	}>({
-		origin: { city: "", state: "", country: "", countryCode: "" },
-		destination: { city: "", state: "", country: "", countryCode: "" },
+		origin: { city: "", state: "", country: "", countryCode: "", stateCode: "" },
+		destination: { city: "", state: "", country: "", countryCode: "", stateCode: "" },
 		transport_mode: "road",
 		service_level: "Standard",
 		weight_brackets: [],
@@ -101,8 +103,12 @@ export default function RoutesManagement() {
 				metadata: {
 					origin_state: formData.origin.state,
 					origin_country: formData.origin.country,
+					origin_country_code: formData.origin.countryCode,
+					origin_state_code: formData.origin.stateCode,
 					destination_state: formData.destination.state,
 					destination_country: formData.destination.country,
+					destination_country_code: formData.destination.countryCode,
+					destination_state_code: formData.destination.stateCode,
 				},
 			};
 
@@ -130,12 +136,14 @@ export default function RoutesManagement() {
 				state: route.metadata?.origin_state || "",
 				country: route.metadata?.origin_country || "",
 				countryCode: route.metadata?.origin_country_code || "",
+				stateCode: route.metadata?.origin_state_code || "",
 			},
 			destination: {
 				city: route.destination_city,
 				state: route.metadata?.destination_state || "",
 				country: route.metadata?.destination_country || "",
 				countryCode: route.metadata?.destination_country_code || "",
+				stateCode: route.metadata?.destination_state_code || "",
 			},
 			transport_mode: route.transport_mode,
 			service_level: route.service_level,
@@ -165,8 +173,8 @@ export default function RoutesManagement() {
 
 	const resetForm = () => {
 		setFormData({
-			origin: { city: "", state: "", country: "", countryCode: "" },
-			destination: { city: "", state: "", country: "", countryCode: "" },
+			origin: { city: "", state: "", country: "", countryCode: "", stateCode: "" },
+			destination: { city: "", state: "", country: "", countryCode: "", stateCode: "" },
 			transport_mode: "road",
 			service_level: "Standard",
 			weight_brackets: [],

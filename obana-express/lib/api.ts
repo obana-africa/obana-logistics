@@ -195,14 +195,20 @@ class ApiClient {
     return response.data;
   }
 
-  async matchRoute(weight: number, origin: string, destination: string, transport_mode: string, service_level: string) {
-    const response = await this.client.post<ApiResponse>('/routes/match', {
-      weight,
-      origin_city: origin,
-      destination_city: destination,
-      transport_mode,
-      service_level,
-    });
+  async matchRoute(arg1: any, arg2?: string, arg3?: string, arg4?: string, arg5?: string) {
+    let payload;
+    if (typeof arg1 !== 'object') {
+      payload = {
+        weight: arg1,
+        origin_city: arg2,
+        destination_city: arg3,
+        transport_mode: arg4,
+        service_level: arg5,
+      };
+    } else {
+      payload = arg1;
+    }
+    const response = await this.client.post<ApiResponse>('/routes/match', payload);
     return response.data;
   }
 

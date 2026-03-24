@@ -33,7 +33,7 @@ export const LocationInput: React.FC<LocationInputProps> = ({
 	placeholder = "Start typing city name...",
 }) => {
 	const [countries, setCountries] = useState<any[]>([]);
-	const TERMINAL_AFRICA_BASE_URL = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_BASE_URL || 'https://sandbox.terminal.africa/v1';
+	const TERMINAL_AFRICA_BASE_URL = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_BASE_URL;
 	const TERMINAL_AFRICA_SECRET_KEY = process.env.NEXT_PUBLIC_TERMINAL_AFRICA_SECRET_KEY;
 	const apiHeaders = {
 		'Authorization': `Bearer ${TERMINAL_AFRICA_SECRET_KEY}`,
