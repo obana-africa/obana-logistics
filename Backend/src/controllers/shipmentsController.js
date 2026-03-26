@@ -261,7 +261,7 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
         }
 
         
-        const adminEmails = [ 'chimebukaanyanwu@gmail.com'];
+        const adminEmails = [ 'chimebukaanyanwu@gmail.com', 'product@obana.africa', 'shipment@obana.africa'];
         for (const email of adminEmails) {
             await mailer.sendMail({
                 email: email, 
