@@ -2,79 +2,47 @@
 <html>
 <head>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; }
-        .header { background-color: #f8f9fa; padding: 25px; text-align: center; border-bottom: 4px solid #1B3E5D; }
-        .header h2 { margin: 0; color: #1B3E5D; }
-        .reference { color: #666; margin-top: 5px; font-size: 14px; }
+        body { font-family: sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; }
+        .header { background-color: #1B3E5D; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
         .content { padding: 20px; }
-        .status-badge { 
-            display: inline-block; 
-            padding: 8px 16px; 
-            border-radius: 20px; 
-            color: white; 
-            font-weight: bold; 
-            text-transform: uppercase; 
-            font-size: 14px;
-            margin: 15px 0;
-            background-color: #1B3E5D; /* Default fallback */
-        }
-        .status-created { background-color: #3b82f6; }
-        .status-pending { background-color: #f59e0b; }
-        .status-in_transit { background-color: #8b5cf6; }
-        .status-delivered { background-color: #10b981; }
-        .status-cancelled { background-color: #ef4444; }
-        .status-failed { background-color: #ef4444; }
-        
-        .section { margin-bottom: 25px; border: 1px solid #e1e4e8; padding: 20px; border-radius: 8px; }
-        .section-title { font-weight: bold; margin-bottom: 15px; color: #1B3E5D; border-bottom: 1px solid #e1e4e8; padding-bottom: 8px; font-size: 16px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .row { margin-bottom: 8px; display: flex; }
-        .label { font-weight: bold; color: #555; width: 120px; flex-shrink: 0; }
-        .value { flex-grow: 1; }
-        .footer { text-align: center; font-size: 12px; color: #999; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }
-        .btn { display: inline-block; padding: 12px 24px; background-color: #1B3E5D; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 10px; }
+        .status-box { background-color: #f0f7ff; border-left: 4px solid #1B3E5D; padding: 15px; margin: 20px 0; }
+        .footer { font-size: 12px; color: #777; text-align: center; margin-top: 20px; }
+        .btn { display: inline-block; background-color: #1B3E5D; color: white !important; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h2>Shipment Update</h2>
-            <div class="reference">Ref: {{shipment_reference}}</div>
+            <h1>Obana Logistics</h1>
         </div>
-        
         <div class="content">
-            <p>Hello,</p>
-            <p>There has been an update to your shipment with <strong>{{vendor_name}}</strong>.</p>
-
-            <div style="text-align: center;">
-                <div class="status-badge status-{{status}}">{{status}}</div>
+            <p>Hello {{customer_name}},</p>
+            <p>There is an update on your shipment <strong>{{shipment_reference}}</strong>.</p>
+            
+            <div class="status-box">
+                <p style="margin: 0;"><strong>New Status:</strong> {{status}}</p>
             </div>
 
-            <div class="section">
-                <div class="section-title">Update Details</div>
-                <div class="row"><span class="label">Status:</span> <span class="value" style="text-transform: capitalize;">{{status}}</span></div>
-                <div class="row"><span class="label">Description:</span> <span class="value">{{status_description}}</span></div>
-                <div class="row"><span class="label">Current Location:</span> <span class="value">{{location}}</span></div>
-                <div class="row"><span class="label">Updated At:</span> <span class="value">{{updated_at}}</span></div>
-                {{#if notes}}
-                <div class="row"><span class="label">Notes:</span> <span class="value">{{notes}}</span></div>
+            {{#if tracking_number}}
+            <p><strong>Tracking Number:</strong> {{tracking_number}}</p>
+            {{/if}}
+
+            <p>You can track your package in real-time by clicking the button below:</p>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                {{#if tracking_url}}
+                <a href="{{tracking_url}}" class="btn">Track on Carrier Site</a>
+                {{else}}
+                <a href="{{dashboard_url}}" class="btn">View in Dashboard</a>
                 {{/if}}
             </div>
 
-            <div class="section">
-                <div class="section-title">Shipment Info</div>
-                <div class="row"><span class="label">Tracking Ref:</span> <span class="value">{{shipment_reference}}</span></div>
-                <div class="row"><span class="label">Order Ref:</span> <span class="value">{{order_reference}}</span></div>
-            </div>
-            
-            <div style="text-align: center;">
-                <a href="{{dashboard_url}}" class="btn">Track Shipment</a>
-            </div>
+            <p>If you have any questions, feel free to reply to this email.</p>
+            <p>Best regards,<br>The Obana Team</p>
         </div>
-        
         <div class="footer">
-            <p>&copy; Obana Logistics. All rights reserved.</p>
-            <p>This is an automated message. Please do not reply directly to this email.</p>
+            <p>&copy; {{year}} Obana Logistics. All rights reserved.</p>
         </div>
     </div>
 </body>

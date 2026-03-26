@@ -101,7 +101,9 @@ const matchTemplate = async (req, res) => {
                     line1: pickup_address.line1,
                     city: pickup_address.city,
                     state: pickup_address.state,
-                    country: getCode(pickup_address.country) || 'NG'
+                    country: getCode(pickup_address.country) || 'NG',
+                    zip: pickup_address.zip_code
+
                 },
                 delivery_address: {
                     first_name: delivery_address.first_name,
@@ -111,7 +113,8 @@ const matchTemplate = async (req, res) => {
                     line1: delivery_address.line1,
                     city: delivery_address.city,
                     state: delivery_address.state,
-                    country: getCode(delivery_address.country) || 'NG'
+                    country: getCode(delivery_address.country) || 'NG',
+                    zip: delivery_address.zip_code
                 },
                 parcel: {
                     description: "obana logistics goods",
@@ -121,7 +124,7 @@ const matchTemplate = async (req, res) => {
                 },
                 shipment_purpose: 'commercial'
             };
-            console.log("PAYLOAD", payload)
+            
             const quickResponse = await taClient.post('/shipments/quick', payload);
             
             if (quickResponse.data && quickResponse.data.status && quickResponse.data.data.shipment_id) {
@@ -132,7 +135,7 @@ const matchTemplate = async (req, res) => {
                 const rates = ratesResponse.data.data;
 
                 if (rates && rates.length > 0) {
-                    
+                    console.log(rates)
                     const bestRate = rates[0]; 
                     return res.status(200).send(utils.responseSuccess({
                         external: true,
@@ -140,7 +143,7 @@ const matchTemplate = async (req, res) => {
                         rate_id: bestRate.rate_id,
                         carrier: { name: bestRate.carrier_name, logo: bestRate.carrier_logo },
                         match: {
-                            price: bestRate.amount,
+                            price: bestRate.amount + (10/100),
                             eta: bestRate.delivery_time,
                             min: 0,
                             max: weight,

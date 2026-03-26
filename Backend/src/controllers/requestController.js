@@ -74,18 +74,7 @@ const webHooks = async (req, res) => {
     new WeebHooksHelper(endpoint, req, res, makeRequest).callMethods()
 }
 
-/**
- * A function to Pull order back from zoho manually.
- */
-const syncZohoOrder = async (req, res) => {
-    req.body.return = 1
-    req.params = { endpoint: 'get-orderdetail', tenant: 'zoho' }
-    const resp = await makeRequest(req, res)
-    if (!resp.salesorder)
-        return res.status(400).send({ message: "No order found" })
-    req.body = resp
-    return await new WeebHooksHelper('webHooks', req, res, makeRequest).callMethods()
-}
+
 
 /**
  * A function to recieve an event and prepares it for execution
@@ -146,5 +135,5 @@ module.exports = {
     makeRequest,
     constructAndMakeRequest,
     webHooks,
-    syncZohoOrder
+    
 }

@@ -128,6 +128,6 @@ router.put('/:tenant/:endpoint', auth.authenticateToken, requestController.makeR
 router.delete('/:tenant/:endpoint', auth.authenticateToken, requestController.makeRequest)
 
 router.post('/:endpoint', requestController.webHooks)
-router.put('/sync-order', requestController.syncZohoOrder)
+
 
 module.exports = router;

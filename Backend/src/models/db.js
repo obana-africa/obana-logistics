@@ -45,7 +45,7 @@ db.tokens = require('./tokenModel.js')(sequelize, DataTypes)
 db.roles = require('./roleModel.js')(sequelize, DataTypes)
 db.scopes = require('./scopeModel.js')(sequelize, DataTypes)
 db.role_scopes = require('./roleScopeModel.js')(sequelize, DataTypes)
-
+db.requests = require('./requestModel.js')(sequelize, DataTypes)
 db.attributes = require('./attributeModel.js')(sequelize, DataTypes)
 db.user_attributes = require('./userAttributeModel.js')(sequelize, DataTypes)
 

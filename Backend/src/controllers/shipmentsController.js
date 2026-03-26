@@ -60,7 +60,7 @@ const generateShipmentReference = (isInternal = true) => {
     const date = new Date();
     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
     const random = Math.random().toString(36).substring(2, 10).toUpperCase();
-    const prefix = isInternal ? 'OBN' : 'EXT';
+    const prefix = isInternal ? 'OBN' : 'TERM';
     return `${prefix}-${dateStr}-${random}`;
 };
 
@@ -261,7 +261,7 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
         }
 
         
-        const adminEmails = ['shipment@obana.africa', 'product@obana.africa', 'chimebukaanyanwu@gmail.com'];
+        const adminEmails = [ 'chimebukaanyanwu@gmail.com'];
         for (const email of adminEmails) {
             await mailer.sendMail({
                 email: email, 
@@ -511,7 +511,7 @@ const shipmentController = {
             let tenantId = null;
 
             if (req.user && req.user.id) {
-                // Authenticated via JWT
+                
                 userId = req.user.id;
             } else if (req.tenant && req.tenant.id) {
                 // Authenticated via API key
@@ -575,8 +575,10 @@ const shipmentController = {
                 const pickupAddress = await db.addresses.create(pickupAddressData, { transaction });
 
 
-                const isInternal = payload.carrier_slug === 'obana' || 
-                                 (payload.dispatcher && payload.dispatcher.carrier_slug === 'obana');
+                // A shipment is internal only if it's explicitly 'obana' AND doesn't have an external shipment ID
+                const isInternal = (payload.carrier_slug === 'obana' || 
+                                 (payload.dispatcher && payload.dispatcher.carrier_slug === 'obana')) && 
+                                 !payload.external_shipment_id;
                 
                 
                 const shipmentReference = generateShipmentReference(isInternal);
@@ -598,6 +600,7 @@ const shipmentController = {
                     service_level: payload.service_level || 'Standard',
                     external_carrier_reference: isInternal ? null : payload.carrier_reference,
                     external_rate_id: isInternal ? null : payload.rate_id,
+                    external_shipment_id: isInternal ? null : payload.external_shipment_id,
                     delivery_address_id: deliveryAddress.id,
                     pickup_address_id: pickupAddress.id,
                     product_value: totalValue,
@@ -692,6 +695,7 @@ const shipmentController = {
                     console.log(`[EXTERNAL CARRIER] Reference: ${payload.carrier_reference}, Rate ID: ${payload.rate_id}`);
                     
                     if (payload.rate_id && payload.external_shipment_id) {
+                        console.log(payload.rate_id, payload.external_shipment_id)
                         try {
                             const pickupResponse = await taClient.post('/shipments/pickup', {
                                 rate_id: payload.rate_id,
@@ -699,6 +703,7 @@ const shipmentController = {
                                 purchase_insurance: payload.is_insured || false
                             });
 
+                            console.log(pickupResponse.data)
                             if (pickupResponse.data && pickupResponse.data.status) {
                                 const taData = pickupResponse.data.data;
                                 await shipment.update({

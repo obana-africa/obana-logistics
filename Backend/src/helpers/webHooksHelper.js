@@ -924,13 +924,17 @@ class WeebHooksHelper {
     }
 
     async callMethods() {
-        let method = this.endpoint + '()'
+        const methodName = this.endpoint;
         this.log = await db.requests.create({
             originating_route: this.req.originalUrl,
             payload: JSON.stringify(this.req.body)
         })
         try {
-            return await eval('this.' + method)
+            if (typeof this[methodName] === 'function') {
+                return await this[methodName]();
+            } else {
+                throw new Error(`Method ${methodName} not found on WeebHooksHelper`);
+            }
         } catch (error) {
             console.log(error.message)
             this.log.response = JSON.stringify(error)
