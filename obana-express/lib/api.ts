@@ -273,6 +273,11 @@ class ApiClient {
     return response.data;
   }
 
+  async confirmExternalShipment(shipmentId: string) {
+    const response = await this.client.post<ApiResponse>(`/shipments/confirm-external/${shipmentId}`);
+    return response.data;
+  }
+
   async assignDriver(shipmentId: string, driverId: string) {
     const response = await this.client.put<ApiResponse>(`/shipments/${shipmentId}/assign-driver`, { driver_id: driverId });
     return response.data;

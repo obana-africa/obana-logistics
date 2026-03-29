@@ -22,6 +22,7 @@ export default function ShipmentDetailsPage() {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [updateForm, setUpdateForm] = useState({ status: '', location: '', notes: '' });
   const [updating, setUpdating] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     loadShipment();
@@ -82,6 +83,22 @@ export default function ShipmentDetailsPage() {
     }
   };
 
+  const handleConfirmExternal = async () => {
+    if (!shipment) return;
+    if (!confirm('This will arrange pickup with Terminal Africa. Are you sure?')) return;
+
+    try {
+      setConfirming(true);
+      await apiClient.confirmExternalShipment(shipment.id.toString());
+      loadShipment();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to arrange external pickup');
+    } finally {
+      setConfirming(false);
+    }
+  };
+
   if (loading) {
     return (
       <DashboardLayout role="admin">
@@ -122,6 +139,12 @@ export default function ShipmentDetailsPage() {
             </div>
           </div>
           <div className="flex gap-2">
+            {shipment.carrier_type === 'external' && !shipment.external_carrier_reference && (
+              <Button variant="secondary" className="bg-orange-500 text-white hover:bg-orange-600" onClick={handleConfirmExternal} loading={confirming}>
+                <Truck className="w-4 h-4 mr-2" />
+                Arrange External Pickup
+              </Button>
+            )}
             <Button variant="primary" onClick={handleUpdateClick}>
               Update Status
             </Button>

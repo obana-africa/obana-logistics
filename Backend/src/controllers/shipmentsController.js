@@ -693,34 +693,6 @@ const shipmentController = {
                 if (!isInternal) {
                     console.log(`[EXTERNAL CARRIER] Shipment ${shipmentReference} assigned to ${payload.dispatcher?.carrier_name || 'External Carrier'}`);
                     console.log(`[EXTERNAL CARRIER] Reference: ${payload.carrier_reference}, Rate ID: ${payload.rate_id}`);
-                    
-                    if (payload.rate_id && payload.external_shipment_id) {
-                        console.log(payload.rate_id, payload.external_shipment_id)
-                        try {
-                            const pickupResponse = await taClient.post('/shipments/pickup', {
-                                rate_id: payload.rate_id,
-                                shipment_id: payload.external_shipment_id,
-                                purchase_insurance: payload.is_insured || false
-                            });
-
-                            console.log(pickupResponse.data)
-                            if (pickupResponse.data && pickupResponse.data.status) {
-                                const taData = pickupResponse.data.data;
-                                await shipment.update({
-                                    external_carrier_reference: taData.extras?.tracking_number,
-                                    metadata: { ...shipment.metadata, terminal_africa: taData },
-                                    status: 'pending' // Or map from TA status 'confirmed'
-                                }, { transaction });
-                                
-                                console.log(`[EXTERNAL CARRIER] Successfully arranged pickup. Tracking: ${taData.extras?.tracking_number}`);
-                            }
-                        } catch (extError) {
-                            console.error('[EXTERNAL CARRIER ERROR]', extError?.response?.data || extError.message);
-                            // Note: We don't rollback here to avoid losing the internal record, 
-                            // but admin might need to intervene or user retry.
-                            // Alternatively, throw extError to rollback if strict.
-                        }
-                    }
                 }
 
                 await transaction.commit();
@@ -758,6 +730,65 @@ const shipmentController = {
             });
         }
     },
+
+    /**
+     * Confirm an external shipment (Arrange Pickup on Terminal Africa)
+     * Manually triggered by Admin
+     */
+    confirmExternalShipment: async (req, res) => {
+        try {
+            const { shipment_id } = req.params;
+            const shipment = await db.shippings.findByPk(shipment_id);
+            console.log(shipment.carrier_type, shipment.external_rate_id, shipment.external_shipment_id)
+            if (!shipment) {
+                return res.status(404).json({ success: false, message: 'Shipment not found' });
+            }
+
+            if (shipment.carrier_type !== 'external' || !shipment.external_rate_id) {
+                console.log(shipment.carrier_type !== 'external' || !shipment.external_shipment_id || !shipment.external_rate_id)
+                return res.status(400).json({ success: false, message: 'Shipment is not an unconfirmed external shipment' });
+            }
+
+            if (shipment.external_carrier_reference || shipment.external_shipment_id) {
+                return res.status(400).json({ success: false, message: 'Shipment already confirmed on external carrier' });
+            }
+
+            const pickupResponse = await taClient.post('/shipments/pickup', {
+                rate_id: shipment.external_rate_id,
+                shipment_id: shipment.external_shipment_id,
+                purchase_insurance: shipment.is_insured || false
+            });
+
+            if (pickupResponse.data && pickupResponse.data.status) {
+                const taData = pickupResponse.data.data;
+                await shipment.update({
+                    external_carrier_reference: taData.extras?.tracking_number,
+                    metadata: { ...shipment.metadata, terminal_africa: taData },
+                    status: 'pending'
+                });
+
+                await db.shipment_tracking.create({
+                    shipment_id: shipment.id,
+                    status: 'created',
+                    description: `Shipment confirmed and pickup arranged via Terminal Africa. Tracking: ${taData.extras?.tracking_number}`,
+                    source: 'carrier_api',
+                    performed_by: `admin_${req.user.id}`
+                });
+
+                return res.status(200).json({
+                    success: true,
+                    message: 'Pickup arranged successfully',
+                    data: taData
+                });
+            } else {
+                throw new Error(pickupResponse.data.message || 'Terminal Africa API Error');
+            }
+        } catch (error) {
+            console.error('Error confirming external shipment:', error?.response?.data || error.message);
+            return res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
    /**
  * Get all shipments for admin overview/monitoring
  */
