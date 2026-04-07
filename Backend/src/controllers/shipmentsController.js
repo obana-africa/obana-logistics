@@ -724,7 +724,7 @@ const shipmentController = {
                     data: {
                         shipment_id: shipment.id,
                         shipment_reference: shipment.shipment_reference,
-                        tracking_url: `${process.env.BASE_URL || 'http://localhost:3000'}/track/${shipment.shipment_reference}`,
+                        tracking_url: `${process.env.FBASE_URL || 'http://localhost:3000'}/${shipment.shipment_reference}`,
                         carrier: shipment.carrier_name,
                         status: shipment.status,
                         estimated_delivery: shipment.metadata?.carrier_details?.delivery_time || 'To be determined',
