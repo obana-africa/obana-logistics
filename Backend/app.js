@@ -37,7 +37,12 @@ app.use(passport.session());
 const corsOptions = {
 	origin: [
 		"http://localhost:3000",
+		"http://localhost:3001",
+		"http://localhost:4005",
+		"http://localhost:3005",
+		"https://obana-staging.onrender.com",
 		"https://logistics.obana.africa",
+		"https://salesforce.obana.africa",
 		"https://obana-logistics-psi.vercel.app",
 		"https://obana-logistics.vercel.app",
 	],

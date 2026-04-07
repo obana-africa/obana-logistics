@@ -14,7 +14,7 @@ const taClient = axios.create({
 
 const validateShipmentPayload = (payload) => {
     const errors = [];
-
+console.log("PAYLOAD", JSON.stringify(payload))
     if (!payload.pickup_address) {
         errors.push('pickup_address is required');
     } else {
@@ -49,6 +49,8 @@ const validateShipmentPayload = (payload) => {
     } else if (!['Express', 'Standard', 'Economy'].includes(payload.service_level)) {
         errors.push('service_level must be one of: Express, Standard, Economy');
     }
+
+    console.log(errors)
 
     return {
         valid: errors.length === 0,
@@ -524,6 +526,20 @@ const shipmentController = {
             }
 
             const payload = req.body;
+
+            // Normalize Tajiri/Complex payload structure
+            // If items are missing at root but present in nested shipments
+            if ((!payload.items || payload.items.length === 0) && payload.dispatcher?.shipments?.[0]) {
+                const nestedShipment = payload.dispatcher.shipments[0];
+                payload.items = nestedShipment.items || [];
+                
+                if (!payload.rate_id) {
+                    payload.rate_id = nestedShipment.rate_id;
+                }
+                if (!payload.external_shipment_id) {
+                    payload.external_shipment_id = nestedShipment.id || nestedShipment.metadata?.shipment_id;
+                }
+            }
         
             // Validate payload
             const validation = validateShipmentPayload(payload);
@@ -744,12 +760,11 @@ const shipmentController = {
                 return res.status(404).json({ success: false, message: 'Shipment not found' });
             }
 
-            if (shipment.carrier_type !== 'external' || !shipment.external_rate_id) {
-                console.log(shipment.carrier_type !== 'external' || !shipment.external_shipment_id || !shipment.external_rate_id)
+            if (shipment.carrier_type !== 'external' || !shipment.external_rate_id || !shipment.external_shipment_id) {
                 return res.status(400).json({ success: false, message: 'Shipment is not an unconfirmed external shipment' });
             }
 
-            if (shipment.external_carrier_reference || shipment.external_shipment_id) {
+            if (shipment.external_carrier_reference) {
                 return res.status(400).json({ success: false, message: 'Shipment already confirmed on external carrier' });
             }
 
