@@ -40,6 +40,10 @@ const corsOptions = {
 		"http://localhost:3001",
 		"http://localhost:4005",
 		"http://localhost:3005",
+		"https://staging.salesforce.obana.africa",
+		"https://staging.shop.obana.africa",
+		
+		"https://shop.obana.africa",
 		"https://obana-staging.onrender.com",
 		"https://logistics.obana.africa",
 		"https://salesforce.obana.africa",
