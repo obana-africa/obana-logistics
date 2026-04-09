@@ -14,7 +14,7 @@ const taClient = axios.create({
 
 const validateShipmentPayload = (payload) => {
     const errors = [];
-console.log("PAYLOAD", JSON.stringify(payload))
+
     if (!payload.pickup_address) {
         errors.push('pickup_address is required');
     } else {
@@ -644,7 +644,7 @@ const shipmentController = {
 
                 
                     try {
-          
+                        if (!isInternal) {
                         const availableAgent = await db.agents.findOne({
                             where: {
                                 status: 'active',
@@ -667,6 +667,7 @@ const shipmentController = {
                         } else {
                             console.warn(`[AGENT ASSIGNMENT] No available agent found for location: ${pickupAddress.city}, ${pickupAddress.state}`);
                         }
+                    }
                     } catch (agentError) {
                         console.error('[AGENT ASSIGNMENT ERROR]', agentError);
                 }
@@ -755,7 +756,7 @@ const shipmentController = {
         try {
             const { shipment_id } = req.params;
             const shipment = await db.shippings.findByPk(shipment_id);
-            console.log(shipment.carrier_type, shipment.external_rate_id, shipment.external_shipment_id)
+            // console.log(shipment.carrier_type, shipment.external_rate_id, shipment.external_shipment_id)
             if (!shipment) {
                 return res.status(404).json({ success: false, message: 'Shipment not found' });
             }

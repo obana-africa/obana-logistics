@@ -191,6 +191,7 @@ const matchTemplate = async (req, res) => {
                     },
                     shipment_purpose: 'commercial'
                 };
+                
 
                 const quickResponse = await taClient.post('/shipments/quick', payload);
 
