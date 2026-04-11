@@ -83,6 +83,7 @@ const deleteTemplate = async (req, res) => {
 
 const matchTemplate = async (req, res) => {
     let { origin_city, destination_city, transport_mode, service_level, weight, pickup_address, delivery_address, items } = req.body
+    let shipmentResults = [];
 
     // Detect and normalize complex payload from Salesforce/Shop frontends
     if (req.body.parcel && !origin_city) {
@@ -131,8 +132,12 @@ const matchTemplate = async (req, res) => {
     
     if (pickup_address && delivery_address && items && Array.isArray(items)) {
         try {
+             let groupedItems;
+            let payload
+            
+            if (req.body.parcel) {
             // Group items by pickup address
-            const groupedItems = items.reduce((acc, item) => {
+           groupedItems = items.reduce((acc, item) => {
                 const pickupAddress = item.pickup_address || {};
                 const key = JSON.stringify({
                     line1: (pickupAddress.line1 || '').trim().toLowerCase(),
@@ -148,7 +153,8 @@ const matchTemplate = async (req, res) => {
                 return acc;
             }, {});
 
-            const shipmentResults = [];
+            
+            console.log("groupedItemss", groupedItems)
 
             for (const group of Object.values(groupedItems)) {
                 const parcelItems = group.items.map(item => ({
@@ -160,7 +166,7 @@ const matchTemplate = async (req, res) => {
                     quantity: parseInt(item.quantity) || 1
                 }));
 
-                const payload = {
+                payload = {
                     pickup_address: {
                         first_name: group.pickup_address.contact_name?.split(' ')[0] || 'obana',
                         last_name: group.pickup_address.contact_name?.split(' ')[1] || 'africa',
@@ -191,6 +197,45 @@ const matchTemplate = async (req, res) => {
                     },
                     shipment_purpose: 'commercial'
                 };
+            }
+        } else {
+            items[0].description = "obana shipment"
+            items[0].currency = "NGN"
+            items[0].value = Number(items[0].price) || Number(items[0].value) || 0
+            items[0].weight = parseFloat(items[0].weight) || 1
+            items[0].quantity = parseInt(items[0].quantity) || 1
+              payload = {
+                    pickup_address: {
+                        first_name: pickup_address.contact_name?.split(' ')[0] || 'obana',
+                        last_name: pickup_address.contact_name?.split(' ')[1] || 'africa',
+                        email: pickup_address.email || 'obana.africa@example.com',
+                        phone: (!String(pickup_address.phone).startsWith("+") ? '+' + pickup_address.phone : pickup_address.phone) || "08069331070",
+                        line1: pickup_address.line1 || "77 opebi road, Ikeja, Lagos",
+                        city: pickup_address.city,
+                        state: pickup_address.state,
+                        country: req.body.parcel ? delivery_address.country : lookup.byCountry(pickup_address.country.toLowerCase().replace(/\b\w/g, char => char.toUpperCase())).iso2 || 'NG',
+                        zip: pickup_address.zip_code
+                    },
+                    delivery_address: {
+                        first_name: delivery_address.first_name,
+                        last_name: delivery_address.last_name,
+                        email: delivery_address.email,
+                        phone: (!String(delivery_address.phone).startsWith("+") ? '+' + delivery_address.phone : delivery_address.phone) || "08069331070",
+                        line1: delivery_address.line1,
+                        city: delivery_address.city,
+                        state: delivery_address.state,
+                        country: req.body.parcel ? delivery_address.country : lookup.byCountry(delivery_address.country.toLowerCase().replace(/\b\w/g, char => char.toUpperCase())).iso2 || 'NG',
+                        zip: delivery_address.zip_code
+                    },
+                    parcel: {
+                        description: "obana logistics goods",
+                        items: items,
+                        weight_unit: 'kg',
+                        metadata: {}
+                    },
+                    shipment_purpose: 'commercial'
+                }
+        }
                 
 
                 const quickResponse = await taClient.post('/shipments/quick', payload);
@@ -208,18 +253,18 @@ const matchTemplate = async (req, res) => {
                             shipment_id: shipmentId,
                             rate_id: bestRate.rate_id,
                             carrier: { name: bestRate.carrier_name, logo: bestRate.carrier_logo },
-                            items: group.items, // Include the items in this shipment
+                            items: req.body.parcel ? group?.items : items, // Include the items in this shipment
                             match: {
                                 price: bestRate.amount + (10/100),
                                 eta: deliveryTimeRange(bestRate.delivery_time),
                                 min: 0,
-                                max: group.items.reduce((acc, item) => acc + parseFloat(item.weight || 0), 0),
+                                max: req.body.parcel ? group.items.reduce((acc, item) => acc + parseFloat(item.weight || 0), 0) : items[0].weight,
                                 estimated_delivery: deliveryTimeRange(bestRate.delivery_time)
                             }
                         });
                     }
                 }
-            }
+            
 
             if (shipmentResults.length > 0) {
                 return res.status(200).send(utils.responseSuccess(shipmentResults));
