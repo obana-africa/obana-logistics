@@ -155,8 +155,8 @@ const matchTemplate = async (req, res) => {
 
             
             console.log("groupedItemss", groupedItems)
-
-            for (const group of Object.values(groupedItems)) {
+            
+            for (let group of Object.values(groupedItems)) {
                 const parcelItems = group.items.map(item => ({
                     name: item.name,
                     description: item.description || item.name,
@@ -197,7 +197,35 @@ const matchTemplate = async (req, res) => {
                     },
                     shipment_purpose: 'commercial'
                 };
+
+             const quickResponse = await taClient.post('/shipments/quick', payload);
+
+                if (quickResponse.data && quickResponse.data.status && quickResponse.data.data.shipment_id) {
+                    const shipmentId = quickResponse.data.data.shipment_id;
+
+                    const ratesResponse = await taClient.get(`/rates/shipment?shipment_id=${shipmentId}&currency=NGN`);
+                    const rates = ratesResponse.data.data;
+
+                    if (rates && rates.length > 0) {
+                        const bestRate = rates[0];
+                        shipmentResults.push({
+                            external: true,
+                            shipment_id: shipmentId,
+                            rate_id: bestRate.rate_id,
+                            carrier: { name: bestRate.carrier_name, logo: bestRate.carrier_logo },
+                            items: req.body.parcel ? group?.items : items, // Include the items in this shipment
+                            match: {
+                                price: bestRate.amount + (10/100),
+                                eta: deliveryTimeRange(bestRate.delivery_time),
+                                min: 0,
+                                max: req.body.parcel ? group.items.reduce((acc, item) => acc + parseFloat(item.weight || 0), 0) : items[0].weight,
+                                estimated_delivery: deliveryTimeRange(bestRate.delivery_time)
+                            }
+                        });
+                    }
+                }
             }
+
         } else {
             items[0].description = "obana shipment"
             items[0].currency = "NGN"
@@ -235,10 +263,8 @@ const matchTemplate = async (req, res) => {
                     },
                     shipment_purpose: 'commercial'
                 }
-        }
-                
 
-                const quickResponse = await taClient.post('/shipments/quick', payload);
+                     const quickResponse = await taClient.post('/shipments/quick', payload);
 
                 if (quickResponse.data && quickResponse.data.status && quickResponse.data.data.shipment_id) {
                     const shipmentId = quickResponse.data.data.shipment_id;
@@ -253,7 +279,7 @@ const matchTemplate = async (req, res) => {
                             shipment_id: shipmentId,
                             rate_id: bestRate.rate_id,
                             carrier: { name: bestRate.carrier_name, logo: bestRate.carrier_logo },
-                            items: req.body.parcel ? group?.items : items, // Include the items in this shipment
+                            items: req.body.parcel ? group?.items : items, 
                             match: {
                                 price: bestRate.amount + (10/100),
                                 eta: deliveryTimeRange(bestRate.delivery_time),
@@ -264,7 +290,8 @@ const matchTemplate = async (req, res) => {
                         });
                     }
                 }
-            
+        }
+                
 
             if (shipmentResults.length > 0) {
                 return res.status(200).send(utils.responseSuccess(shipmentResults));
