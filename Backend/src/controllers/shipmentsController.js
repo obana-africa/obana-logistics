@@ -594,7 +594,7 @@ const shipmentController = {
                 // A shipment is internal only if it's explicitly 'obana' AND doesn't have an external shipment ID
                 const isInternal = (payload.carrier_slug === 'obana' || 
                                  (payload.dispatcher && payload.dispatcher.carrier_slug === 'obana')) && 
-                                 !payload.external_shipment_id;
+                                 !payload.rate_id;
                 
                 
                 const shipmentReference = generateShipmentReference(isInternal);
@@ -644,7 +644,7 @@ const shipmentController = {
 
                 
                     try {
-                        if (!isInternal) {
+                        if (isInternal) {
                         const availableAgent = await db.agents.findOne({
                             where: {
                                 status: 'active',

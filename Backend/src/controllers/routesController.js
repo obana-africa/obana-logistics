@@ -154,7 +154,7 @@ const matchTemplate = async (req, res) => {
             }, {});
 
             
-            console.log("groupedItemss", groupedItems)
+            // console.log("groupedItemss", groupedItems)
             
             for (let group of Object.values(groupedItems)) {
                 const parcelItems = group.items.map(item => ({
