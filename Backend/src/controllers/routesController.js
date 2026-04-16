@@ -176,7 +176,7 @@ const matchTemplate = async (req, res) => {
                         city: group.pickup_address.city,
                         state: group.pickup_address.state,
                         country: req.body.parcel ? delivery_address.country : lookup.byCountry(group.pickup_address.country.toLowerCase().replace(/\b\w/g, char => char.toUpperCase())).iso2 || 'NG',
-                        zip: group.pickup_address.zip_code
+                        zip: '100001'
                     },
                     delivery_address: {
                         first_name: delivery_address.first_name,
@@ -187,7 +187,7 @@ const matchTemplate = async (req, res) => {
                         city: delivery_address.city,
                         state: delivery_address.state,
                         country: req.body.parcel ? delivery_address.country : lookup.byCountry(delivery_address.country.toLowerCase().replace(/\b\w/g, char => char.toUpperCase())).iso2 || 'NG',
-                        zip: delivery_address.zip_code
+                        zip: '100001'
                     },
                     parcel: {
                         description: "obana logistics goods",

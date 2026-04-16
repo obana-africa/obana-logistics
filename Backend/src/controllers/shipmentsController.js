@@ -62,7 +62,7 @@ const generateShipmentReference = (isInternal = true) => {
     const date = new Date();
     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
     const random = Math.random().toString(36).substring(2, 10).toUpperCase();
-    const prefix = isInternal ? 'OBN' : 'TERM';
+    const prefix = isInternal ? 'OBN' : 'OBN-TERM';
     return `${prefix}-${dateStr}-${random}`;
 };
 
@@ -526,7 +526,7 @@ const shipmentController = {
             }
 
             const payload = req.body;
-
+            console.log("SHIPMENT PAYLLOADDDDDD", payload)
             // Normalize Tajiri/Complex payload structure
             // If items are missing at root but present in nested shipments
             if ((!payload.items || payload.items.length === 0) && payload.dispatcher?.shipments?.[0]) {
@@ -540,7 +540,8 @@ const shipmentController = {
                     payload.external_shipment_id = nestedShipment.id || nestedShipment.metadata?.shipment_id;
                 }
             }
-        
+            
+
             // Validate payload
             const validation = validateShipmentPayload(payload);
             if (!validation.valid) {
@@ -761,7 +762,7 @@ const shipmentController = {
                 return res.status(404).json({ success: false, message: 'Shipment not found' });
             }
 
-            if (shipment.carrier_type !== 'external' || !shipment.external_rate_id || !shipment.external_shipment_id) {
+            if (shipment.carrier_type !== 'external' || !shipment.external_rate_id ) {
                 return res.status(400).json({ success: false, message: 'Shipment is not an unconfirmed external shipment' });
             }
 
