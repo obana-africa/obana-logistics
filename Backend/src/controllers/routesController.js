@@ -175,7 +175,7 @@ const matchTemplate = async (req, res) => {
                         line1: group.pickup_address.line1 || "08069331070",
                         city: group.pickup_address.city,
                         state: group.pickup_address.state,
-                        country: req.body.parcel ? delivery_address.country : lookup.byCountry(group.pickup_address.country.toLowerCase().replace(/\b\w/g, char => char.toUpperCase())).iso2 || 'NG',
+                        country: req.body.parcel ? group.pickup_address.country : lookup.byCountry(group.pickup_address.country.toLowerCase().replace(/\b\w/g, char => char.toUpperCase())).iso2 || 'NG',
                         zip: '100001'
                     },
                     delivery_address: {
@@ -197,7 +197,7 @@ const matchTemplate = async (req, res) => {
                     },
                     shipment_purpose: 'commercial'
                 };
-
+                console.log("Payload for logistics match:", payload);
              const quickResponse = await taClient.post('/shipments/quick', payload);
 
                 if (quickResponse.data && quickResponse.data.status && quickResponse.data.data.shipment_id) {
