@@ -298,7 +298,7 @@ const matchTemplate = async (req, res) => {
             }
         } catch (error) {
             console.error('External route match failed:', error?.response?.data || error.message);
-            return res.status(404).send(utils.responseError(`No routes available for this shipment ${error?.response?.data || error.message}`))
+            return res.status(404).send(utils.responseError(`No routes available for this shipment ${JSON.stringify(error?.response?.data || error.message)}`))
         }
     }
     return res.status(404).send(utils.responseError(`No routes available for this shipment`))

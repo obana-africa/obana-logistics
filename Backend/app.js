@@ -47,11 +47,12 @@ const corsOptions = {
 		"https://obana-staging.onrender.com",
 		"https://logistics.obana.africa",
 		"https://salesforce.obana.africa",
+		"https://shop.obana.africa",
 		"https://obana-logistics-psi.vercel.app",
 		"https://obana-logistics.vercel.app",
 		"https://obanasalesforce-2fbaoshjv-obanas-projects-fb636fb1.vercel.app",
 		"https://saleslocal.obana.africa",
-		"https://obana-shop-n0x0rhumj-obanas-projects-fb636fb1.vercel.app"
+		"https://obana-shop-n0x0rhumj-obanas-projects-fb636fb1.vercel.app",
 	],
 };
 app.use(cors(corsOptions));
