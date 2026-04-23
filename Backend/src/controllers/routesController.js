@@ -198,6 +198,8 @@ const matchTemplate = async (req, res) => {
                     shipment_purpose: 'commercial'
                 };
                 console.log("Payload for logistics match:", payload);
+
+                console.log("Items for terminal match:", JSON.stringify(payload.parcel.items));
              const quickResponse = await taClient.post('/shipments/quick', payload);
 
                 if (quickResponse.data && quickResponse.data.status && quickResponse.data.data.shipment_id) {
@@ -230,7 +232,7 @@ const matchTemplate = async (req, res) => {
             items[0].description = "obana shipment"
             items[0].currency = "NGN"
             items[0].value = Number(items[0].price) || Number(items[0].value) || 0
-            items[0].weight = parseFloat(items[0].weight) || 1
+            items[0].weight = (parseFloat(items[0].weight) || 1) * (parseInt(items[0].quantity) || 1)
             items[0].quantity = parseInt(items[0].quantity) || 1
               payload = {
                     pickup_address: {
@@ -263,6 +265,9 @@ const matchTemplate = async (req, res) => {
                     },
                     shipment_purpose: 'commercial'
                 }
+
+                console.log("Sending to terminal: ", payload)
+                console.log("Items for terminal match:", JSON.stringify(payload.parcel.items));
 
                      const quickResponse = await taClient.post('/shipments/quick', payload);
 
