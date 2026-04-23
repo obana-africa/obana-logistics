@@ -162,7 +162,7 @@ const matchTemplate = async (req, res) => {
                     description: item.description || item.name,
                     currency: 'NGN',
                     value: Number(item.price) || Number(item.value) || 0,
-                    weight: parseFloat(item.weight) || 1,
+                    weight: (parseFloat(item.weight) || 1) * (parseInt(item.quantity) || 1),
                     quantity: parseInt(item.quantity) || 1
                 }));
 
