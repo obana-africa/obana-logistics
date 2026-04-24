@@ -81,232 +81,200 @@ const deleteTemplate = async (req, res) => {
     return res.status(204).send()
 }
 
-const matchTemplate = async (req, res) => {
-    let { origin_city, destination_city, transport_mode, service_level, weight, pickup_address, delivery_address, items } = req.body
-    let shipmentResults = [];
+const normalizeText = (value) => {
+    if (typeof value !== 'string') return ''
+    return value.trim().toLowerCase()
+}
 
-    // Detect and normalize complex payload from Salesforce/Shop frontends
-    if (req.body.parcel && !origin_city) {
-        items = req.body.parcel.items || items;
-        delivery_address = req.body.delivery_address || delivery_address;
-        
-        // Use the first item's pickup address as the reference for route matching if root is missing
-        pickup_address = pickup_address || items?.[0]?.pickup_address;
+const formatCountryCode = (country) => {
+    if (!country) return 'NG'
+    const normalized = String(country).trim()
+    if (normalized.length === 2) return normalized.toUpperCase()
+    const alpha2 = getCode(normalized) || lookup.byCountry(normalized.toLowerCase().replace(/\b\w/g, char => char.toUpperCase()))?.iso2
+    return alpha2 ? alpha2.toUpperCase() : 'NG'
+}
 
-        // derive parameters for template matching
-        origin_city = origin_city || pickup_address?.city;
-        destination_city = destination_city || delivery_address?.city;
-        transport_mode = transport_mode || 'road';
-        service_level = service_level || 'Standard';
+const getGroupingKey = (pickupAddress = {}) => JSON.stringify({
+    line1: normalizeText(pickupAddress.line1),
+    line2: normalizeText(pickupAddress.line2),
+    city: normalizeText(pickupAddress.city),
+    state: normalizeText(pickupAddress.state),
+    country: normalizeText(pickupAddress.country),
+    zip: normalizeText(pickupAddress.zip || pickupAddress.zip_code)
+})
 
-        // Calculate total weight for bracket matching if not explicitly provided
-        if (typeof weight === 'undefined' && items) {
-            weight = items.reduce((acc, item) => acc + (parseFloat(item.weight) || 0), 0);
-        }
-    }
+const buildTemplateMatch = (routeTemplates, origin_city, destination_city, transport_mode, service_level, weight) => {
+    if (!origin_city || !destination_city || !transport_mode || !service_level || typeof weight === 'undefined') return null
 
-    if (!origin_city || !destination_city || !transport_mode || !service_level || typeof weight === 'undefined')
-        return res.status(400).send(utils.responseError('Missing required parameters'))
-
-    const templates = await RouteTemplates.findAll()
-    const filteredTemplates = templates.filter(t => 
-        t.origin_city.toLowerCase() === origin_city.toLowerCase() &&
-        t.destination_city.toLowerCase() === destination_city.toLowerCase() &&
-        t.transport_mode.toLowerCase() === transport_mode.toLowerCase() &&
-        t.service_level.toLowerCase() === service_level.toLowerCase()
+    const filteredTemplates = routeTemplates.filter(t =>
+        normalizeText(t.origin_city) === normalizeText(origin_city) &&
+        normalizeText(t.destination_city) === normalizeText(destination_city) &&
+        normalizeText(t.transport_mode) === normalizeText(transport_mode) &&
+        normalizeText(t.service_level) === normalizeText(service_level)
     )
-    
 
-
-    for (const t of filteredTemplates) {
-        const brackets = t.weight_brackets || []
-        for (const b of brackets) {
-            const min = Number(b.min || 0)
-            const max = Number(b.max || Number.POSITIVE_INFINITY)
+    for (const template of filteredTemplates) {
+        const brackets = template.weight_brackets || []
+        for (const bracket of brackets) {
+            const min = Number(bracket.min || 0)
+            const max = Number(bracket.max || Number.POSITIVE_INFINITY)
             if (weight >= min && weight <= max) {
-                return res.status(200).send(utils.responseSuccess({ template: t, match: b }))
+                return { template, match: bracket }
             }
         }
     }
+    return null
+}
 
-    
-    if (pickup_address && delivery_address && items && Array.isArray(items)) {
-        try {
-             let groupedItems;
-            let payload
-            
-            if (req.body.parcel) {
-            // Group items by pickup address
-           groupedItems = items.reduce((acc, item) => {
-                const pickupAddress = item.pickup_address || {};
-                const key = JSON.stringify({
-                    line1: (pickupAddress.line1 || '').trim().toLowerCase(),
-                    line2: (pickupAddress.line2 || '').trim().toLowerCase(),
-                    city: (pickupAddress.city || '').trim().toLowerCase(),
-                    state: (pickupAddress.state || '').trim().toLowerCase(),
-                    country: (pickupAddress.country || '').trim().toUpperCase(),
-                    zip: (pickupAddress.zip_code || pickupAddress.zip || '').trim()
-                });
+const normalizeItem = (item) => ({
+    ...item,
+    quantity: parseInt(item.quantity, 10) || 1,
+    weight: parseFloat(item.weight) || 0,
+    value: Number(item.value || item.price || 0) || 0,
+    currency: item.currency || 'NGN'
+})
 
-                if (!acc[key]) acc[key] = { pickup_address: item.pickup_address, items: [] };
-                acc[key].items.push(item);
-                return acc;
-            }, {});
+const buildTerminalPayload = (pickupAddress, deliveryAddress, items) => ({
+    pickup_address: {
+        first_name: pickupAddress.contact_name?.split(' ')[0] || 'obana',
+        last_name: pickupAddress.contact_name?.split(' ')[1] || 'africa',
+        email: pickupAddress.email || 'obana.africa@example.com',
+        phone: (!String(pickupAddress.phone || '').startsWith('+') ? '+' + (pickupAddress.phone || '') : pickupAddress.phone) || '+2348069331070',
+        line1: pickupAddress.line1 || '',
+        city: pickupAddress.city || '',
+        state: pickupAddress.state || '',
+        country: formatCountryCode(pickupAddress.country),
+        zip: pickupAddress.zip || pickupAddress.zip_code || ''
+    },
+    delivery_address: {
+        first_name: deliveryAddress.first_name || '',
+        last_name: deliveryAddress.last_name || '',
+        email: deliveryAddress.email || '',
+        phone: (!String(deliveryAddress.phone || '').startsWith('+') ? '+' + (deliveryAddress.phone || '') : deliveryAddress.phone) || '+2348069331070',
+        line1: deliveryAddress.line1 || '',
+        line2: deliveryAddress.line2 || '',
+        city: deliveryAddress.city || '',
+        state: deliveryAddress.state || '',
+        country: formatCountryCode(deliveryAddress.country),
+        zip: deliveryAddress.zip || deliveryAddress.zip_code || ''
+    },
+    parcel: {
+        description: 'obana logistics goods',
+        items: items.map(item => ({
+            name: item.name,
+            description: item.description || item.name,
+            currency: item.currency || 'NGN',
+            value: item.value || 0,
+            weight: item.weight || 1,
+            quantity: item.quantity || 1,
+            item_id: item.item_id,
+            price: item.price ?? 0
+        })),
+        weight_unit: 'kg',
+        metadata: {}
+    },
+    shipment_purpose: 'commercial'
+})
 
-            
-            // console.log("groupedItemss", groupedItems)
-            
-            for (let group of Object.values(groupedItems)) {
-                const parcelItems = group.items.map(item => ({
-                    name: item.name,
-                    description: item.description || item.name,
-                    currency: 'NGN',
-                    value: Number(item.price) || Number(item.value) || 0,
-                    weight: (parseFloat(item.weight) || 1) * (parseInt(item.quantity) || 1),
-                    quantity: parseInt(item.quantity) || 1
-                }));
+const matchTemplate = async (req, res) => {
+    let { transport_mode, service_level, delivery_address, items } = req.body
+    const parcel = req.body.parcel
+    let shipmentResults = []
 
-                payload = {
-                    pickup_address: {
-                        first_name: group.pickup_address.contact_name?.split(' ')[0] || 'obana',
-                        last_name: group.pickup_address.contact_name?.split(' ')[1] || 'africa',
-                        email: group.pickup_address.email || 'obana.africa@example.com',
-                        phone: (!String(group.pickup_address.phone).startsWith("+") ? '+' + group.pickup_address.phone : group.pickup_address.phone) || "08069331070",
-                        line1: group.pickup_address.line1 || "08069331070",
-                        city: group.pickup_address.city,
-                        state: group.pickup_address.state,
-                        country: req.body.parcel ? group.pickup_address.country : lookup.byCountry(group.pickup_address.country.toLowerCase().replace(/\b\w/g, char => char.toUpperCase())).iso2 || 'NG',
-                        zip: '100001'
-                    },
-                    delivery_address: {
-                        first_name: delivery_address.first_name,
-                        last_name: delivery_address.last_name,
-                        email: delivery_address.email,
-                        phone: (!String(delivery_address.phone).startsWith("+") ? '+' + delivery_address.phone : delivery_address.phone) || "08069331070",
-                        line1: delivery_address.line1,
-                        city: delivery_address.city,
-                        state: delivery_address.state,
-                        country: req.body.parcel ? delivery_address.country : lookup.byCountry(delivery_address.country.toLowerCase().replace(/\b\w/g, char => char.toUpperCase())).iso2 || 'NG',
-                        zip: '100001'
-                    },
-                    parcel: {
-                        description: "obana logistics goods",
-                        items: parcelItems,
-                        weight_unit: 'kg',
-                        metadata: {}
-                    },
-                    shipment_purpose: 'commercial'
-                };
-                console.log("Payload for logistics match:", payload);
+    if (parcel) {
+        items = parcel.items || items
+    }
 
-                console.log("Items for terminal match:", JSON.stringify(payload.parcel.items));
-             const quickResponse = await taClient.post('/shipments/quick', payload);
+    if (!items || !Array.isArray(items) || items.length === 0 || !delivery_address) {
+        return res.status(400).send(utils.responseError('Missing required parameters'))
+    }
 
-                if (quickResponse.data && quickResponse.data.status && quickResponse.data.data.shipment_id) {
-                    const shipmentId = quickResponse.data.data.shipment_id;
+    transport_mode = transport_mode || 'road'
+    service_level = service_level || 'Standard'
 
-                    const ratesResponse = await taClient.get(`/rates/shipment?shipment_id=${shipmentId}&currency=NGN`);
-                    const rates = ratesResponse.data.data;
+    const normalizedItems = items.map(normalizeItem)
+    const groupedItems = normalizedItems.reduce((acc, item) => {
+        const key = getGroupingKey(item.pickup_address || {})
+        if (!acc[key]) acc[key] = { pickup_address: item.pickup_address || {}, items: [] }
+        acc[key].items.push(item)
+        return acc
+    }, {})
 
-                    if (rates && rates.length > 0) {
-                        const bestRate = rates[0];
-                        shipmentResults.push({
-                            external: true,
-                            shipment_id: shipmentId,
-                            rate_id: bestRate.rate_id,
-                            carrier: { name: bestRate.carrier_name, logo: bestRate.carrier_logo },
-                            items: req.body.parcel ? group?.items : items, // Include the items in this shipment
-                            match: {
-                                price: bestRate.amount + (10/100),
-                                eta: deliveryTimeRange(bestRate.delivery_time),
-                                min: 0,
-                                max: req.body.parcel ? group.items.reduce((acc, item) => acc + parseFloat(item.weight || 0), 0) : items[0].weight,
-                                estimated_delivery: deliveryTimeRange(bestRate.delivery_time)
-                            }
-                        });
-                    }
-                }
-            }
+    const routeTemplates = await RouteTemplates.findAll()
 
+    const externalGroups = []
+
+    for (const group of Object.values(groupedItems)) {
+        const originCity = group.pickup_address?.city
+        const destinationCity = delivery_address.city
+        const groupWeight = group.items.reduce((sum, item) => sum + (item.weight * (item.quantity || 1)), 0)
+
+        const templateMatch = buildTemplateMatch(routeTemplates, originCity, destinationCity, transport_mode, service_level, groupWeight)
+        if (templateMatch) {
+            shipmentResults.push({
+                external: false,
+                pickup_address: group.pickup_address,
+                delivery_address,
+                items: group.items,
+                template: templateMatch.template,
+                match: templateMatch.match
+            })
         } else {
-            items[0].description = "obana shipment"
-            items[0].currency = "NGN"
-            items[0].value = Number(items[0].price) || Number(items[0].value) || 0
-            items[0].weight = (parseFloat(items[0].weight) || 1) * (parseInt(items[0].quantity) || 1)
-            items[0].quantity = parseInt(items[0].quantity) || 1
-              payload = {
-                    pickup_address: {
-                        first_name: pickup_address.contact_name?.split(' ')[0] || 'obana',
-                        last_name: pickup_address.contact_name?.split(' ')[1] || 'africa',
-                        email: pickup_address.email || 'obana.africa@example.com',
-                        phone: (!String(pickup_address.phone).startsWith("+") ? '+' + pickup_address.phone : pickup_address.phone) || "08069331070",
-                        line1: pickup_address.line1 || "77 opebi road, Ikeja, Lagos",
-                        city: pickup_address.city,
-                        state: pickup_address.state,
-                        country: req.body.parcel ? delivery_address.country : lookup.byCountry(pickup_address.country.toLowerCase().replace(/\b\w/g, char => char.toUpperCase())).iso2 || 'NG',
-                        zip: pickup_address.zip_code
-                    },
-                    delivery_address: {
-                        first_name: delivery_address.first_name,
-                        last_name: delivery_address.last_name,
-                        email: delivery_address.email,
-                        phone: (!String(delivery_address.phone).startsWith("+") ? '+' + delivery_address.phone : delivery_address.phone) || "08069331070",
-                        line1: delivery_address.line1,
-                        city: delivery_address.city,
-                        state: delivery_address.state,
-                        country: req.body.parcel ? delivery_address.country : lookup.byCountry(delivery_address.country.toLowerCase().replace(/\b\w/g, char => char.toUpperCase())).iso2 || 'NG',
-                        zip: delivery_address.zip_code
-                    },
-                    parcel: {
-                        description: "obana logistics goods",
-                        items: items,
-                        weight_unit: 'kg',
-                        metadata: {}
-                    },
-                    shipment_purpose: 'commercial'
-                }
-
-                console.log("Sending to terminal: ", payload)
-                console.log("Items for terminal match:", JSON.stringify(payload.parcel.items));
-
-                     const quickResponse = await taClient.post('/shipments/quick', payload);
-
-                if (quickResponse.data && quickResponse.data.status && quickResponse.data.data.shipment_id) {
-                    const shipmentId = quickResponse.data.data.shipment_id;
-
-                    const ratesResponse = await taClient.get(`/rates/shipment?shipment_id=${shipmentId}&currency=NGN`);
-                    const rates = ratesResponse.data.data;
-
-                    if (rates && rates.length > 0) {
-                        const bestRate = rates[0];
-                        shipmentResults.push({
-                            external: true,
-                            shipment_id: shipmentId,
-                            rate_id: bestRate.rate_id,
-                            carrier: { name: bestRate.carrier_name, logo: bestRate.carrier_logo },
-                            items: req.body.parcel ? group?.items : items, 
-                            match: {
-                                price: bestRate.amount + (10/100),
-                                eta: deliveryTimeRange(bestRate.delivery_time),
-                                min: 0,
-                                max: req.body.parcel ? group.items.reduce((acc, item) => acc + parseFloat(item.weight || 0), 0) : items[0].weight,
-                                estimated_delivery: deliveryTimeRange(bestRate.delivery_time)
-                            }
-                        });
-                    }
-                }
-        }
-                
-
-            if (shipmentResults.length > 0) {
-                return res.status(200).send(utils.responseSuccess(shipmentResults));
-            }
-        } catch (error) {
-            console.error('External route match failed:', error?.response?.data || error.message);
-            return res.status(404).send(utils.responseError(`No routes available for this shipment ${JSON.stringify(error?.response?.data || error.message)}`))
+            externalGroups.push({
+                pickup_address: group.pickup_address,
+                items: group.items,
+                weight: groupWeight
+            })
         }
     }
-    return res.status(404).send(utils.responseError(`No routes available for this shipment`))
+
+    if (externalGroups.length === 0 && shipmentResults.length > 0) {
+        return res.status(200).send(utils.responseSuccess(shipmentResults))
+    }
+
+    try {
+        for (const group of externalGroups) {
+            const payload = buildTerminalPayload(group.pickup_address, delivery_address, group.items)
+            const quickResponse = await taClient.post('/shipments/quick', payload)
+
+            if (!quickResponse.data || !quickResponse.data.status || !quickResponse.data.data?.shipment_id) {
+                continue
+            }
+
+            const shipmentId = quickResponse.data.data.shipment_id
+            const ratesResponse = await taClient.get(`/rates/shipment?shipment_id=${shipmentId}&currency=NGN`)
+            const rates = ratesResponse.data?.data || []
+
+            if (!rates.length) {
+                continue
+            }
+
+            const bestRate = rates[0]
+            shipmentResults.push({
+                external: true,
+                shipment_id: shipmentId,
+                rate_id: bestRate.rate_id,
+                carrier: { name: bestRate.carrier_name, logo: bestRate.carrier_logo },
+                items: group.items,
+                match: {
+                    price: bestRate.amount + (10 / 100),
+                    eta: deliveryTimeRange(bestRate.delivery_time),
+                    min: 0,
+                    max: group.weight,
+                    estimated_delivery: deliveryTimeRange(bestRate.delivery_time)
+                }
+            })
+        }
+
+        if (shipmentResults.length > 0) {
+            return res.status(200).send(utils.responseSuccess(shipmentResults))
+        }
+
+        return res.status(404).send(utils.responseError('No routes available for this shipment'))
+    } catch (error) {
+        console.error('External route match failed:', error?.response?.data || error.message)
+        return res.status(404).send(utils.responseError(`No routes available for this shipment ${JSON.stringify(error?.response?.data || error.message)}`))
+    }
 }
 
 module.exports = {
