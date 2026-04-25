@@ -177,12 +177,23 @@ const buildTerminalPayload = (pickupAddress, deliveryAddress, items) => ({
 })
 
 const matchTemplate = async (req, res) => {
-    let { transport_mode, service_level, delivery_address, items } = req.body
+    let { transport_mode, service_level, delivery_address, items, origin_city, destination_city, weight, pickup_address } = req.body
     const parcel = req.body.parcel
     let shipmentResults = []
 
+    // Handle different payload formats
     if (parcel) {
+        // Format 2: parcel with items that have pickup_address
         items = parcel.items || items
+        delivery_address = delivery_address || req.body.delivery_address
+    } else if (origin_city) {
+        // Format 1: direct parameters
+        items = items || []
+        delivery_address = delivery_address || req.body.delivery_address
+        pickup_address = pickup_address || req.body.pickup_address
+        transport_mode = transport_mode || req.body.transport_mode
+        service_level = service_level || req.body.service_level
+        weight = weight || req.body.weight
     }
 
     if (!items || !Array.isArray(items) || items.length === 0 || !delivery_address) {
@@ -193,24 +204,43 @@ const matchTemplate = async (req, res) => {
     service_level = service_level || 'Standard'
 
     const normalizedItems = items.map(normalizeItem)
-    const groupedItems = normalizedItems.reduce((acc, item) => {
-        const key = getGroupingKey(item.pickup_address || {})
-        if (!acc[key]) acc[key] = { pickup_address: item.pickup_address || {}, items: [] }
-        acc[key].items.push(item)
-        return acc
-    }, {})
+    let groupedItems = {}
+
+    if (parcel) {
+        // Group by pickup_address for parcel format
+        groupedItems = normalizedItems.reduce((acc, item) => {
+            const key = getGroupingKey(item.pickup_address || {})
+            if (!acc[key]) acc[key] = { pickup_address: item.pickup_address || {}, items: [] }
+            acc[key].items.push(item)
+            return acc
+        }, {})
+    } else if (origin_city) {
+        // Single shipment format
+        const key = getGroupingKey(pickup_address || {})
+        groupedItems[key] = { pickup_address: pickup_address || {}, items: normalizedItems }
+    }
 
     const routeTemplates = await RouteTemplates.findAll()
 
     const externalGroups = []
 
     for (const group of Object.values(groupedItems)) {
-        const originCity = group.pickup_address?.city
-        const destinationCity = delivery_address.city
-        const groupWeight = group.items.reduce((sum, item) => sum + (item.weight * (item.quantity || 1)), 0)
+        let originCity, destinationCity, groupWeight
+
+        if (parcel) {
+            originCity = group.pickup_address?.city
+            destinationCity = delivery_address.city
+            groupWeight = group.items.reduce((sum, item) => sum + (item.weight * (item.quantity || 1)), 0)
+        } else {
+            originCity = origin_city
+            destinationCity = destination_city
+            groupWeight = weight || group.items.reduce((sum, item) => sum + (item.weight * (item.quantity || 1)), 0)
+        }
 
         const templateMatch = buildTemplateMatch(routeTemplates, originCity, destinationCity, transport_mode, service_level, groupWeight)
+        
         if (templateMatch) {
+            templateMatch.match.estimated_delivery = deliveryTimeRange(templateMatch.match.eta)
             shipmentResults.push({
                 external: false,
                 pickup_address: group.pickup_address,
@@ -235,6 +265,7 @@ const matchTemplate = async (req, res) => {
     try {
         for (const group of externalGroups) {
             const payload = buildTerminalPayload(group.pickup_address, delivery_address, group.items)
+            console.log('Terminal Africa payload:', JSON.stringify(payload, null, 2))
             const quickResponse = await taClient.post('/shipments/quick', payload)
 
             if (!quickResponse.data || !quickResponse.data.status || !quickResponse.data.data?.shipment_id) {
