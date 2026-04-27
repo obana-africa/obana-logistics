@@ -23,17 +23,35 @@ const RouteTemplates = db.route_templates
 function deliveryTimeRange(delivery_time) {
   if (typeof delivery_time !== "string") return delivery_time;
 
-  const m = delivery_time.match(/^\s*Within\s+(\d+)\s+days?\s*$/i);
-  if (!m) return delivery_time;
+  const withinMatch = delivery_time.match(/^\s*Within\s+(\d+)\s+days?\s*$/i);
+  const rangeMatch = delivery_time.match(/^\s*(\d+)\s*-\s*(\d+)\s+days?\s*$/i);
 
-  const n = parseInt(m[1], 10);
-  if (Number.isNaN(n) || n < 0) return delivery_time;
+  if (!withinMatch && !rangeMatch) return delivery_time;
+
+  let startOffset = 0;
+  let endOffset = 0;
+
+  if (withinMatch) {
+    endOffset = parseInt(withinMatch[1], 10);
+    if (Number.isNaN(endOffset) || endOffset < 0) return delivery_time;
+  } else {
+    startOffset = parseInt(rangeMatch[1], 10);
+    endOffset = parseInt(rangeMatch[2], 10);
+    if (
+      Number.isNaN(startOffset) || Number.isNaN(endOffset) ||
+      startOffset < 0 || endOffset < 0 ||
+      endOffset < startOffset
+    ) {
+      return delivery_time;
+    }
+  }
 
   const now = new Date();
-  const start = now;
+  const start = new Date(now.getTime());
+  start.setDate(start.getDate() + startOffset);
 
   const end = new Date(now.getTime());
-  end.setDate(end.getDate() + n);
+  end.setDate(end.getDate() + endOffset);
 
   const opts = { month: "long", day: "numeric" };
   const startStr = start.toLocaleDateString("en-US", opts);
