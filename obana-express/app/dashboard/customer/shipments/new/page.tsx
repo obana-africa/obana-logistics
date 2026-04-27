@@ -133,9 +133,10 @@ export default function CreateShipmentPage() {
         origin_city: formData.pickup_address.city,
         destination_city: formData.delivery_address.city
       });
-
-      if (response.data) {
-        setMatchedRoute(response.data);
+      console.log(response.data)
+      const matched = Array.isArray(response.data) ? response.data[0] : response.data;
+      if (matched) {
+        setMatchedRoute(matched);
         setStep('match');
         setError('');
       } else {
@@ -726,19 +727,18 @@ export default function CreateShipmentPage() {
 								<div className="bg-white rounded-lg p-4 sm:p-5 shadow-sm text-center">
 									<p className="text-sm text-gray-600 mb-1">Shipping Cost</p>
 									<p className="text-2xl sm:text-3xl font-bold text-green-600">
-										₦{matchedRoute.match.price?.toLocaleString() || "N/A"}
-									</p>
-								</div>
-								<div className="bg-white rounded-lg p-4 sm:p-5 shadow-sm text-center">
-									<p className="text-sm text-gray-600 mb-1">
-										Estimated Delivery
-									</p>
-									<p className="text-2xl sm:text-3xl font-bold text-blue-600">
-										{matchedRoute.match.eta || "N/A"} 
-									</p>
-								</div>
-							</div>
-
+								₦{matchedRoute?.match?.price != null ? matchedRoute.match.price.toLocaleString() : "N/A"}
+							</p>
+						</div>
+						<div className="bg-white rounded-lg p-4 sm:p-5 shadow-sm text-center">
+							<p className="text-sm text-gray-600 mb-1">
+								Estimated Delivery
+							</p>
+							<p className="text-2xl sm:text-3xl font-bold text-blue-600">
+								{matchedRoute?.match?.eta ?? "N/A"}
+							</p>
+						</div>
+					</div>
 							<div className="bg-white/80 rounded-lg p-4 space-y-3 text-sm">
 								<div className="flex justify-between items-center">
 									<span className="text-gray-600 flex items-center gap-2">
@@ -824,7 +824,7 @@ export default function CreateShipmentPage() {
                   <div>
                     <p className="text-gray-600">Shipping Cost</p>
                     <p className="font-bold text-green-600 text-lg">
-                      ₦{matchedRoute?.match.price?.toLocaleString() || 'N/A'}
+                      ₦{matchedRoute?.match?.price != null ? matchedRoute.match.price.toLocaleString() : 'N/A'}
                     </p>
                   </div>
                 </div>
