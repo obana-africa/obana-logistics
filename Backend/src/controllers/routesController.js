@@ -219,8 +219,8 @@ const buildTerminalPayload = (pickupAddress, deliveryAddress, items) => {
     const validatedPickup = validateAndFallbackAddress(pickupAddress)
     const validatedDelivery = validateAndFallbackAddress(deliveryAddress)
 
-    console.log("validatedPickup substitute", validatedPickup)
-    console.log("validatedDelivery substitute", validatedDelivery)
+    // console.log("validatedPickup substitute", validatedPickup)
+    // console.log("validatedDelivery substitute", validatedDelivery)
 
 
     return {
