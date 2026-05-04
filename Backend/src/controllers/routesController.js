@@ -3,6 +3,7 @@ const utils = require('../../utils')
 const axios = require('axios')
 const { getCode } = require('country-list')
 const lookup = require('country-code-lookup')
+const { parsePhoneNumber } = require('libphonenumber-js');
 
 require('dotenv').config()
 
@@ -16,6 +17,68 @@ const taClient = axios.create({
 
 
 const RouteTemplates = db.route_templates
+
+const DEFAULT_ADDRESS = {
+    phone: '+2348090335245',
+    line1: '77 Opebi Road',
+    city: 'Ikeja',
+    state: 'Lagos',
+    country: 'Nigeria'
+}
+
+
+/**
+ * Validate city/state/line1 are non-empty strings
+ */
+const isValidAddressField = (field) => {
+    return typeof field === 'string' && field.trim().length > 0
+}
+
+
+const formatPhoneNumberInternational = (phoneNumber, countryCode) => {
+    try {
+        // Remove any existing formatting
+        const cleanedNumber = phoneNumber.replace(/[^\d]/g, '');
+
+        // Validate country code
+        const validCountryCode = countryCode.toUpperCase();
+
+        // Try parsing the phone number
+        const parsedPhoneNumber = parsePhoneNumber(cleanedNumber, validCountryCode);
+
+        // Format to international standard
+        if (parsedPhoneNumber && parsedPhoneNumber.isValid()) {
+            return parsedPhoneNumber.formatInternational();
+        }
+
+        // Fallback to original number if parsing fails
+        return phoneNumber;
+    } catch (error) {
+        console.warn('Phone number formatting error:', error);
+        return phoneNumber;
+    }
+};
+
+/**
+ * Validate address object and return with fallbacks
+ */
+const validateAndFallbackAddress = (address = {}) => {
+    const isCityValid = isValidAddressField(address.city)
+    const isStateValid = isValidAddressField(address.state)
+    const isLine1Valid = isValidAddressField(address.line1)
+    const isCountryValid = isValidAddressField(address.country)
+    const isPhoneValid = isValidAddressField(address.phone) && !String(address.phone || '').startsWith('+')
+
+    const hasAnyMissing = !isPhoneValid || !isCityValid || !isStateValid || !isLine1Valid || !isCountryValid
+
+    if (hasAnyMissing) {
+        return { ...DEFAULT_ADDRESS }
+    }
+    address.country = formatCountryCode(address.country)
+    address.phone = formatPhoneNumberInternational(address.phone, address.country)?.split(' ').join('') 
+    return address
+}
+
 /**
  * Convert a delivery_time string like "Within 7 days" into "MMM D - MMM D"
  * If input doesn't match pattern, return input unchanged.
@@ -152,47 +215,56 @@ const normalizeItem = (item) => ({
     currency: item.currency || 'NGN'
 })
 
-const buildTerminalPayload = (pickupAddress, deliveryAddress, items) => ({
-    pickup_address: {
-        first_name: pickupAddress.contact_name?.split(' ')[0] || 'obana',
-        last_name: pickupAddress.contact_name?.split(' ')[1] || 'africa',
-        email: pickupAddress.email || 'obana.africa@example.com',
-        phone: (!String(pickupAddress.phone || '').startsWith('+') ? '+' + (pickupAddress.phone || '') : pickupAddress.phone) || '+2348069331070',
-        line1: pickupAddress.line1 || '',
-        city: pickupAddress.city || '',
-        state: pickupAddress.state || '',
-        country: formatCountryCode(pickupAddress.country),
-        zip: pickupAddress.zip || pickupAddress.zip_code || ''
-    },
-    delivery_address: {
-        first_name: deliveryAddress.first_name || '',
-        last_name: deliveryAddress.last_name || '',
-        email: deliveryAddress.email || '',
-        phone: (!String(deliveryAddress.phone || '').startsWith('+') ? '+' + (deliveryAddress.phone || '') : deliveryAddress.phone) || '+2348069331070',
-        line1: deliveryAddress.line1 || '',
-        line2: deliveryAddress.line2 || '',
-        city: deliveryAddress.city || '',
-        state: deliveryAddress.state || '',
-        country: formatCountryCode(deliveryAddress.country),
-        zip: deliveryAddress.zip || deliveryAddress.zip_code || ''
-    },
-    parcel: {
-        description: 'obana logistics goods',
-        items: items.map(item => ({
-            name: item.name,
-            description: item.description || item.name,
-            currency: item.currency || 'NGN',
-            value: item.value || 0,
-            weight: item.weight || 1,
-            quantity: item.quantity || 1,
-            item_id: item.item_id,
-            price: item.price ?? 0
-        })),
-        weight_unit: 'kg',
-        metadata: {}
-    },
-    shipment_purpose: 'commercial'
-})
+const buildTerminalPayload = (pickupAddress, deliveryAddress, items) => {
+    const validatedPickup = validateAndFallbackAddress(pickupAddress)
+    const validatedDelivery = validateAndFallbackAddress(deliveryAddress)
+
+    console.log("validatedPickup substitute", validatedPickup)
+    console.log("validatedDelivery substitute", validatedDelivery)
+
+
+    return {
+        pickup_address: {
+            first_name: validatedPickup.contact_name?.split(' ')[0] || 'obana',
+            last_name: validatedPickup.contact_name?.split(' ')[1] || 'africa',
+            email: validatedPickup.email || 'obana.africa@gmail.com',
+            phone: validatedPickup.phone,
+            line1: validatedPickup.line1,
+            city: validatedPickup.city,
+            state: validatedPickup.state,
+            country: validatedPickup.country,
+            zip: validatedPickup.zip || validatedPickup.zip_code || '100001'
+        },
+        delivery_address: {
+            first_name: validatedDelivery.first_name || 'obana',
+            last_name: validatedDelivery.last_name || 'africa',
+            email: validatedDelivery.email || 'obana.africa@gmail.com',
+            phone: validatedDelivery.phone,
+            line1: validatedDelivery.line1,
+            line2: validatedDelivery.line2 || '77 opebi road',
+            city: validatedDelivery.city,
+            state: validatedDelivery.state,
+            country: validatedDelivery.country,
+            zip: validatedDelivery.zip || validatedDelivery.zip_code || '100001'
+        },
+        parcel: {
+            description: 'obana logistics goods',
+            items: items.map(item => ({
+                name: item.name,
+                description: item.description || item.name,
+                currency: item.currency || 'NGN',
+                value: item.value || 0,
+                weight: item.weight || 0.5,
+                quantity: item.quantity || 1,
+                item_id: item.item_id,
+                price: item.price ?? 0
+            })),
+            weight_unit: 'kg',
+            metadata: {}
+        },
+        shipment_purpose: 'commercial'
+    }
+}
 
 const matchTemplate = async (req, res) => {
     let { transport_mode, service_level, delivery_address, items, origin_city, destination_city, weight, pickup_address } = req.body
