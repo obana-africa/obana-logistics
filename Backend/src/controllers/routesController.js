@@ -177,11 +177,11 @@ const formatCountryCode = (country) => {
 
 const getGroupingKey = (pickupAddress = {}) => JSON.stringify({
     line1: normalizeText(pickupAddress.line1),
-    line2: normalizeText(pickupAddress.line2),
+    // line2: normalizeText(pickupAddress.line2),
     city: normalizeText(pickupAddress.city),
     state: normalizeText(pickupAddress.state),
     country: normalizeText(pickupAddress.country),
-    zip: normalizeText(pickupAddress.zip || pickupAddress.zip_code)
+    // zip: normalizeText(pickupAddress.zip || pickupAddress.zip_code)
 })
 
 const buildTemplateMatch = (routeTemplates, origin_city, destination_city, transport_mode, service_level, weight) => {
