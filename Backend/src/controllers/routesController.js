@@ -67,7 +67,8 @@ const validateAndFallbackAddress = (address = {}) => {
     const isStateValid = isValidAddressField(address.state)
     const isLine1Valid = isValidAddressField(address.line1)
     const isCountryValid = isValidAddressField(address.country)
-    const isPhoneValid = isValidAddressField(address.phone) && !String(address.phone || '').startsWith('+')
+    // const isPhoneValid = isValidAddressField(address.phone) && String(address.phone || '').startsWith('+')
+    const isPhoneValid = isValidAddressField(address.phone)
 
     const hasAnyMissing = !isPhoneValid || !isCityValid || !isStateValid || !isLine1Valid || !isCountryValid
 
@@ -172,11 +173,11 @@ const formatCountryCode = (country) => {
     const normalized = String(country).trim()
     if (normalized.length === 2) return normalized.toUpperCase()
     const alpha2 = getCode(normalized) || lookup.byCountry(normalized.toLowerCase().replace(/\b\w/g, char => char.toUpperCase()))?.iso2
-    return alpha2 ? alpha2.toUpperCase() : 'NG'
+    return alpha2 ? alpha2.toUpperCase() : country
 }
 
 const getGroupingKey = (pickupAddress = {}) => JSON.stringify({
-    line1: normalizeText(pickupAddress.line1),
+    // line1: normalizeText(pickupAddress.line1),
     // line2: normalizeText(pickupAddress.line2),
     city: normalizeText(pickupAddress.city),
     state: normalizeText(pickupAddress.state),
@@ -299,7 +300,7 @@ const matchTemplate = async (req, res) => {
     if (parcel) {
         // Group by pickup_address for parcel format
         groupedItems = normalizedItems.reduce((acc, item) => {
-            const key = getGroupingKey(item.pickup_address || {})
+            const key = getGroupingKey(item.pickup_address || {}).toLowerCase()
             if (!acc[key]) acc[key] = { pickup_address: item.pickup_address || {}, items: [] }
             acc[key].items.push(item)
             return acc
