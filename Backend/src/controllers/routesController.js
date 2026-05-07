@@ -329,16 +329,26 @@ const matchTemplate = async (req, res) => {
         }
 
         const templateMatch = buildTemplateMatch(routeTemplates, originCity, destinationCity, transport_mode, service_level, groupWeight)
+        const fallbackTemplateMatch = templateMatch ? null : buildTemplateMatch(
+            routeTemplates,
+            'Lagos',
+            'Lagos',
+            'Road',
+            'standard',
+            groupWeight
+        )
+
+        const selectedTemplateMatch = templateMatch || fallbackTemplateMatch
         
-        if (templateMatch) {
-            templateMatch.match.estimated_delivery = deliveryTimeRange(templateMatch.match.eta)
+        if (selectedTemplateMatch) {
+            selectedTemplateMatch.match.estimated_delivery = deliveryTimeRange(selectedTemplateMatch.match.eta)
             shipmentResults.push({
                 external: false,
                 pickup_address: group.pickup_address,
                 delivery_address,
                 items: group.items,
-                template: templateMatch.template,
-                match: templateMatch.match
+                template: selectedTemplateMatch.template,
+                match: selectedTemplateMatch.match
             })
         } else {
             externalGroups.push({
