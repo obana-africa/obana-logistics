@@ -335,7 +335,7 @@ const matchTemplate = async (req, res) => {
             'Lagos',
             'Road',
             'standard',
-            groupWeight
+            0.5
         )
 
         const selectedTemplateMatch = templateMatch || fallbackTemplateMatch
