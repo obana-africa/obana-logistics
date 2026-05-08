@@ -31,7 +31,7 @@ export default function ContactFormSection() {
 						Get in Touch
 					</h2>
 					<p className="text-xl text-blue-100 max-w-2xl mx-auto">
-						Have questions? We&apos;re here to help you 24/7
+						Have questions? We're here to help you 24/7
 					</p>
 				</div>
 

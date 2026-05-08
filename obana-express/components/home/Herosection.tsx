@@ -1,286 +1,382 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Search, ChevronDown, X, MapPin, Truck } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { X, MapPin, Truck, ArrowUpRight, Zap } from "lucide-react";
 import { Loader, Button, Badge } from "@/components/ui";
 import { apiClient } from "@/lib/api";
-const heroSlides = [
-	{
-		title: "Gifts & Personal Items",
-		image: "/images/hero-1.webp",
-		fallbackGradient: "from-purple-600 via-pink-600 to-red-600",
-	},
-	{
-		title: "Business Packages",
-		image: "/images/hero-2.webp",
-		fallbackGradient: "from-blue-600 via-indigo-600 to-purple-600",
-	},
-	{
-		title: "Documents & Letters",
-		image: "/images/hero-1.webp",
-		fallbackGradient: "from-teal-600 via-cyan-600 to-blue-600",
-	},
-	{
-		title: "Electronics & Gadgets",
-		image: "/images/hero-1.webp",
-		fallbackGradient: "from-slate-700 via-slate-600 to-blue-600",
-	},
-];
+import Image from "next/image";
+import Link from "next/link";
+import { CldImage } from "next-cloudinary";
 
 const getStatusVariant = (status: string) => {
-	switch (status?.toLowerCase()) {
-		case 'delivered': return 'success';
-		case 'in_transit': return 'info';
-		case 'pending': return 'warning';
-		case 'cancelled':
-		case 'returned': return 'error';
-		default: return 'default';
-	}
+  switch (status?.toLowerCase()) {
+    case "delivered": return "success";
+    case "in_transit": return "info";
+    case "pending": return "warning";
+    case "cancelled":
+    case "returned": return "error";
+    default: return "default";
+  }
 };
 
+function AfricaMapGraphic() {
+  return (
+    <div className="relative w-[44vw] max-w-[1400] ml-0 lg:ml-auto aspect-[1.1/1]">
+      <CldImage
+        src="MapComponent_b88syv"
+        alt="Africa logistics map"
+        fill
+        className="object-contain transition-transform duration-700 hover:scale-[1.02]"
+        sizes="(max-width: 768px) 100vw, 80vw"
+        priority
+        onError={(e) => { e.currentTarget.style.opacity = "0"; }}
+      />
+    </div>
+  );
+}
+
 export default function HeroSection() {
-	const [currentSlide, setCurrentSlide] = useState(0);
-	const [trackingId, setTrackingId] = useState("");
-	const [trackingResult, setTrackingResult] = useState<any>(null);
-	const [trackingError, setTrackingError] = useState<string | null>(null);
-	const [trackingLoading, setTrackingLoading] = useState(false);
-	const [showTrackingModal, setShowTrackingModal] = useState(false);
+  const [trackingId, setTrackingId] = useState("");
+  const [trackingResult, setTrackingResult] = useState<any>(null);
+  const [trackingError, setTrackingError] = useState<string | null>(null);
+  const [trackingLoading, setTrackingLoading] = useState(false);
+  const [showTrackingModal, setShowTrackingModal] = useState(false);
+  const sectionRef = useRef<HTMLElement>(null);
 
-	useEffect(() => {
-		const interval = setInterval(() => {
-			setCurrentSlide((prev) => (prev + 1) % heroSlides.length);
-		}, 5000);
-		return () => clearInterval(interval);
-	}, []);
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("animate-fade-up");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.1 }
+    );
+    const animatedElements = document.querySelectorAll(".animate-on-scroll");
+    animatedElements.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
 
-	const handleTrackShipment = async (e: React.FormEvent) => {
-		e.preventDefault();
-		if (trackingId.trim()) {
-			setTrackingLoading(true);
-			setTrackingError(null);
-			setTrackingResult(null);
-			setShowTrackingModal(true);
-			try {
-				const res = await apiClient.getShipment(trackingId.trim());
-				if (res.success) {
-					setTrackingResult(res.data);
-				} else {
-					setTrackingError(res.message || 'Not found');
-				}
-			} catch (err: any) {
-				setTrackingError(err.response?.data?.message || 'Failed to fetch');
-			}
-			setTrackingLoading(false);
-		}
-	};
+  const handleTrackShipment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!trackingId.trim()) return;
+    setTrackingLoading(true);
+    setTrackingError(null);
+    setTrackingResult(null);
+    setShowTrackingModal(true);
+    try {
+      const res = await apiClient.getShipment(trackingId.trim());
+      if (res.success) setTrackingResult(res.data);
+      else setTrackingError(res.message || "Not found");
+    } catch (err: any) {
+      setTrackingError(err.response?.data?.message || "Failed to fetch");
+    }
+    setTrackingLoading(false);
+  };
 
-	return (
-		<section className="relative min-h-[80vh] flex items-center justify-center overflow-hidden">
-			<div className="absolute inset-0">
-				{heroSlides.map((slide, index) => (
-					<div
-						key={index}
-						className={`absolute inset-0 transition-opacity duration-1000 ${
-							index === currentSlide ? "opacity-100" : "opacity-0"
-						}`}
-					>
-						{/* Image */}
-						<div
-							className="absolute inset-0 bg-cover bg-center"
-							style={{
-								backgroundImage: `url(${slide.image})`,
-							}}
-						/>
+  return (
+    <>
+      <style jsx global>{`
+        @keyframes fade-up {
+          from { opacity: 0; transform: translateY(2rem); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-5px); }
+          75% { transform: translateX(5px); }
+        }
+        .animate-fade-up {
+          animation: fade-up 0.7s ease-out forwards;
+        }
+        .animate-fade-in {
+          animation: fade-in 0.8s ease-out forwards;
+        }
+        .animate-shake {
+          animation: shake 0.3s ease-in-out;
+        }
+        .animate-on-scroll {
+          opacity: 0;
+          transform: translateY(2rem);
+          transition: none;
+        }
+        .animate-on-scroll.animate-fade-up {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      `}</style>
 
-						<div className="absolute inset-0 bg-[#1B3E5D]/70" />
-					</div>
-				))}
+      <section
+        ref={sectionRef}
+        className="relative w-full overflow-hidden bg-white mt-30 lg:mt-30"
+        style={{ minHeight: "92vh" }}
+      >
+        {/* Animated gradient background */}
+        <div
+          className="absolute inset-0 pointer-events-none z-0 opacity-0 animate-fade-in"
+          style={{
+            background: "radial-gradient(circle at 10% 50% , rgba(220,251,249,0.4) 0%, transparent 70%)",
+            animationDelay: "0.2s",
+          }}
+        />
 
-				{/* Animated Overlay Elements */}
-				<div className="absolute inset-0 overflow-hidden">
-					<div className="absolute -top-1/2 -left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse" />
-					<div
-						className="absolute -bottom-1/2 -right-1/4 w-96 h-96 bg-amber-500/20 rounded-full blur-3xl animate-pulse"
-						style={{ animationDelay: "1s" }}
-					/>
-					<div
-						className="absolute top-1/4 right-1/4 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl animate-pulse"
-						style={{ animationDelay: "2s" }}
-					/>
-				</div>
-			</div>
+        {/* Main grid  */}
+        <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-10 grid lg:grid-cols-2 gap-12 lg:gap-8 items-center">
+          {/* LEFT COLUMN */}
+          <div className="flex flex-col justify-center py-16 lg:py-0">
+            <div className="animate-on-scroll">
+              <div
+                className="inline-flex items-center gap-2 self-start mb-5 px-4 py-1.5 rounded-full text-xs font-semibold tracking-widest uppercase hover:scale-105 transition-transform duration-300"
+                style={{ background: "#dcfbf9", color: "#1b3b5f" }}
+              >
+                <Zap className="w-3.5 h-3.5 text-yellow-500 animate-pulse" fill="currentColor" />
+                B2B Logistics Platform
+              </div>
 
-			{/* Content */}
-			<div className="relative max-w-6xl mx-auto px-6 py-32 text-center z-10">
-				<div className="inline-block mb-6 px-4 py-2 bg-amber-500/10 border border-amber-500/30 rounded-full backdrop-blur-sm animate-fade-in">
-					<span className="text-amber-400 font-medium text-sm">
-						🚀 Fast, Reliable & Secure Shipping
-					</span>
-				</div>
+              <h1
+                className="font-black leading-[1.02] tracking-tight mb-6"
+                style={{
+                  color: "#1b3b5f",
+                  fontSize: "clamp(2.6rem, 5.5vw, 4.25rem)",
+                  fontFamily: "'Sora', 'DM Sans', sans-serif",
+                }}
+              >
+                EV-Powered <br />
+                Fulfilment for <br />
+                Businesses
+              </h1>
 
-				<h1 className="text-4xl md:text-6xl font-bold text-white mb-6 leading-tight animate-fade-in-up">
-					Move Goods from Europe to Africa
-					<br />
-					{/* <span className="text-transparent bg-clip-text bg-linear-to-r from-amber-400 via-amber-300 to-yellow-400 transition-all duration-1000">
-						{heroSlides[currentSlide].title}
-					</span>
-					<br />
-					<span className="text-4xl md:text-6xl">
-						to and from Anywhere in The world
-					</span> */}
-				</h1>
+              <p
+                className="text-base lg:text-lg leading-relaxed mb-8 max-w-md"
+                style={{ color: "#49494D" }}
+              >
+                A B2B-first, tech-enabled logistics network powered by electric vehicles built for
+                SME wholesale distribution across Africa.
+              </p>
+            </div>
 
-				<p className="text-4xl md:text-6xl hidden md:block text-slate-300 max-w-3xl mx-auto mb-12 animate-fade-in delay-200">
-					Fast, secure logistics built for African retailers and distributors.
-				</p>
+            {/* Mobile map */}
+            {/* <div className="lg:hidden w-full h-64 sm:h-72 relative mt-6 mb-6 animate-on-scroll">
+              <AfricaMapGraphic />
+            </div> */}
 
-				{/* Tracking Input */}
-				<div className="max-w-2xl mx-auto mb-16 animate-fade-in-up delay-300">
-					<form
-						onSubmit={handleTrackShipment}
-						className="relative bg-white rounded-2xl shadow-2xl p-2 flex flex-col sm:flex-row gap-2"
-					>
-						<input
-							type="text"
-							value={trackingId}
-							onChange={(e) => setTrackingId(e.target.value)}
-							placeholder="Enter your tracking ID (e.g., OBN-123456789NG)"
-							className="flex-1 px-6 py-4 text-slate-900 placeholder-slate-400 bg-transparent border-0 focus:outline-none text-base"
-						/>
-						<Button
-							type="submit"
-							variant="primary"
-							className="  text-white  px-8 py-4 rounded-xl shadow-lg hover:shadow-xl transition-all"
-						>
-							<Search className="w-5 h-5 mr-2" />
-							Track Shipment
-						</Button>
-					</form>
-					<p className="text-sm text-white/70 mt-3">
-						Real-time tracking • Instant notifications • 24/7 support
-					</p>
-				</div>
-			</div>
+            {/* CTA Buttons */}
+            <div className=" flex flex-wrap gap-4 mb-8 animate-on-scroll">
+              <Link
+                href="/auth/signup"
+                className="
+				group inline-flex 
+				items-center gap-2 
+				px-7 py-3.5 rounded-xl 
+				font-semibold 
+				text-sm text-white 
+				transition-all duration-300 
+				hover:shadow-xl 
+				active:scale-[0.96] 
+				hover:-translate-y-0.5"
+                style={{ background: "#1b3b5f" }}
+              >
+                Get Started
+                <ArrowUpRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              </Link>
+              <Link
+                href="/auth/signup"
+                className="
+				group 
+				inline-flex 
+				items-center 
+				gap-2 
+				px-7 
+				py-3.5 
+				rounded-xl 
+				font-semibold 
+				text-sm
+				border
+				border-[#1b3b5f]
+   				text-[#1b3b5f]
+				bg-transparent
+				transition-all 
+				duration-300
+				ease-in-out
+				hover:bg-[#020c17]
+				hover:text-white 
+				hover:shadow-lg 
+				active:scale-[0.96] 
+				hover:-translate-y-0.5"
+                style={{ 
+					// color: "#1b3b5f", 
+					// border: "1px solid #1b3b5f", 
+				}}
+              >
+                Create Shipment
+                <ArrowUpRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              </Link>
+            </div>
 
-			{/* Tracking Result Modal */}
-			{showTrackingModal && (
-				<div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-					<div className="bg-white rounded-2xl max-w-md w-full p-8 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 text-left">
-						<button
-							onClick={() => setShowTrackingModal(false)}
-							className="absolute top-5 right-5 text-slate-400 hover:text-black"
-						>
-							<X className="w-6 h-6" />
-						</button>
+            {/* Track shipment form */}
+            <form onSubmit={handleTrackShipment} className="flex gap-2 max-w-md animate-on-scroll">
+              <input
+                type="text"
+                value={trackingId}
+                onChange={(e) => setTrackingId(e.target.value)}
+                placeholder="Enter tracking ID…"
+                className="flex-1 px-4 py-3 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-[#1b3b5f]/50 transition-all duration-200 hover:shadow-md"
+                style={{ background: "#f7f8fa", borderColor: "#ecedf0", color: "#111111" }}
+              />
+              <button
+                type="submit"
+                disabled={trackingLoading}
+                className="px-5 py-3 rounded-xl text-sm font-semibold text-white transition-all duration-300 hover:opacity-90 hover:shadow-lg active:scale-[0.96] disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: "#1b3b5f" }}
+              >
+                {trackingLoading ? "Tracking..." : "Track"}
+              </button>
+            </form>
+            <p className="text-xs mt-2 transition-all duration-300 hover:translate-x-1" style={{ color: "#9A9DAF" }}>
+              Real-time tracking · 24/7 support
+            </p>
+          </div>
 
-						{trackingLoading ? (
-							<div className="flex justify-center py-12"><Loader /></div>
-						) : trackingError ? (
-							<div className="text-center py-8">
-								<div className="flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mx-auto mb-4">
-									<X className="w-8 h-8 text-red-600" />
-								</div>
-								<h3 className="text-lg font-bold text-slate-900 mb-2">Tracking Failed</h3>
-								<p className="text-red-600 mb-6">{trackingError}</p>
-								<Button 
-									variant="secondary" 
-									className="w-full"
-									onClick={() => setShowTrackingModal(false)}
-								>
-									Close
-								</Button>
-							</div>
-						) : trackingResult ? (
-							<div className="space-y-6">
-								<div className="flex justify-between items-start border-b pb-4">
-									<div>
-										<p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Shipment Reference</p>
-										<h3 className="text-lg font-bold text-slate-900">{trackingResult.shipment_reference}</h3>
-									</div>
-									<Badge variant={getStatusVariant(trackingResult.status)}>
-										{trackingResult.status?.replace('_', ' ').toUpperCase()}
-									</Badge>
-								</div>
+          {/* RIGHT COLUMN – desktop map (safe, no overlay) */}
+          <div className="hidden lg:flex justify-start items-center animate-on-scroll inset-0 pointer-events-none">
+            <div className="w-full max-w-xl transform transition-transform duration-700 hover:scale-[1.02]">
+              <AfricaMapGraphic />
+            </div>
+          </div>
+        </div>
+      </section>
 
-								<div className="grid grid-cols-2 gap-6">
-									<div>
-										<div className="flex items-center text-slate-500 mb-1">
-											<MapPin className="w-4 h-4 mr-1" />
-											<span className="text-xs font-medium uppercase">Origin</span>
-										</div>
-										<p className="font-medium text-slate-900">
-											{trackingResult.pickup_address?.city}, {trackingResult.pickup_address?.state}
-										</p>
-									</div>
-									<div>
-										<div className="flex items-center text-slate-500 mb-1">
-											<MapPin className="w-4 h-4 mr-1" />
-											<span className="text-xs font-medium uppercase">Destination</span>
-										</div>
-										<p className="font-medium text-slate-900">
-											{trackingResult.delivery_address?.city}, {trackingResult.delivery_address?.state}
-										</p>
-									</div>
-								</div>
+      {/* TRACKING MODAL – same as original + smooth close on backdrop click */}
+      {showTrackingModal && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          style={{ animation: "fade-in 0.2s ease-out" }}
+          onClick={() => setShowTrackingModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-md w-full p-8 shadow-2xl relative"
+            style={{ animation: "fade-up 0.3s ease-out" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowTrackingModal(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-black transition-all duration-200 hover:rotate-90"
+            >
+              <X className="w-6 h-6" />
+            </button>
 
-								<div className="bg-slate-50 p-4 rounded-xl space-y-2">
-									<div className="flex justify-between text-sm">
-										<span className="text-slate-500">Service Level</span>
-										<span className="font-medium text-slate-900">{trackingResult.service_level}</span>
-									</div>
-									<div className="flex justify-between text-sm">
-										<span className="text-slate-500">Transport Mode</span>
-										<span className="font-medium text-slate-900 capitalize">{trackingResult.transport_mode}</span>
-									</div>
-									<div className="flex justify-between text-sm">
-										<span className="text-slate-500">Total Items</span>
-										<span className="font-medium text-slate-900">{trackingResult.total_items}</span>
-									</div>
-								</div>
+            {trackingLoading ? (
+              <div className="flex justify-center py-12"><Loader className="animate-spin" /></div>
+            ) : trackingError ? (
+              <div className="text-center py-8">
+                <div className="flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mx-auto mb-4" style={{ animation: "shake 0.3s ease-in-out" }}>
+                  <X className="w-8 h-8 text-red-600" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 mb-2">Tracking Failed</h3>
+                <p className="text-red-600 mb-6">{trackingError}</p>
+                <Button variant="secondary" className="w-full transition-all duration-200 hover:scale-[1.02]" onClick={() => setShowTrackingModal(false)}>Close</Button>
+              </div>
+            ) : trackingResult ? (
+              <div className="space-y-6">
+                <div className="flex justify-between items-start border-b pb-4">
+                  <div>
+                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Shipment Reference</p>
+                    <h3 className="text-lg font-bold" style={{ color: "#1b3b5f" }}>{trackingResult.shipment_reference}</h3>
+                  </div>
+                  <Badge variant={getStatusVariant(trackingResult.status)}>
+                    {trackingResult.status?.replace("_", " ").toUpperCase()}
+                  </Badge>
+                </div>
 
-								{trackingResult.tracking_events && trackingResult.tracking_events.length > 0 && (
-									<div>
-										<h4 className="font-semibold text-slate-900 mb-4 flex items-center">
-											<Truck className="w-4 h-4 mr-2" />
-											Tracking History
-										</h4>
-										<div className="space-y-0 relative border-l-2 border-slate-200 ml-2 pl-6 py-2 max-h-60 overflow-y-auto">
-											{trackingResult.tracking_events
-												.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-												.map((event: any, index: number) => (
-												<div key={event.id} className="relative mb-6 last:mb-0">
-													<div className={`absolute -left-7.75 top-1.5 w-3 h-3 rounded-full border-2 border-white ${index === 0 ? 'bg-blue-600 ring-2 ring-blue-100' : 'bg-slate-300'}`} />
-													<div className="flex flex-col">
-														<span className="text-sm font-bold text-slate-900">
-															{event.status.replace('_', ' ').toUpperCase()}
-														</span>
-														<span className="text-xs text-slate-500 mb-1">
-															{new Date(event.createdAt).toLocaleString()}
-														</span>
-														{event.description && (
-															<span className="text-sm text-slate-600">
-																{event.description}
-															</span>
-														)}
-													</div>
-												</div>
-											))}
-										</div>
-									</div>
-								)}
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <div className="flex items-center mb-1" style={{ color: "#9A9DAF" }}>
+                      <MapPin className="w-4 h-4 mr-1" />
+                      <span className="text-xs font-medium uppercase">Origin</span>
+                    </div>
+                    <p className="font-medium" style={{ color: "#1b3b5f" }}>
+                      {trackingResult.pickup_address?.city}, {trackingResult.pickup_address?.state}
+                    </p>
+                  </div>
+                  <div>
+                    <div className="flex items-center mb-1" style={{ color: "#9A9DAF" }}>
+                      <MapPin className="w-4 h-4 mr-1" />
+                      <span className="text-xs font-medium uppercase">Destination</span>
+                    </div>
+                    <p className="font-medium" style={{ color: "#1b3b5f" }}>
+                      {trackingResult.delivery_address?.city}, {trackingResult.delivery_address?.state}
+                    </p>
+                  </div>
+                </div>
 
-								<Button 
-									variant="secondary" 
-									className="w-full"
-									onClick={() => { setShowTrackingModal(false); setTrackingResult(null); setTrackingId(""); }}
-								>
-									Track Another Shipment
-								</Button>
-							</div>
-						) : null}
-					</div>
-				</div>
-			)}
-		</section>
-	);
+                <div className="rounded-xl p-4 space-y-2" style={{ background: "#f7f8fa" }}>
+                  {[
+                    ["Service Level", trackingResult.service_level],
+                    ["Transport Mode", trackingResult.transport_mode],
+                    ["Total Items", trackingResult.total_items],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between text-sm">
+                      <span style={{ color: "#9A9DAF" }}>{label}</span>
+                      <span className="font-medium capitalize" style={{ color: "#1b3b5f" }}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {trackingResult.tracking_events?.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold mb-4 flex items-center" style={{ color: "#1b3b5f" }}>
+                      <Truck className="w-4 h-4 mr-2" />
+                      Tracking History
+                    </h4>
+                    <div className="relative border-l-2 ml-2 pl-6 py-2 max-h-60 overflow-y-auto" style={{ borderColor: "#ecedf0" }}>
+                      {trackingResult.tracking_events
+                        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                        .map((event: any, index: number) => (
+                          <div key={event.id} className="relative mb-6 last:mb-0 group">
+                            <div
+                              className="absolute left-[-1.85rem] top-1.5 w-3 h-3 rounded-full border-2 border-white transition-all duration-300 group-hover:scale-125"
+                              style={{
+                                background: index === 0 ? "#1b3b5f" : "#B8B4B480",
+                                outline: index === 0 ? "3px solid #dcfbf9" : "none",
+                                outlineOffset: "1px",
+                              }}
+                            />
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold" style={{ color: "#1b3b5f" }}>
+                                {event.status.replace("_", " ").toUpperCase()}
+                              </span>
+                              <span className="text-xs mb-1" style={{ color: "#9A9DAF" }}>
+                                {new Date(event.createdAt).toLocaleString()}
+                              </span>
+                              {event.description && (
+                                <span className="text-sm" style={{ color: "#49494D" }}>{event.description}</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                <Button
+                  variant="secondary"
+                  className="w-full transition-all duration-200 hover:scale-[1.02]"
+                  onClick={() => { setShowTrackingModal(false); setTrackingResult(null); setTrackingId(""); }}
+                >
+                  Track Another Shipment
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
