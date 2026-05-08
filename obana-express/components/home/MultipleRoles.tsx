@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import Image from "next/image";
+import { CldImage } from "next-cloudinary";
 
 // ─── Role card data ───────────────────────────────────────────────────────────
 const roles = [
@@ -12,7 +13,7 @@ const roles = [
 		description:
 			"Oversee shipments, assist customers, and keep operations running smoothly on the ground.",
 		cta: { label: "Get Started", href: "/auth/signup" },
-		image: "/deliveryPerson.png",
+		image: "deliveryPerson_cdvibp",
 		imageAlt: "Obana agent checking a package with a clipboard",
 		featured: false,
 	},
@@ -22,7 +23,7 @@ const roles = [
 		description:
 			"Earn by delivering. Accept delivery requests, navigate efficiently, and get paid for every completed job.",
 		cta: { label: "Get Started", href: "/auth/signup" },
-		image: "/packageOndelivery.png",
+		image: "packageOnDelivery_auqffr",
 		imageAlt: "Obana driver smiling in delivery van",
 		featured: true, // center card — taller and elevated
 	},
@@ -32,7 +33,7 @@ const roles = [
 		description:
 			"Create shipments, track deliveries, and manage all your logistics in one place.",
 		cta: { label: "Get Started", href: "/auth/signup" },
-		image: "/receivePackage.png",
+		image: "receivePackage_b1vnmv",
 		imageAlt: "Customer receiving a package from an Obana driver",
 		featured: false,
 	},
@@ -84,7 +85,7 @@ function RoleCard({
 		>
 			{/* ── Background photo ── */}
 			<div className="absolute inset-0">
-				<Image
+				<CldImage
 					src={role.image}
 					alt={role.imageAlt}
 					fill

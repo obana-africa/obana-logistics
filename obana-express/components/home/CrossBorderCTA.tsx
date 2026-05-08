@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useState } from "react";
 import { ArrowUpRight, Check, Package, Truck } from "lucide-react";
 import Image from "next/image";
+import { CldImage } from "next-cloudinary";
 
 // ─── Shipment success card data (dynamic) ────────────────────────────────────
 const shipmentCard = {
@@ -142,8 +143,8 @@ export default function CrossBorderCTA() {
 		>
 			{/* ── Background image ── */}
 			<div className="absolute inset-0">
-				<Image
-					src="/shippingContainer.png"
+				<CldImage
+					src="shippingContainer_ol8fs9"
 					alt="Shipping containers background"
 					fill
 					className="object-cover object-center"
