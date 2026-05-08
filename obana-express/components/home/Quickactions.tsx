@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import Image from "next/image";
+import { CldImage } from "next-cloudinary";
 
 // ─── Feature card data ────────────────────────────────────────────────────────
 const features = [
@@ -11,7 +12,7 @@ const features = [
 		title: "Ship in Minutes, Not Hours",
 		description: "Create and manage deliveries whether you're sending a single package or handling bulk shipments for your business.",
 		cta: { label: "Create Shipment", href: "/auth/signup" },
-		image: "/createShipPhone.png",
+		image: "createShipPhone_sgqljd",
 		imageAlt: "Create shipment screen on mobile",
 		cardBg: "#f5f9ff",
 		phoneAnchor: "top",
@@ -22,7 +23,7 @@ const features = [
 		title: "Know Where Every Package Is",
 		description: "Track shipments live with accurate updates, ensuring transparency from pickup to delivery.",
 		cta: { label: "Get Started", href: "/auth/signup" },
-		image: "/shipmentPhone.png",
+		image: "shipmentPhone_pkt5ly",
 		imageAlt: "Shipment tracking screen on mobile",
 		cardBg: "#f5f9ff",
 		phoneAnchor: "top",
@@ -33,7 +34,7 @@ const features = [
 		title: "Plug Logistics Into Your Platform",
 		description: "Integrate our API into your platform to automate shipping, tracking, and order fulfillment—no manual work needed.",
 		cta: { label: "Get Started", href: "/auth/signup" },
-		image: "/developerPhone.png",
+		image: "developerPhone_z88iz9",
 		imageAlt: "Developer API settings screen on mobile",
 		cardBg: "#f5f9ff",
 		phoneAnchor: "bottom",
@@ -44,11 +45,11 @@ const features = [
 		title: "One Platform. Multiple Ways to Earn & Operate.",
 		description: "Whether you're sending, delivering, or managing logistics—there's a role for you.",
 		cta: { label: "Get Started", href: "/auth/signup" },
-		image: "/obanaPhone.png",
+		image: "obanaPhone_raggmk.png",
 		imageAlt: "Obana platform roles screen on mobile",
 		cardBg: "#f5f9ff",
 		phoneAnchor: "top",
-		overlay: "/obanaWebCard.png" as string | null,
+		overlay: "obanaWebCard_drlkoo" as string | null,
 	},
 ];
 
@@ -114,7 +115,7 @@ function FeatureCard({
 						paddingTop: isTop ? "20px" : "0px",
 					}}
 				>
-					<Image
+					<CldImage
 						src={feature.image}
 						alt={feature.imageAlt}
 						width={300}
@@ -143,7 +144,7 @@ function FeatureCard({
 							filter: "drop-shadow(0 8px 24px rgba(27,59,95,0.25))",
 						}}
 					>
-						<Image
+						<CldImage
 							src={feature.overlay}
 							alt="Obana web interface"
 							width={400}

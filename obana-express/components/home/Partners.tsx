@@ -2,41 +2,42 @@
 
 import React, { useRef, useEffect, useState } from "react";
 import Image from "next/image";
+import { CldImage } from "next-cloudinary";
 
 // ─── Partner data ─────────────────────────────────────────────────────────────
 const partners = [
 	{
 		id: 1,
 		name: "GIG Logistics",
-		logo: "/GIG.png",
+		logo: "GIG_ywkmfu",
 		width: 120,
 		height: 60,
 	},
 	{
 		id: 2,
 		name: "FedEx Logistics",
-		logo: "/FedEx.png",
+		logo: "fedEx_bnnse3",
 		width: 140,
 		height: 56,
 	},
 	{
 		id: 3,
 		name: "Terminal",
-		logo: "/Terminal.png",
+		logo: "Terminal_dheycu",
 		width: 140,
 		height: 48,
 	},
 	{
 		id: 4,
 		name: "C.H. Robinson",
-		logo: "/CH.png",
+		logo: "CH_tmbuvt",
 		width: 160,
 		height: 44,
 	},
 	{
 		id: 5,
 		name: "UPS",
-		logo: "/UPS.png",
+		logo: "UPS_maehg2",
 		width: 72,
 		height: 80,
 	},
@@ -69,7 +70,7 @@ function useVisible(threshold = 0.1) {
 function LogoCard({ partner }: { partner: (typeof partners)[0] }) {
 	return (
 		<div
-			className="flex-shrink-0 flex items-center justify-center rounded-2xl mx-3 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-default"
+			className="shrink-0 flex items-center justify-center rounded-2xl mx-3 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-default"
 			style={{
 				width: "220px",
 				height: "110px",
@@ -79,7 +80,7 @@ function LogoCard({ partner }: { partner: (typeof partners)[0] }) {
 			}}
 		>
 			<div className="relative flex items-center justify-center w-full h-full">
-				<Image
+				<CldImage
 					src={partner.logo}
 					alt={partner.name}
 					width={partner.width}

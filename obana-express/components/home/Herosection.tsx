@@ -6,6 +6,7 @@ import { Loader, Button, Badge } from "@/components/ui";
 import { apiClient } from "@/lib/api";
 import Image from "next/image";
 import Link from "next/link";
+import { CldImage } from "next-cloudinary";
 
 const getStatusVariant = (status: string) => {
   switch (status?.toLowerCase()) {
@@ -20,13 +21,13 @@ const getStatusVariant = (status: string) => {
 
 function AfricaMapGraphic() {
   return (
-    <div className="relative w-full max-w-2xl mx-auto aspect-[1.1/1]">
-      <Image
-        src="/MapComponent.png"
+    <div className="relative w-[44vw] max-w-[1400] ml-0 lg:ml-auto aspect-[1.1/1]">
+      <CldImage
+        src="MapComponent_b88syv"
         alt="Africa logistics map"
         fill
         className="object-contain transition-transform duration-700 hover:scale-[1.02]"
-        sizes="(max-width: 768px) 100vw, 50vw"
+        sizes="(max-width: 768px) 100vw, 80vw"
         priority
         onError={(e) => { e.currentTarget.style.opacity = "0"; }}
       />
@@ -114,19 +115,19 @@ export default function HeroSection() {
 
       <section
         ref={sectionRef}
-        className="relative w-full overflow-hidden bg-white mt-20 lg:mt-24"
+        className="relative w-full overflow-hidden bg-white mt-30 lg:mt-30"
         style={{ minHeight: "92vh" }}
       >
         {/* Animated gradient background */}
         <div
           className="absolute inset-0 pointer-events-none z-0 opacity-0 animate-fade-in"
           style={{
-            background: "radial-gradient(circle at 10% 50%, rgba(220,251,249,0.4) 0%, transparent 70%)",
+            background: "radial-gradient(circle at 10% 50% , rgba(220,251,249,0.4) 0%, transparent 70%)",
             animationDelay: "0.2s",
           }}
         />
 
-        {/* Main grid – FIXED: no absolute positioning blocking clicks */}
+        {/* Main grid  */}
         <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-10 grid lg:grid-cols-2 gap-12 lg:gap-8 items-center">
           {/* LEFT COLUMN */}
           <div className="flex flex-col justify-center py-16 lg:py-0">
@@ -162,15 +163,24 @@ export default function HeroSection() {
             </div>
 
             {/* Mobile map */}
-            <div className="lg:hidden w-full h-64 sm:h-72 relative mt-6 mb-6 animate-on-scroll">
+            {/* <div className="lg:hidden w-full h-64 sm:h-72 relative mt-6 mb-6 animate-on-scroll">
               <AfricaMapGraphic />
-            </div>
+            </div> */}
 
             {/* CTA Buttons */}
-            <div className="flex flex-wrap gap-4 mb-8 animate-on-scroll">
+            <div className=" flex flex-wrap gap-4 mb-8 animate-on-scroll">
               <Link
                 href="/auth/signup"
-                className="group inline-flex items-center gap-2 px-7 py-3.5 rounded-xl font-semibold text-sm text-white transition-all duration-300 hover:shadow-xl active:scale-[0.96] hover:-translate-y-0.5"
+                className="
+				group inline-flex 
+				items-center gap-2 
+				px-7 py-3.5 rounded-xl 
+				font-semibold 
+				text-sm text-white 
+				transition-all duration-300 
+				hover:shadow-xl 
+				active:scale-[0.96] 
+				hover:-translate-y-0.5"
                 style={{ background: "#1b3b5f" }}
               >
                 Get Started
@@ -178,8 +188,32 @@ export default function HeroSection() {
               </Link>
               <Link
                 href="/auth/signup"
-                className="group inline-flex items-center gap-2 px-7 py-3.5 rounded-xl font-semibold text-sm transition-all duration-300 hover:shadow-lg active:scale-[0.96] hover:-translate-y-0.5"
-                style={{ color: "#1b3b5f", border: "2px solid #1b3b5f", background: "transparent" }}
+                className="
+				group 
+				inline-flex 
+				items-center 
+				gap-2 
+				px-7 
+				py-3.5 
+				rounded-xl 
+				font-semibold 
+				text-sm
+				border
+				border-[#1b3b5f]
+   				text-[#1b3b5f]
+				bg-transparent
+				transition-all 
+				duration-300
+				ease-in-out
+				hover:bg-[#020c17]
+				hover:text-white 
+				hover:shadow-lg 
+				active:scale-[0.96] 
+				hover:-translate-y-0.5"
+                style={{ 
+					// color: "#1b3b5f", 
+					// border: "1px solid #1b3b5f", 
+				}}
               >
                 Create Shipment
                 <ArrowUpRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -211,7 +245,7 @@ export default function HeroSection() {
           </div>
 
           {/* RIGHT COLUMN – desktop map (safe, no overlay) */}
-          <div className="hidden lg:flex justify-center items-center animate-on-scroll">
+          <div className="hidden lg:flex justify-start items-center animate-on-scroll inset-0 pointer-events-none">
             <div className="w-full max-w-xl transform transition-transform duration-700 hover:scale-[1.02]">
               <AfricaMapGraphic />
             </div>
