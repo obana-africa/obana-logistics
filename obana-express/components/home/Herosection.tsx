@@ -21,7 +21,7 @@ const getStatusVariant = (status: string) => {
 
 function AfricaMapGraphic() {
   return (
-    <div className="relative w-[44vw] max-w-[1400] mx-auto aspect-[1.1/1]">
+    <div className="relative w-[44vw] max-w-[1400] ml-0 lg:ml-auto aspect-[1.1/1]">
       <CldImage
         src="MapComponent_b88syv"
         alt="Africa logistics map"
@@ -163,9 +163,9 @@ export default function HeroSection() {
             </div>
 
             {/* Mobile map */}
-            <div className="lg:hidden w-full h-64 sm:h-72 relative mt-6 mb-6 animate-on-scroll">
+            {/* <div className="lg:hidden w-full h-64 sm:h-72 relative mt-6 mb-6 animate-on-scroll">
               <AfricaMapGraphic />
-            </div>
+            </div> */}
 
             {/* CTA Buttons */}
             <div className=" flex flex-wrap gap-4 mb-8 animate-on-scroll">
@@ -245,7 +245,7 @@ export default function HeroSection() {
           </div>
 
           {/* RIGHT COLUMN – desktop map (safe, no overlay) */}
-          <div className="hidden lg:flex justify-center items-center animate-on-scroll inset-0 pointer-events-none">
+          <div className="hidden lg:flex justify-start items-center animate-on-scroll inset-0 pointer-events-none">
             <div className="w-full max-w-xl transform transition-transform duration-700 hover:scale-[1.02]">
               <AfricaMapGraphic />
             </div>
