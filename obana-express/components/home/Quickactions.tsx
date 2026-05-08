@@ -1,186 +1,242 @@
 "use client";
 
-import React from "react";
-import {
-	Bell,
-	MapPin,
-	Package,
-	Clock,
-	Shield,
-	Eye,
-	CreditCard,
-	TrendingUp,
-} from "lucide-react";
+import React, { useRef, useEffect, useState } from "react";
+import { ArrowUpRight } from "lucide-react";
 import Image from "next/image";
 
-const appFeatures = [
+// ─── Feature card data ────────────────────────────────────────────────────────
+const features = [
 	{
-		icon: Package,
-		title: "Track packages in real-time",
-		description:
-			"Monitor all your shipments with live GPS tracking and instant notifications.",
-		bgColor: "bg-blue-50",
-		iconBg: "bg-blue-500",
-		image: "/images/app-tracking.png",
-		stats: [
-			{ icon: MapPin, label: "Live Location" },
-			{ icon: Bell, label: "Push Alerts" },
-			{ icon: Clock, label: "ETA Updates" },
-			{ icon: Shield, label: "Secure" },
-		],
+		id: 1,
+		title: "Ship in Minutes, Not Hours",
+		description: "Create and manage deliveries whether you're sending a single package or handling bulk shipments for your business.",
+		cta: { label: "Create Shipment", href: "/auth/signup" },
+		image: "/createShipPhone.png",
+		imageAlt: "Create shipment screen on mobile",
+		cardBg: "#f5f9ff",
+		phoneAnchor: "top",
+		overlay: null as string | null,
 	},
 	{
-		icon: CreditCard,
-		title: "Pay for deliveries seamlessly",
-		description:
-			"Instant payment processing with multiple payment options. Fast, secure, and convenient.",
-		bgColor: "bg-pink-50",
-		iconBg: "bg-pink-500",
-		image: "/images/app-payment.png",
-		partners: [
-			{ name: "Paystack", logo: "/images/paystack.png" },
-			{ name: "Salad", logo: "/images/salad.png" },
-			{ name: "Stellas", logo: "/images/stellas.jpg" },
-			{ name: "Carbon", logo: "/images/carbon.png" },
-		],
+		id: 2,
+		title: "Know Where Every Package Is",
+		description: "Track shipments live with accurate updates, ensuring transparency from pickup to delivery.",
+		cta: { label: "Get Started", href: "/auth/signup" },
+		image: "/shipmentPhone.png",
+		imageAlt: "Shipment tracking screen on mobile",
+		cardBg: "#f5f9ff",
+		phoneAnchor: "top",
+		overlay: null as string | null,
 	},
 	{
-		icon: TrendingUp,
-		title: "Manage your shipping insights",
-		description:
-			"View detailed analytics, spending reports, and shipping history all in one place.",
-		bgColor: "bg-slate-50",
-		iconBg: "bg-slate-700",
-		image: "/images/app-analytics.png",
-		metric: {
-			label: "Monthly Spending",
-			value: "₦1,200,000",
-			trend: "+12%",
-		},
+		id: 3,
+		title: "Plug Logistics Into Your Platform",
+		description: "Integrate our API into your platform to automate shipping, tracking, and order fulfillment—no manual work needed.",
+		cta: { label: "Get Started", href: "/auth/signup" },
+		image: "/developerPhone.png",
+		imageAlt: "Developer API settings screen on mobile",
+		cardBg: "#f5f9ff",
+		phoneAnchor: "bottom",
+		overlay: null as string | null,
+	},
+	{
+		id: 4,
+		title: "One Platform. Multiple Ways to Earn & Operate.",
+		description: "Whether you're sending, delivering, or managing logistics—there's a role for you.",
+		cta: { label: "Get Started", href: "/auth/signup" },
+		image: "/obanaPhone.png",
+		imageAlt: "Obana platform roles screen on mobile",
+		cardBg: "#f5f9ff",
+		phoneAnchor: "top",
+		overlay: "/obanaWebCard.png" as string | null,
 	},
 ];
 
-export default function QuickActions() {
+// ─── Individual feature card ──────────────────────────────────────────────────
+function FeatureCard({
+	feature,
+	index,
+}: {
+	feature: (typeof features)[0];
+	index: number;
+}) {
+	const ref = useRef<HTMLDivElement>(null);
+	const [visible, setVisible] = useState(false);
+
+	useEffect(() => {
+		const el = ref.current;
+		if (!el) return;
+		const observer = new IntersectionObserver(
+			([entry]) => {
+				if (entry.isIntersecting) {
+					setVisible(true);
+					observer.disconnect();
+				}
+			},
+			{ threshold: 0.1 }
+		);
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, []);
+
+	const isTop = feature.phoneAnchor === "top";
+
 	return (
-		<section className="pt-24 bg-[#ffffff] relative overflow-hidden">
-			<div className="absolute inset-0 overflow-hidden pointer-events-none">
-				<div className="absolute top-20 right-10 w-72 h-72 bg-blue-200/30 rounded-full blur-3xl" />
-				<div className="absolute bottom-20 left-10 w-96 h-96 bg-purple-200/20 rounded-full blur-3xl" />
+		<div
+			ref={ref}
+			className="group relative rounded-3xl flex flex-col"
+			style={{
+				background: feature.cardBg,
+				opacity: visible ? 1 : 0,
+				transform: visible ? "translateY(0)" : "translateY(28px)",
+				transition: `opacity 0.55s ease ${index * 0.12}s, transform 0.55s ease ${index * 0.12}s`,
+				overflow: "hidden",
+			}}
+		>
+			{/* Phone image zone */}
+			<div className="relative w-full overflow-hidden h-60 sm:h-70 md:h-85 lg:h-95">
+
+				{/* Glow */}
+				<div
+					className="absolute inset-0 pointer-events-none"
+					style={{
+						background: "radial-gradient(ellipse 90% 70% at 50% 15%, rgba(27,59,95,0.07) 0%, transparent 70%)",
+					}}
+				/>
+
+				{/* Phone anchored top or bottom */}
+				<div
+					className="absolute left-1/2 w-full flex justify-center"
+					style={{
+						transform: "translateX(-50%)",
+						top: isTop ? 0 : "auto",
+						bottom: isTop ? "auto" : 0,
+						paddingTop: isTop ? "20px" : "0px",
+					}}
+				>
+					<Image
+						src={feature.image}
+						alt={feature.imageAlt}
+						width={300}
+						height={600}
+						className="group-hover:scale-[1.02] transition-transform duration-500"
+						style={{
+							width: "70%",
+							height: "auto",
+							maxWidth: "320px",
+							objectFit: "contain",
+							objectPosition: isTop ? "top" : "bottom",
+							filter: "drop-shadow(0 12px 28px rgba(27,59,95,0.16))",
+						}}
+					/>
+				</div>
+
+				{/* Overlay — card 4 only, shifted left off edge */}
+				{feature.overlay && (
+					<div
+						className="absolute"
+						style={{
+							bottom: "16px",
+							left: "-16px",
+							width: "55%",
+							zIndex: 10,
+							filter: "drop-shadow(0 8px 24px rgba(27,59,95,0.25))",
+						}}
+					>
+						<Image
+							src={feature.overlay}
+							alt="Obana web interface"
+							width={400}
+							height={320}
+							className="w-full h-auto rounded-2xl"
+						/>
+					</div>
+				)}
+
 			</div>
 
-			<div className="max-w-7xl mx-auto px-6 relative">
+			{/* Text + CTA */}
+			<div className="px-2 pb-7 pt-4 flex flex-col items-center text-center">
+				<h3
+					className="font-bold leading-snug mb-2"
+					style={{
+						color: "#2e465f",
+						fontSize: "clamp(1.2rem, 2vw, 1.4rem)",
+						fontFamily: "'Sora', 'DM Sans', sans-serif",
+					}}
+				>
+					{feature.title}
+				</h3>
+				<p
+					className="text-sm leading-relaxed mb-5 max-w-xs"
+					style={{ color: "#49494D" }}
+				>
+					{feature.description}
+				</p>
+				<a
+					href={feature.cta.href}
+					className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 hover:shadow-lg active:scale-[0.98]"
+					style={{ background: "#1b3b5f" }}
+				>
+					{feature.cta.label}
+					<ArrowUpRight className="w-4 h-4" />
+				</a>
+			</div>
+		</div>
+	);
+}
+
+// ─── Main section ─────────────────────────────────────────────────────────────
+export default function QuickActions() {
+	return (
+		<section
+			className="pt-10 pb-24 relative overflow-hidden"
+			style={{ background: "#ffffff" }}
+		>
+			<div className="absolute inset-0 overflow-hidden pointer-events-none">
+				<div
+					className="absolute -top-24 right-0 w-125 h-125 rounded-full blur-3xl"
+					style={{ background: "rgba(220,251,249,0.45)" }}
+				/>
+				<div
+					className="absolute bottom-0 left-0 w-100 h-100 rounded-full blur-3xl"
+					style={{ background: "rgba(27,59,95,0.04)" }}
+				/>
+			</div>
+
+			<div className="relative max-w-7xl mx-auto px-6 lg:px-10">
 				<div className="text-center mb-16">
-					<h2 className="text-4xl md:text-5xl font-semibold text-slate-900 mb-4">
-						Get the best experience with
-						<span className="text-transparent bg-clip-text bg-[#1B3E5D] ml-2">
-							Obana
-						</span>
+					<p
+						className="inline-block text-xs font-semibold uppercase tracking-widest px-3 py-1.5 rounded-full mb-4"
+						style={{ background: "#dcfbf9", color: "#1b3b5f" }}
+					>
+						Mobile App
+					</p>
+					<h2
+						className="font-black tracking-tight mb-4"
+						style={{
+							color: "#1b3b5f",
+							fontSize: "clamp(2rem, 4vw, 3rem)",
+							fontFamily: "'Sora', 'DM Sans', sans-serif",
+							lineHeight: 1.1,
+						}}
+					>
+						A Smarter Way to Manage Logistics
 					</h2>
-					<p className="text-xl text-slate-600 max-w-2xl mx-auto">
-						Manage all your shipments on the go with our powerful mobile
-						application
+					<p
+						className="text-base lg:text-lg max-w-2xl mx-auto leading-relaxed"
+						style={{ color: "#49494D" }}
+					>
+						From shipment creation to real-time tracking and seamless
+						integrations, our platform gives you the tools to move faster and
+						operate smarter.
 					</p>
 				</div>
 
-				<div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-16">
-					{appFeatures.map((feature, index) => {
-						const Icon = feature.icon;
-						return (
-							<div
-								key={index}
-								className={`${feature.bgColor} flex justify-between flex-col rounded-3xl p-8 hover:shadow-2xl transition-all duration-300 hover:-translate-y-2`}
-								style={{
-									animation: `fadeInUp 0.6s ease-out ${index * 0.15}s both`,
-								}}
-							>
-								<div>
-									<div
-										className={`w-16 h-16 ${feature.iconBg} rounded-full flex items-center justify-center mb-6 shadow-lg`}
-									>
-										<Icon className="w-8 h-8 text-white" />
-									</div>
-
-									<h3 className="text-2xl font-bold text-slate-900 mb-3">
-										{feature.title}
-									</h3>
-									<p className="text-slate-600 mb-6 leading-relaxed">
-										{feature.description}
-									</p>
-								</div>
-
-								{feature.stats && (
-									<div className="bg-white rounded-2xl p-6 shadow-sm">
-										<div className="flex items-center justify-between mb-4">
-											<span className="text-sm text-slate-500 font-medium">
-												Your balance
-											</span>
-											<Eye className="w-4 h-4 text-slate-400" />
-										</div>
-										<div className="text-3xl font-bold text-slate-900 mb-6">
-											₦52,972
-										</div>
-										<div className="grid grid-cols-4 gap-3">
-											{feature.stats.map((stat, idx) => {
-												const StatIcon = stat.icon;
-												return (
-													<div key={idx} className="flex flex-col items-center">
-														<div className="w-12 h-12 bg-slate-900 rounded-full flex items-center justify-center mb-2">
-															<StatIcon className="w-5 h-5 text-white" />
-														</div>
-													</div>
-												);
-											})}
-										</div>
-									</div>
-								)}
-
-								{feature.partners && (
-									<div className="bg-white rounded-2xl p-6 shadow-sm">
-										<div className="grid grid-cols-4 gap-4">
-											{feature.partners.map((partner, idx) => (
-												<div
-													key={idx}
-													className="bg-slate-50 rounded-xl flex items-center justify-center aspect-square hover:bg-slate-100 transition-colors"
-												>
-													<Image
-														src={partner.logo}
-														alt={partner.name}
-														width={100}
-														height={100}
-														className="ml-2 object-cover w-full h-full flex items-center justify-center"
-													/>
-												</div>
-											))}
-										</div>
-									</div>
-								)}
-
-								{feature.metric && (
-									<div className="bg-white rounded-2xl p-6 shadow-sm">
-										<div className="flex items-center gap-3 mb-4">
-											<div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
-												<TrendingUp className="w-5 h-5 text-slate-700" />
-											</div>
-											<span className="text-sm font-medium text-slate-600">
-												{feature.metric.label}
-											</span>
-										</div>
-										<div className="flex items-end justify-between">
-											<div className="text-3xl font-bold text-slate-900">
-												{feature.metric.value}
-											</div>
-											<div className="flex items-center gap-1">
-												<TrendingUp className="w-4 h-4 text-green-500" />
-												<span className="text-sm font-semibold text-green-500">
-													{feature.metric.trend}
-												</span>
-											</div>
-										</div>
-									</div>
-								)}
-							</div>
-						);
-					})}
+				<div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+					{features.map((feature, index) => (
+						<FeatureCard key={feature.id} feature={feature} index={index} />
+					))}
 				</div>
 			</div>
 		</section>

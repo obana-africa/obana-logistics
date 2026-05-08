@@ -4,11 +4,16 @@ import React from "react";
 import { useAuth } from "@/lib/authContext";
 import Navigation from "@/components/home/Navigation";
 import HeroSection from "@/components/home/Herosection";
+import MultipleRoles from "@/components/home/MultipleRoles";
 import QuickActions from "@/components/home/Quickactions";
+import HowItWorks from "@/components/home/HowItWorks";
+import FAQ from "@/components/home/FAQ";
+import Partners from "@/components/home/Partners";
+import CrossBorderCTA from "@/components/home/CrossBorderCTA";
 import Services from "@/components/home/Services";
 import Footer from "@/components/home/Footer";
-import ContactFormSection from "@/components/home/Contactformsection";
-import ContactForm from "@/components/home/Contactform";
+// import ContactFormSection from "@/components/home/Contactformsection";
+// import ContactForm from "@/components/home/Contactform";
 // import Features from "@/components/home/Features";
 // import CTASection from "@/components/home/CTASection";
 // import StatsSection from "@/components/home/StatsSection";
@@ -46,13 +51,18 @@ export default function Home() {
 				getDashboardLink={getDashboardLink}
 				logout={logout}
 			/>
-			<HeroSection />
+			<HeroSection/>
 			<QuickActions />
+			<MultipleRoles/>
+			<HowItWorks />
+			<FAQ/>
+			<Partners/>
+			<CrossBorderCTA/>
 			{/* <Features /> */}
-			<ContactFormSection />
-			<Services />
+			{/* <ContactFormSection /> */}
+			{/* <Services /> */}
 			{/* <CTASection /> */}
-			<ContactForm />
+			{/* <ContactForm /> */}
 			<Footer />
 		</div>
 	);
