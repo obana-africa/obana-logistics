@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button, Loader, Badge } from "@/components/ui";
-import { Package, Search, X, MapPin, Truck } from "lucide-react";
+import { Package, Search, X, MapPin, Truck, Menu } from "lucide-react";
 import { apiClient } from "@/lib/api";
 
 interface NavigationProps {
@@ -57,7 +57,7 @@ export default function Navigation({
 				if (res.success) {
 					setTrackingResult(res.data);
 				} else {
-					setTrackingError(res.message || 'Not found');
+					setTrackingError(res.message || 'Shipment Not found');
 				}
 			} catch (err: any) {
 				setTrackingError(err.response?.data?.message || 'Failed to fetch');
@@ -70,11 +70,11 @@ export default function Navigation({
 	return (
 		<>
 			<nav className="fixed top-0 left-0 right-0 z-50 transition-all duration-300 bg-white shadow-sm">
-				<div className="max-w-7xl mx-auto px-5 py-4 flex items-center justify-between">
+				<div className="max-w-7xl mx-auto px-8 py-5 flex items-center justify-between">
 					{/* Logo */}
 					<Link href="/" className="flex items-center">
 						<Image
-							src="/logo.svg"
+							src="/logo-blue.png"
 							alt="Obana Logistics Logo"
 							width={140}
 							height={48}
@@ -84,74 +84,69 @@ export default function Navigation({
 					</Link>
 
 					{/* Desktop Navigation */}
-					<div className="hidden md:flex items-center space-x-8">
+					<div className="hidden md:flex items-center space-x-10">
 						<Link
 							href="#services"
-							className="font-medium text-black hover:text-amber-600 transition-colors"
+							className="text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
 						>
 							Services
 						</Link>
 						<Link
 							href="#features"
-							className="font-medium text-black hover:text-amber-600 transition-colors"
+							className="text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
 						>
 							Features
 						</Link>
 						<Link
 							href="/docs"
-							className="font-medium text-black hover:text-amber-600 transition-colors"
+							className="text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
 						>
 							Developers
 						</Link>
 						<Link
 							href="/route-match"
-							className="font-medium text-black hover:text-amber-600 transition-colors"
+							className="text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
 						>
 							Get Quote
 						</Link>
 						<button
 							onClick={() => setShowTrackingModal(true)}
-							className="font-medium text-black hover:text-amber-600 transition-colors"
+							className="text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
 						>
 							Track Shipment
 						</button>
 					</div>
 
 					{/* Desktop Auth Buttons */}
-					<div className="hidden md:flex items-center space-x-4">
+					<div className="hidden md:flex items-center gap-3">
 						{isAuthenticated ? (
 							<>
 								<Link href={getDashboardLink()}>
 									<Button
 										variant="primary"
-										className="bg-blue-600 hover:bg-blue-700 text-white px-6"
+										className="bg-[#1B3E5D] hover:bg-[#162f47] text-white px-6"
 									>
 										Dashboard
 									</Button>
 								</Link>
 								<button
 									onClick={logout}
-									className="text-slate-600 hover:text-slate-900 font-medium"
+									className="text-sm text-slate-600 hover:text-slate-900 font-medium"
 								>
 									Logout
 								</button>
 							</>
 						) : (
 							<>
-								<Link href="/onboarding/business">
-									<Button variant="ghost" className="text-black">
-										For Businesses
-									</Button>
-								</Link>
 								<Link href="/auth/login">
-									<Button variant="ghost" className="text-black">
+									<Button variant="ghost" className="text-sm font-medium text-slate-700 hover:text-slate-900 border border-slate-200 px-5">
 										Sign In
 									</Button>
 								</Link>
 								<Link href="/auth/signup">
 									<Button
 										variant="primary"
-										className="bg-[#1B3E5D] text-slate-900 px-6"
+										className="bg-[#1B3E5D] hover:bg-[#162f47] text-white px-6 text-sm font-medium"
 									>
 										Get Started
 									</Button>
@@ -167,7 +162,7 @@ export default function Navigation({
 								<Button
 									variant="primary"
 									size="sm"
-									className=" text-white px-5 py-2 text-sm"
+									className="text-white px-5 py-2 text-sm"
 								>
 									Dashboard
 								</Button>
@@ -177,56 +172,63 @@ export default function Navigation({
 								<Button
 									variant="primary"
 									size="sm"
-									className="bg-[#1B3E5D] text-slate-900 px-5 py-2 text-sm"
+									className="bg-[#1B3E5D] text-white px-5 py-2 text-sm"
 								>
 									Get Started
 								</Button>
 							</Link>
 						)}
+						<button
+							onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+							className="p-2 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors"
+							aria-label="Toggle menu"
+						>
+							{mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+						</button>
 					</div>
 				</div>
 
 				{/* Mobile Menu Dropdown */}
 				{mobileMenuOpen && (
-					<div className="md:hidden bg-white border-t shadow-lg">
-						<div className="px-5 py-6 space-y-5">
+					<div className="md:hidden bg-white border-t border-slate-100 shadow-lg">
+						<div className="px-6 py-6 space-y-5">
 							<Link
 								href="#services"
-								className="block text-black hover:text-amber-600 font-medium"
+								className="block text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
 								onClick={() => setMobileMenuOpen(false)}
 							>
 								Services
 							</Link>
 							<Link
 								href="#features"
-								className="block text-black hover:text-amber-600 font-medium"
+								className="block text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
 								onClick={() => setMobileMenuOpen(false)}
 							>
 								Features
 							</Link>
 							<Link
 								href="/docs"
-								className="block text-black hover:text-amber-600 font-medium"
+								className="block text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
 								onClick={() => setMobileMenuOpen(false)}
 							>
 								Developers
 							</Link>
 							<Link
-						href="/route-match"
-						className="block text-black hover:text-amber-600 font-medium"
-						onClick={() => setMobileMenuOpen(false)}
-					>
-						Route Match
-					</Link>
-					<button
-						onClick={() => {
-						setShowTrackingModal(true);
-						setMobileMenuOpen(false);
-						}}
-						className="block text-black hover:text-amber-600 font-medium w-full text-left"
-					>
-						Track Shipment
-					</button>
+								href="/route-match"
+								className="block text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors"
+								onClick={() => setMobileMenuOpen(false)}
+							>
+								Get Quote
+							</Link>
+							<button
+								onClick={() => {
+									setShowTrackingModal(true);
+									setMobileMenuOpen(false);
+								}}
+								className="block text-sm font-medium text-slate-700 hover:text-slate-900 transition-colors w-full text-left"
+							>
+								Track Shipment
+							</button>
 
 							{/* Mobile auth actions */}
 							{isAuthenticated ? (
@@ -242,15 +244,6 @@ export default function Navigation({
 							) : (
 								<div className="pt-4 border-t space-y-4">
 									<Link
-										href="/onboarding/business"
-										className="block"
-										onClick={() => setMobileMenuOpen(false)}
-									>
-										<Button variant="ghost" className="w-full">
-											For Businesses
-										</Button>
-									</Link>
-									<Link
 										href="/auth/login"
 										className="block"
 										onClick={() => setMobileMenuOpen(false)}
@@ -264,7 +257,7 @@ export default function Navigation({
 										className="block"
 										onClick={() => setMobileMenuOpen(false)}
 									>
-										<Button className="w-full bg-amber-500 hover:bg-amber-600 text-slate-900">
+										<Button className="w-full bg-[#1B3E5D] hover:bg-[#162f47] text-white">
 											Get Started
 										</Button>
 									</Link>
