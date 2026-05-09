@@ -314,6 +314,7 @@ const matchTemplate = async (req, res) => {
     const routeTemplates = await RouteTemplates.findAll()
 
     const externalGroups = []
+    const fallbackGroups = []
 
     for (const group of Object.values(groupedItems)) {
         let originCity, destinationCity, groupWeight
@@ -335,26 +336,55 @@ const matchTemplate = async (req, res) => {
             'Lagos',
             'Road',
             'standard',
-            0.5
+            groupWeight
         )
 
         const selectedTemplateMatch = templateMatch || fallbackTemplateMatch
         
         if (selectedTemplateMatch) {
-            selectedTemplateMatch.match.estimated_delivery = deliveryTimeRange(selectedTemplateMatch.match.eta)
-            shipmentResults.push({
-                external: false,
-                pickup_address: group.pickup_address,
-                delivery_address,
-                items: group.items,
-                template: selectedTemplateMatch.template,
-                match: selectedTemplateMatch.match
-            })
+            if (templateMatch) {
+                // Exact match
+                selectedTemplateMatch.match.estimated_delivery = deliveryTimeRange(selectedTemplateMatch.match.eta)
+                shipmentResults.push({
+                    external: false,
+                    pickup_address: group.pickup_address,
+                    delivery_address,
+                    items: group.items,
+                    template: selectedTemplateMatch.template,
+                    match: selectedTemplateMatch.match
+                })
+            } else {
+                // Fallback match - collect for grouping
+                fallbackGroups.push({
+                    pickup_address: group.pickup_address,
+                    items: group.items,
+                    weight: groupWeight
+                })
+            }
         } else {
             externalGroups.push({
                 pickup_address: group.pickup_address,
                 items: group.items,
                 weight: groupWeight
+            })
+        }
+    }
+
+    // Group all fallback shipments into one
+    if (fallbackGroups.length > 0) {
+        const totalWeight = fallbackGroups.reduce((sum, g) => sum + g.weight, 0)
+        const fallbackMatch = buildTemplateMatch(routeTemplates, 'Lagos', 'Lagos', 'Road', 'standard', totalWeight)
+        
+        if (fallbackMatch) {
+            const combinedItems = fallbackGroups.flatMap(g => g.items)
+            fallbackMatch.match.estimated_delivery = deliveryTimeRange(fallbackMatch.match.eta)
+            shipmentResults.push({
+                external: false,
+                pickup_address: { ...DEFAULT_ADDRESS, city: 'Lagos', state: 'Lagos' },
+                delivery_address,
+                items: combinedItems,
+                template: fallbackMatch.template,
+                match: fallbackMatch.match
             })
         }
     }
