@@ -115,8 +115,8 @@ export default function HeroSection() {
 
       <section
         ref={sectionRef}
-        className="relative w-full overflow-hidden bg-white mt-30 lg:mt-30"
-        style={{ minHeight: "92vh" }}
+        className="relative w-full overflow-hidden bg-white mt-28 lg:mt-30 min-h-[50vh] lg:min-h-[92vh] pb-4 lg:pb-0"
+        
       >
         {/* Animated gradient background */}
         <div
@@ -130,7 +130,7 @@ export default function HeroSection() {
         {/* Main grid  */}
         <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-10 grid lg:grid-cols-2 gap-12 lg:gap-8 items-center">
           {/* LEFT COLUMN */}
-          <div className="flex flex-col justify-center py-16 lg:py-0">
+          <div className="flex flex-col justify-center py-8 pb-4 lg:py-0">
             <div className="animate-on-scroll">
               <div
                 className="inline-flex items-center gap-2 self-start mb-5 px-4 py-1.5 rounded-full text-xs font-semibold tracking-widest uppercase hover:scale-105 transition-transform duration-300"
@@ -239,7 +239,7 @@ export default function HeroSection() {
                 {trackingLoading ? "Tracking..." : "Track"}
               </button>
             </form>
-            <p className="text-xs mt-2 transition-all duration-300 hover:translate-x-1" style={{ color: "#9A9DAF" }}>
+            <p className="text-xs mt-2 mb-0 transition-all duration-300 hover:translate-x-1" style={{ color: "#9A9DAF" }}>
               Real-time tracking · 24/7 support
             </p>
           </div>
