@@ -648,15 +648,17 @@ const shipmentController = {
                         if (isInternal) {
                         const availableAgent = await db.agents.findOne({
                             where: {
-                                status: 'active',
-                                state: pickupAddress.state,
-                                city: pickupAddress.city
+                                // status: 'active',
+                                // state: pickupAddress.state,
+                                // city: pickupAddress.
+                                // id: 29,
+                                email: 'abbapeter47@gmail.com'
                             },
                              
                                 // Simple load balancing: random or by ID for now
-                            order: [
-                                [db.sequelize.fn('RANDOM')]
-                            ]
+                            // order: [
+                            //     [db.sequelize.fn('RANDOM')]
+                            // ]
                         });
                         
                     
