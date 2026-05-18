@@ -76,9 +76,9 @@ export default function Navigation({
 						<Image
 							src="/logo-blue.png"
 							alt="Obana Logistics Logo"
-							width={140}
+							width={90}
 							height={48}
-							className="h-10 w-auto"
+							style={{height: "auto"}}
 							priority
 						/>
 					</Link>

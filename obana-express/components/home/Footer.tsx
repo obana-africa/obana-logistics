@@ -169,9 +169,10 @@ export default function Footer() {
 								<Image
 									src="/white-logo.svg"
 									alt="Obana Logistics"
-									width={100}
+									width={90}
 									height={44}
 									className="object-contain"
+									style={{ width: '94px', height: 'auto' }}
 									onError={() => setLogoError(true)}
 								/>
 							)}

@@ -10,7 +10,7 @@ import HowItWorks from "@/components/home/HowItWorks";
 import FAQ from "@/components/home/FAQ";
 import Partners from "@/components/home/Partners";
 import CrossBorderCTA from "@/components/home/CrossBorderCTA";
-import Services from "@/components/home/Services";
+// import Services from "@/components/home/Services";
 import Footer from "@/components/home/Footer";
 // import ContactFormSection from "@/components/home/Contactformsection";
 // import ContactForm from "@/components/home/Contactform";
