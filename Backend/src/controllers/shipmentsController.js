@@ -516,7 +516,7 @@ const shipmentController = {
                 
                 userId = req.user.id;
             } else if (req.tenant && req.tenant.id) {
-                // Authenticated via API key
+                
                 tenantId = req.tenant.id;
             } else {
                 return res.status(403).json({
@@ -526,8 +526,8 @@ const shipmentController = {
             }
 
             const payload = req.body;
-            console.log("SHIPMENT PAYLLOADDDDDD", payload)
-            // Normalize Tajiri/Complex payload structure
+            // console.log("SHIPMENT PAYLLOADDDDDD", payload)
+            
             // If items are missing at root but present in nested shipments
             if ((!payload.items || payload.items.length === 0) && payload.dispatcher?.shipments?.[0]) {
                 const nestedShipment = payload.dispatcher.shipments[0];
@@ -651,8 +651,7 @@ const shipmentController = {
                                 // status: 'active',
                                 // state: pickupAddress.state,
                                 // city: pickupAddress.
-                                // id: 29,
-                                email: 'abbapeter47@gmail.com'
+                                id: 6
                             },
                              
                                 // Simple load balancing: random or by ID for now

@@ -271,14 +271,18 @@ const matchTemplate = async (req, res) => {
     let { transport_mode, service_level, delivery_address, items, origin_city, destination_city, weight, pickup_address } = req.body
     const parcel = req.body.parcel
     let shipmentResults = []
-
+        console.log('Received payload/destination_city')
+    
     // Handle different payload formats
     if (parcel) {
+        console.log('Received Format 2 payload')
+
         // Format 2: parcel with items that have pickup_address
         items = parcel.items || items
         delivery_address = delivery_address || req.body.delivery_address
-    } else if (origin_city) {
+    } else if (origin_city || origin_city in req.body || origin_city === '') {
         // Format 1: direct parameters
+        console.log('Received Format 1 payload with origin_city/destination_city')
         items = items || []
         delivery_address = delivery_address || req.body.delivery_address
         pickup_address = pickup_address || req.body.pickup_address
@@ -309,6 +313,7 @@ const matchTemplate = async (req, res) => {
         // Single shipment format
         const key = getGroupingKey(pickup_address || {})
         groupedItems[key] = { pickup_address: pickup_address || {}, items: normalizedItems }
+        console.log("grouped ITEMSM", groupItems)
     }
 
     const routeTemplates = await RouteTemplates.findAll()
@@ -324,7 +329,7 @@ const matchTemplate = async (req, res) => {
             destinationCity = delivery_address.city
             groupWeight = group.items.reduce((sum, item) => sum + (item.weight * (item.quantity || 1)), 0)
         } else {
-            originCity = origin_city
+            originCity = origin_city || 'Ikeja'
             destinationCity = destination_city
             groupWeight = weight || group.items.reduce((sum, item) => sum + (item.weight * (item.quantity || 1)), 0)
         }

@@ -87,8 +87,7 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
     setLoading(true);
     setError(null);
     try {
-      // NOTE: You'll need to implement `getShipment` in your apiClient to call:
-      // GET /shipments/track/{shipment_reference}
+     
       const response = await apiClient.getShipment(ref);
 
 
@@ -194,14 +193,16 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
                 <div>
                   <p className="font-medium text-gray-500">Pickup From</p>
                   <p className="font-semibold text-gray-800">{shipment.pickup_address.name}</p>
-                  <p className="text-gray-600">{`${shipment.pickup_address.line1}, ${shipment.pickup_address.city}`}</p>
+                  <p className="text-gray-600">{`${shipment.pickup_address.line1}, ${shipment.pickup_address.city},  ${shipment.pickup_address.state} ${shipment.pickup_address.country}`}</p>
                   <p className="text-gray-600">{shipment.pickup_address.phone}</p>
+                  <p className="text-gray-600">{shipment.pickup_address.contact_email}</p>
                 </div>
                 <div className="border-t border-gray-200 pt-4">
                   <p className="font-medium text-gray-500">Deliver To</p>
                   <p className="font-semibold text-gray-800">{shipment.delivery_address.name}</p>
-                  <p className="text-gray-600">{`${shipment.delivery_address.line1}, ${shipment.delivery_address.city}`}</p>
+                  <p className="text-gray-600">{`${shipment.delivery_address.line1}, ${shipment.delivery_address.city} ${shipment.delivery_address.state}, ${shipment.delivery_address.country}`}</p>
                   <p className="text-gray-600">{shipment.delivery_address.phone}</p>
+                  <p className="text-gray-600">{shipment.delivery_address.contact_email}</p>
                 </div>
               </div>
             </Card>
