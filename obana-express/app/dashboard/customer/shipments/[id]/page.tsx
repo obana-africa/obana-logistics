@@ -192,7 +192,7 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
               <div className="space-y-4 text-sm">
                 <div>
                   <p className="font-medium text-gray-500">Pickup From</p>
-                  <p className="font-semibold text-gray-800">{shipment.pickup_address.name}</p>
+                  <p className="font-semibold text-gray-800">{"Obana.Africa / "+shipment.pickup_address.name}</p>
                   <p className="text-gray-600">{`${shipment.pickup_address.line1}, ${shipment.pickup_address.city},  ${shipment.pickup_address.state} ${shipment.pickup_address.country}`}</p>
                   <p className="text-gray-600">{shipment.pickup_address.phone}</p>
                   <p className="text-gray-600">{shipment.pickup_address.contact_email}</p>

@@ -313,7 +313,7 @@ const matchTemplate = async (req, res) => {
         // Single shipment format
         const key = getGroupingKey(pickup_address || {})
         groupedItems[key] = { pickup_address: pickup_address || {}, items: normalizedItems }
-        console.log("grouped ITEMSM", groupItems)
+        // console.log("grouped ITEMSM", groupedItems)
     }
 
     const routeTemplates = await RouteTemplates.findAll()

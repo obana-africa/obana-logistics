@@ -237,10 +237,11 @@ export default function ShipmentDetailsPage() {
                   <div className="mt-1"><div className="w-2 h-2 rounded-full bg-blue-500" /></div>
                   <div>
                     <p className="text-xs text-gray-500">Pickup</p>
-                    <p className="font-medium text-gray-900">{shipment.pickup_address?.name}</p>
+                    <p className="font-medium text-gray-900">{"Obana.Africa / " + shipment.pickup_address?.name}</p>
                     <p className="text-sm text-gray-600">{shipment.pickup_address?.line1}</p>
-                    <p className="text-sm text-gray-600">{shipment.pickup_address?.city}, {shipment.pickup_address?.state}</p>
+                    <p className="text-sm text-gray-600">{shipment.pickup_address?.city}, {shipment.pickup_address?.state},  {shipment.pickup_address.country}</p>
                     <p className="text-sm text-gray-600">{shipment.pickup_address?.phone}</p>
+                    <p className="text-gray-600">{shipment.pickup_address.contact_email}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -249,8 +250,9 @@ export default function ShipmentDetailsPage() {
                     <p className="text-xs text-gray-500">Delivery</p>
                     <p className="font-medium text-gray-900">{shipment.delivery_address?.name}</p>
                     <p className="text-sm text-gray-600">{shipment.delivery_address?.line1}</p>
-                    <p className="text-sm text-gray-600">{shipment.delivery_address?.city}, {shipment.delivery_address?.state}</p>
+                    <p className="text-sm text-gray-600">{shipment.delivery_address?.city}, {shipment.delivery_address?.state} {shipment.delivery_address.country}</p>
                     <p className="text-sm text-gray-600">{shipment.delivery_address?.phone}</p>
+                    <p className="text-gray-600">{shipment.delivery_address.contact_email}</p>
                   </div>
                 </div>
               </div>

@@ -594,9 +594,8 @@ const shipmentController = {
 
                 // A shipment is internal only if it's explicitly 'obana' AND doesn't have an external shipment ID
                 const isInternal = (payload.carrier_slug === 'obana' || 
-                                 (payload.dispatcher && payload.dispatcher.carrier_slug === 'obana')) && 
-                                 !payload.rate_id;
-                
+                                 (payload.dispatcher && payload.dispatcher.carrier_slug === 'obana')) 
+                // console.log("isInternal: ", isInternal, "payload.rate_id: ", payload.rate_id, "payload.carrier_slug: ", payload.carrier_slug, "dispatcher carrier slug: ", payload.dispatcher?.carrier_slug)
                 
                 const shipmentReference = generateShipmentReference(isInternal);
                 
