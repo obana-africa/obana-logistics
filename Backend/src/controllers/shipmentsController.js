@@ -1145,9 +1145,14 @@ getAllShipments: async (req, res) => {
                     message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
                 });
             }
+            let shipment;
 
-            const shipment = await db.shippings.findByPk(shipment_id) ?? await db.shippings.findOne({ where: { shipment_reference: shipment_id} });
-            
+            if (isNaN(shipment_id)) {
+                shipment = await db.shippings.findOne({ where: { shipment_reference: shipment_id} });
+            } else {
+             shipment = await db.shippings.findByPk(shipment_id);
+            }
+
             if (!shipment) {
                 return res.status(404).json({
                     success: false,
