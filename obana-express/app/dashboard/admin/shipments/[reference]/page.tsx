@@ -148,10 +148,10 @@ export default function ShipmentDetailsPage() {
             <Button variant="primary" onClick={handleUpdateClick}>
               Update Status
             </Button>
-            <Button variant="danger" onClick={handleDelete}>
+            {/* <Button variant="danger" onClick={handleDelete}>
               <Trash2 className="w-4 h-4 mr-2" />
               Delete
-            </Button>
+            </Button> */}
           </div>
         </div>
 
