@@ -1146,7 +1146,7 @@ getAllShipments: async (req, res) => {
                 });
             }
 
-            const shipment = await db.shippings.findByPk(shipment_id);
+            const shipment = await db.shippings.findByPk(shipment_id) ?? await db.shippings.findOne({ where: { shipment_reference: shipment_id} });
             
             if (!shipment) {
                 return res.status(404).json({
