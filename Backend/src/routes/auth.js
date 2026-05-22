@@ -291,7 +291,7 @@ const verifyRole = allowedRoles => {
       return res.status(401).json({ message: 'Unauthorized access' });
     }
     if (req.user.email == "shipment@obana.africa") {
-      next()
+      return next()
     }
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ message: 'Access denied' });
