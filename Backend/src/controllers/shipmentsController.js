@@ -1194,7 +1194,12 @@ getAllShipments: async (req, res) => {
                     previous_status: shipment.status
                 }
             });
-    await sendStatusUpdateEmail(shipment, status, req.body);
+            
+            // Send email notification (fire-and-forget to avoid blocking response)
+            sendStatusUpdateEmail(shipment, status, req.body).catch(err => {
+                console.error('Error sending status update email:', err);
+            });
+            
             return res.status(200).json({
                 success: true,
                 message: 'Shipment status updated',
