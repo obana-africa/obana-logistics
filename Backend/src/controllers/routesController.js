@@ -7,8 +7,8 @@ const { parsePhoneNumber } = require('libphonenumber-js');
 
 require('dotenv').config()
 
-const TERMINAL_AFRICA_BASE_URL = process.env.TERMINAL_AFRICA_BASE_URL ;
-const TERMINAL_AFRICA_SECRET_KEY = process.env.TERMINAL_AFRICA_SECRET_KEY ;
+const TERMINAL_AFRICA_BASE_URL = process.env.TERMINAL_AFRICA_BASE_URL;
+const TERMINAL_AFRICA_SECRET_KEY = process.env.TERMINAL_AFRICA_SECRET_KEY;
 
 const taClient = axios.create({
     baseURL: TERMINAL_AFRICA_BASE_URL,
@@ -76,7 +76,7 @@ const validateAndFallbackAddress = (address = {}) => {
         return { ...DEFAULT_ADDRESS }
     }
     address.country = formatCountryCode(address.country)
-    address.phone = formatPhoneNumberInternational(address.phone, address.country)?.split(' ').join('') 
+    address.phone = formatPhoneNumberInternational(address.phone, address.country)?.split(' ').join('')
     return address
 }
 
@@ -85,53 +85,66 @@ const validateAndFallbackAddress = (address = {}) => {
  * If input doesn't match pattern, return input unchanged.
  */
 function deliveryTimeRange(delivery_time) {
-  if (typeof delivery_time !== "string") return delivery_time;
+    if (typeof delivery_time !== "string") return delivery_time;
 
-  const withinMatch = delivery_time.match(/^\s*Within\s+(\d+)\s+days?\s*$/i);
-  const rangeMatch = delivery_time.match(/^\s*(\d+)\s*-\s*(\d+)\s+days?\s*$/i);
+    const withinMatch = delivery_time.match(/^\s*Within\s+(\d+)\s+days?\s*$/i);
+    const rangeMatch = delivery_time.match(/^\s*(\d+)\s*-\s*(\d+)\s+days?\s*$/i);
 
-  if (!withinMatch && !rangeMatch) return delivery_time;
+    if (!withinMatch && !rangeMatch) return delivery_time;
 
-  let startOffset = 0;
-  let endOffset = 0;
+    let startOffset = 0;
+    let endOffset = 0;
 
-  if (withinMatch) {
-    endOffset = parseInt(withinMatch[1], 10);
-    if (Number.isNaN(endOffset) || endOffset < 0) return delivery_time;
-  } else {
-    startOffset = parseInt(rangeMatch[1], 10);
-    endOffset = parseInt(rangeMatch[2], 10);
-    if (
-      Number.isNaN(startOffset) || Number.isNaN(endOffset) ||
-      startOffset < 0 || endOffset < 0 ||
-      endOffset < startOffset
-    ) {
-      return delivery_time;
+    if (withinMatch) {
+        endOffset = parseInt(withinMatch[1], 10);
+        if (Number.isNaN(endOffset) || endOffset < 0) return delivery_time;
+    } else {
+        startOffset = parseInt(rangeMatch[1], 10);
+        endOffset = parseInt(rangeMatch[2], 10);
+        if (
+            Number.isNaN(startOffset) || Number.isNaN(endOffset) ||
+            startOffset < 0 || endOffset < 0 ||
+            endOffset < startOffset
+        ) {
+            return delivery_time;
+        }
     }
-  }
 
-  const now = new Date();
-  const start = new Date(now.getTime());
-  start.setDate(start.getDate() + startOffset);
+    const now = new Date();
+    const start = new Date(now.getTime());
+    start.setDate(start.getDate() + startOffset);
 
-  const end = new Date(now.getTime());
-  end.setDate(end.getDate() + endOffset);
+    const end = new Date(now.getTime());
+    end.setDate(end.getDate() + endOffset);
 
-  const opts = { month: "long", day: "numeric" };
-  const startStr = start.toLocaleDateString("en-US", opts);
-  const endStr = end.toLocaleDateString("en-US", opts);
+    const opts = { month: "long", day: "numeric" };
+    const startStr = start.toLocaleDateString("en-US", opts);
+    const endStr = end.toLocaleDateString("en-US", opts);
 
-  return `${startStr} - ${endStr}`;
+    return `${startStr} - ${endStr}`;
 }
 
 const listTemplates = async (req, res) => {
-    const templates = await RouteTemplates.findAll({ order: [['id','ASC']] })
+    const templates = await RouteTemplates.findAll({
+        order: [['id', 'ASC']],
+        include: [{
+            model: db.drivers,
+            as: 'preferred_driver',
+            include: [{ model: db.users, as: 'user', attributes: ['email'] }]
+        }]
+    })
     return res.status(200).send(utils.responseSuccess(templates))
 }
 
 const getTemplate = async (req, res) => {
     const id = req.params.id
-    const template = await RouteTemplates.findByPk(id)
+    const template = await RouteTemplates.findByPk(id, {
+        include: [{
+            model: db.drivers,
+            as: 'preferred_driver',
+            include: [{ model: db.users, as: 'user', attributes: ['email'] }]
+        }]
+    })
     if (!template) return res.status(404).send(utils.responseError('Not found'))
     return res.status(200).send(utils.responseSuccess(template))
 }
@@ -177,36 +190,58 @@ const formatCountryCode = (country) => {
 }
 
 const getGroupingKey = (pickupAddress = {}) => JSON.stringify({
-    // line1: normalizeText(pickupAddress.line1),
-    // line2: normalizeText(pickupAddress.line2),
-    city: normalizeText(pickupAddress.city),
     state: normalizeText(pickupAddress.state),
-    country: normalizeText(pickupAddress.country),
-    // zip: normalizeText(pickupAddress.zip || pickupAddress.zip_code)
+    country: normalizeText(pickupAddress.country)
 })
 
-const buildTemplateMatch = (routeTemplates, origin_city, destination_city, transport_mode, service_level, weight) => {
-    if (!origin_city || !destination_city || !transport_mode || !service_level || typeof weight === 'undefined') return null
+const buildTemplateMatch = (routeTemplates, origin_state, origin_country, destination_state, destination_country, transport_mode, service_level, weight) => {
+    if (!origin_state || !origin_country || !destination_state || !destination_country || !transport_mode || !service_level || typeof weight === 'undefined') return null
 
-    const filteredTemplates = routeTemplates.filter(t =>
-        normalizeText(t.origin_city) === normalizeText(origin_city) &&
-        normalizeText(t.destination_city) === normalizeText(destination_city) &&
-        normalizeText(t.transport_mode) === normalizeText(transport_mode) &&
-        normalizeText(t.service_level) === normalizeText(service_level)
-    )
+    const nOriginState = normalizeText(origin_state);
+    const nOriginCountry = normalizeText(origin_country);
+    const nDestState = normalizeText(destination_state);
+    const nDestCountry = normalizeText(destination_country);
+    const nMode = normalizeText(transport_mode);
+    const nLevel = normalizeText(service_level);
 
-    for (const template of filteredTemplates) {
-        const brackets = template.weight_brackets || []
-        for (const bracket of brackets) {
-            const min = Number(bracket.min || 0)
-            const max = Number(bracket.max || Number.POSITIVE_INFINITY)
-            if (weight >= min && weight <= max) {
-                return { template, match: bracket }
-            }
+    // 1. Find the first matching template based on country, state, and service parameters
+    const template = routeTemplates.find(t =>
+        normalizeText(t.metadata?.origin_state) === nOriginState &&
+        normalizeText(t.metadata?.origin_country) === nOriginCountry &&
+        normalizeText(t.metadata?.destination_state) === nDestState &&
+        normalizeText(t.metadata?.destination_country) === nDestCountry &&
+        normalizeText(t.transport_mode) === nMode &&
+        normalizeText(t.service_level) === nLevel
+    );
+
+    if (!template) return null;
+
+    const brackets = template.weight_brackets || [];
+    if (brackets.length === 0) return null;
+
+    // 2. Try to find an exact weight bracket match
+    for (const bracket of brackets) {
+        const min = Number(bracket.min || 0);
+        const max = Number(bracket.max || Number.POSITIVE_INFINITY);
+        if (weight >= min && weight <= max) {
+            return { template, match: { ...bracket } };
         }
     }
-    return null
-}
+
+    // 3. If weight exceeds all brackets, use the highest bracket with a 2.5% price increase
+    const highestBracket = brackets.reduce((prev, curr) =>
+        (Number(curr.max || 0) > Number(prev.max || 0)) ? curr : prev
+        , brackets[0]);
+
+    if (highestBracket && weight > Number(highestBracket.max || 0)) {
+        const adjustedBracket = { ...highestBracket };
+        adjustedBracket.price = Number(adjustedBracket.price || 0) * 1.025;
+        adjustedBracket.is_overweight = true;
+        return { template, match: adjustedBracket };
+    }
+
+    return null;
+};
 
 const normalizeItem = (item) => ({
     ...item,
@@ -268,17 +303,17 @@ const buildTerminalPayload = (pickupAddress, deliveryAddress, items) => {
 }
 
 const matchTemplate = async (req, res) => {
-    let { transport_mode, service_level, delivery_address, items, origin_city, destination_city, weight, pickup_address } = req.body
+    let { transport_mode, service_level, delivery_address, items, weight, pickup_address } = req.body
     const parcel = req.body.parcel
     let shipmentResults = []
-    
+
     // Handle different payload formats
     if (parcel) {
 
         // Format 2: parcel with items that have pickup_address
         items = parcel.items || items
         delivery_address = delivery_address || req.body.delivery_address
-    } else if (origin_city || origin_city in req.body || origin_city === '') {
+    } else {
         // Format 1: direct parameters
         items = items || []
         delivery_address = delivery_address || req.body.delivery_address
@@ -306,43 +341,55 @@ const matchTemplate = async (req, res) => {
             acc[key].items.push(item)
             return acc
         }, {})
-    } else if (origin_city) {
+    } else {
         // Single shipment format
         const key = getGroupingKey(pickup_address || {})
         groupedItems[key] = { pickup_address: pickup_address || {}, items: normalizedItems }
-        // console.log("grouped ITEMSM", groupedItems)
     }
 
-    const routeTemplates = await RouteTemplates.findAll()
+    const routeTemplates = await RouteTemplates.findAll({
+        include: [{
+            model: db.drivers,
+            as: 'preferred_driver',
+            include: [{ model: db.users, as: 'user', attributes: ['email'] }]
+        }]
+    })
 
     const externalGroups = []
     const fallbackGroups = []
 
     for (const group of Object.values(groupedItems)) {
-        let originCity, destinationCity, groupWeight
+        let originState, originCountry, destinationState, destinationCountry, groupWeight
 
-        if (parcel) {
-            originCity = group.pickup_address?.city
-            destinationCity = delivery_address.city
-            groupWeight = group.items.reduce((sum, item) => sum + (item.weight * (item.quantity || 1)), 0)
-        } else {
-            originCity = origin_city || 'Ikeja'
-            destinationCity = destination_city
-            groupWeight = weight || group.items.reduce((sum, item) => sum + (item.weight * (item.quantity || 1)), 0)
-        }
+        originState = group.pickup_address?.state
+        originCountry = group.pickup_address?.country
+        destinationState = delivery_address.state
+        destinationCountry = delivery_address.country
+        groupWeight = weight || group.items.reduce((sum, item) => sum + (item.weight * (item.quantity || 1)), 0)
 
-        const templateMatch = buildTemplateMatch(routeTemplates, originCity, destinationCity, transport_mode, service_level, groupWeight)
+        const templateMatch = buildTemplateMatch(
+            routeTemplates,
+            originState,
+            originCountry,
+            destinationState,
+            destinationCountry,
+            transport_mode,
+            service_level,
+            groupWeight
+        )
         const fallbackTemplateMatch = templateMatch ? null : buildTemplateMatch(
             routeTemplates,
             'Lagos',
+            'Nigeria',
             'Lagos',
+            'Nigeria',
             'Road',
             'standard',
             groupWeight
         )
 
         const selectedTemplateMatch = templateMatch || fallbackTemplateMatch
-        
+
         if (selectedTemplateMatch) {
             if (templateMatch) {
                 // Exact match
@@ -353,10 +400,16 @@ const matchTemplate = async (req, res) => {
                     delivery_address,
                     items: group.items,
                     template: selectedTemplateMatch.template,
-                    match: selectedTemplateMatch.match
+                    match: selectedTemplateMatch.match,
+                    preferred_driver: selectedTemplateMatch.template.preferred_driver ? {
+                        id: selectedTemplateMatch.template.preferred_driver.id,
+                        driver_code: selectedTemplateMatch.template.preferred_driver.driver_code,
+                        vehicle_type: selectedTemplateMatch.template.preferred_driver.vehicle_type,
+                        email: selectedTemplateMatch.template.preferred_driver.user?.email
+                    } : null
                 })
             } else {
-                // Fallback match - collect for grouping
+
                 fallbackGroups.push({
                     pickup_address: group.pickup_address,
                     items: group.items,
@@ -372,13 +425,16 @@ const matchTemplate = async (req, res) => {
         }
     }
 
-    // Group all fallback shipments into one
+
     if (fallbackGroups.length > 0) {
         const totalWeight = fallbackGroups.reduce((sum, g) => sum + g.weight, 0)
-        const fallbackMatch = buildTemplateMatch(routeTemplates, 'Lagos', 'Lagos', 'Road', 'standard', totalWeight)
-        
+
+        const fallbackMatch = buildTemplateMatch(routeTemplates, 'Lagos', 'Nigeria', 'Lagos', 'Nigeria', 'Road', 'standard', totalWeight)
+
+
         if (fallbackMatch) {
             const combinedItems = fallbackGroups.flatMap(g => g.items)
+
             fallbackMatch.match.estimated_delivery = deliveryTimeRange(fallbackMatch.match.eta)
             shipmentResults.push({
                 external: false,
@@ -386,7 +442,13 @@ const matchTemplate = async (req, res) => {
                 delivery_address,
                 items: combinedItems,
                 template: fallbackMatch.template,
-                match: fallbackMatch.match
+                match: fallbackMatch.match,
+                preferred_driver: fallbackMatch.template.preferred_driver ? {
+                    id: fallbackMatch.template.preferred_driver.id,
+                    driver_code: fallbackMatch.template.preferred_driver.driver_code,
+                    vehicle_type: fallbackMatch.template.preferred_driver.vehicle_type,
+                    email: fallbackMatch.template.preferred_driver.user?.email
+                } : null
             })
         }
     }
@@ -433,7 +495,7 @@ const matchTemplate = async (req, res) => {
         if (shipmentResults.length > 0) {
             return res.status(200).send(utils.responseSuccess(shipmentResults))
         }
-
+        console.log("reachhhh")
         return res.status(404).send(utils.responseError('No routes available for this shipment'))
     } catch (error) {
         console.error('External route match failed:', error?.response?.data || error.message)

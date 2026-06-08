@@ -138,6 +138,16 @@ syncDatabase();
         foreignKey: 'agent_id',
         as: 'assigned_shipments'
     });
+
+    // Route Template preferred driver association
+    db.route_templates.belongsTo(db.drivers, {
+        foreignKey: 'preferred_driver_id',
+        as: 'preferred_driver'
+    });
+
+    db.drivers.hasMany(db.route_templates, {
+        foreignKey: 'preferred_driver_id'
+    });
     
     
         db.drivers.belongsTo(db.users, {

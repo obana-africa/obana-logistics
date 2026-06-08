@@ -627,6 +627,7 @@ const shipmentController = {
                     status: 'pending',
                     is_insured: payload.is_insured || false,
                     insurance_amount: payload.insurance_amount || 0,
+                    driver_id: isInternal ? payload.preferred_driver_id : null,
                     metadata: {
                         original_payload: payload,
                         dispatcher: payload.dispatcher,
@@ -644,7 +645,7 @@ const shipmentController = {
 
                 
                     try {
-                        if (isInternal) {
+                        if (isInternal && !shipment.driver_id) {
                         const availableAgent = await db.agents.findOne({
                             where: {
                                 // status: 'active',

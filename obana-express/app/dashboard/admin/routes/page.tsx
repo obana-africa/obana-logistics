@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, Button, Input, Select, Alert, Loader } from "@/components/ui";
+import { Card, Button, Input, Select, Alert, Loader, Label, SelectP, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui";
 import { LocationInput } from "@/components/LocationInput";
 import { apiClient } from "@/lib/api";
 import { Plus, Edit2, Trash2, X, MapPin, Package } from "lucide-react";
@@ -16,10 +16,13 @@ interface RouteTemplate {
 	service_level: string;
 	weight_brackets: any[];
 	metadata: any;
+	preferred_driver_id?: string;
+	preferred_driver?: any;
 }
 
 export default function RoutesManagement() {
 	const [routes, setRoutes] = useState<RouteTemplate[]>([]);
+	const [drivers, setDrivers] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 	const [showModal, setShowModal] = useState(false);
@@ -42,16 +45,19 @@ export default function RoutesManagement() {
 		transport_mode: string;
 		service_level: string;
 		weight_brackets: { min: string; max: string; price: string; eta: string }[];
+		preferred_driver_id: string;
 	}>({
 		origin: { city: "", state: "", country: "", countryCode: "", stateCode: "" },
 		destination: { city: "", state: "", country: "", countryCode: "", stateCode: "" },
 		transport_mode: "road",
 		service_level: "Standard",
 		weight_brackets: [],
+		preferred_driver_id: "none",
 	});
 
 	useEffect(() => {
 		loadRoutes();
+		loadDrivers();
 	}, []);
 
 	const loadRoutes = async () => {
@@ -64,6 +70,15 @@ export default function RoutesManagement() {
 			setError(err.response?.data?.message || "Error loading routes");
 		} finally {
 			setLoading(false);
+		}
+	};
+
+	const loadDrivers = async () => {
+		try {
+			const response = await apiClient.listDrivers();
+			if (response.status && response.data) setDrivers(response.data);
+		} catch (err) {
+			console.error("Error loading drivers", err);
 		}
 	};
 
@@ -110,6 +125,7 @@ export default function RoutesManagement() {
 					destination_country_code: formData.destination.countryCode,
 					destination_state_code: formData.destination.stateCode,
 				},
+				preferred_driver_id: (formData.preferred_driver_id && formData.preferred_driver_id !== "none") ? formData.preferred_driver_id : null,
 			};
 
 			if (editingRoute) {
@@ -155,6 +171,7 @@ export default function RoutesManagement() {
 						eta: b.eta || "",
 					}))
 				: [],
+			preferred_driver_id: route.preferred_driver_id ? String(route.preferred_driver_id) : "none",
 		});
 		setShowModal(true);
 	};
@@ -178,6 +195,7 @@ export default function RoutesManagement() {
 			transport_mode: "road",
 			service_level: "Standard",
 			weight_brackets: [],
+			preferred_driver_id: "none",
 		});
 	};
 
@@ -258,6 +276,9 @@ export default function RoutesManagement() {
 												Service
 											</th>
 											<th className="text-left py-4 px-6 font-semibold text-gray-900">
+												Driver
+											</th>
+											<th className="text-left py-4 px-6 font-semibold text-gray-900">
 												Weight Brackets
 											</th>
 											<th className="text-right py-4 px-6 font-semibold text-gray-900">
@@ -297,6 +318,16 @@ export default function RoutesManagement() {
 													<span className="text-sm text-gray-700">
 														{route.service_level}
 													</span>
+												</td>
+												<td className="py-4 px-6">
+													{route.preferred_driver ? (
+														<div className="text-xs">
+															<p className="font-semibold">{route.preferred_driver.driver_code}</p>
+															<p className="text-gray-500">{route.preferred_driver.user?.email}</p>
+														</div>
+													) : (
+														<span className="text-gray-400 italic text-xs">None</span>
+													)}
 												</td>
 												<td className="py-4 px-6">
 													<div className="relative group">
@@ -514,6 +545,28 @@ export default function RoutesManagement() {
 											]}
 										/>
 									</div>
+								</div>
+
+								{/* Preferred Driver Selection */}
+								<div className="border-2 border-blue-100 rounded-xl p-5 bg-linear-to-br from-blue-50 to-white">
+									<Label className="mb-2 block">Preferred Driver (Optional)</Label>
+									<p className="text-xs text-gray-500 mb-3">Auto-assign this driver to shipments using this route</p>
+									<SelectP 
+										value={formData.preferred_driver_id} 
+										onValueChange={(val) => setFormData({...formData, preferred_driver_id: val})}
+									>
+										<SelectTrigger>
+											<SelectValue placeholder="Select a preferred driver" />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="none">No driver (Manual assignment)</SelectItem>
+											{drivers.map((d) => (
+												<SelectItem key={d.id} value={d.id.toString()}>
+													{`${d.driver_code} - ${d.vehicle_type} (${d.user?.email})`}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</SelectP>
 								</div>
 
 								{/* Weight Brackets Section */}

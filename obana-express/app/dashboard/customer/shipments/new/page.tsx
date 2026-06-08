@@ -185,6 +185,7 @@ export default function CreateShipmentPage() {
         rate_id: matchedRoute.rate_id,
         shipping_fee: matchedRoute.match.price,
         estimated_delivery: matchedRoute.match.estimated_delivery,
+        preferred_driver_id: matchedRoute.preferred_driver?.id
       });
 
       if (response.success && response.data) {
@@ -739,6 +740,20 @@ export default function CreateShipmentPage() {
 							</p>
 						</div>
 					</div>
+							{matchedRoute.preferred_driver && !matchedRoute.external && (
+								<div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-4">
+									<div className="bg-white p-2 rounded-full shadow-sm">
+										<Truck className="h-6 w-6 text-green-600" />
+									</div>
+									<div>
+										<p className="text-xs text-green-700 font-semibold uppercase tracking-wider">Fast-Track Assignment</p>
+										<p className="text-sm text-gray-900">
+											<span className="font-bold">{matchedRoute.preferred_driver.driver_code}</span> is ready for this route 
+											<span className="text-gray-500 ml-1">({matchedRoute.preferred_driver.vehicle_type})</span>
+										</p>
+									</div>
+								</div>
+							)}
 							<div className="bg-white/80 rounded-lg p-4 space-y-3 text-sm">
 								<div className="flex justify-between items-center">
 									<span className="text-gray-600 flex items-center gap-2">

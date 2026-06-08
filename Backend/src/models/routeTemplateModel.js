@@ -10,7 +10,8 @@ module.exports = (sequelize, DataTypes) => {
         transport_mode: { type: DataTypes.STRING, allowNull: false },
         service_level: { type: DataTypes.STRING, allowNull: false },
         weight_brackets: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
-        metadata: { type: DataTypes.JSONB, allowNull: true, defaultValue: {} }
+        metadata: { type: DataTypes.JSONB, allowNull: true, defaultValue: {} },
+        preferred_driver_id: { type: DataTypes.INTEGER, allowNull: true }
     }, {
         timestamps: true,
         underscored: true,
