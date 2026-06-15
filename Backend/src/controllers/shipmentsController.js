@@ -1130,6 +1130,35 @@ getAllShipments: async (req, res) => {
         }
     },
 
+    async refreshToken(refreshTokenCredentials) {
+            let token = await axios.post(dbConfig.authUrl, querystring.stringify(refreshTokenCredentials))
+                .catch(error => {
+                    console.error('Error fetching data', error);
+                });
+    
+            return token;
+    },
+
+    tokenCredentials(reToken) {
+    return {
+            client_id: process.env.ZOHO_CLIENT_ID,
+            client_secret: process.env.ZOHO_CLIENT_SECRET,
+            grant_type: 'refresh_token',
+            refresh_token: reToken
+        }
+    },
+
+    async getZohoInventoryToken() {
+        
+        let zohoInventoryToken;
+            let zohoInventoryTokenData = (await this.refreshToken(tokenCredentials(process.env.INVENTORY_REFRESH_TOKEN)))?.data;
+
+            if (zohoInventoryTokenData?.access_token) {
+                zohoInventoryToken = zohoInventoryTokenData.access_token
+            }
+        return 'Zoho-oauthtoken ' + zohoInventoryToken;
+    },
+
     /**
      * Update shipment status
      */

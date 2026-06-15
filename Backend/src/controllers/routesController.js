@@ -228,14 +228,19 @@ const buildTemplateMatch = (routeTemplates, origin_state, origin_country, destin
         }
     }
 
-    // 3. If weight exceeds all brackets, use the highest bracket with a 2.5% price increase
+    // 3. If weight exceeds all brackets, use proportional pricing based on the highest bracket
     const highestBracket = brackets.reduce((prev, curr) =>
         (Number(curr.max || 0) > Number(prev.max || 0)) ? curr : prev
         , brackets[0]);
 
-    if (highestBracket && weight > Number(highestBracket.max || 0)) {
+    const maxWeight = Number(highestBracket?.max || 0);
+    if (highestBracket && weight > maxWeight && maxWeight > 0) {
+        const basePrice = Number(highestBracket.price || 0);
+        const additionalWeight = weight - maxWeight;
+        const additionalPrice = (additionalWeight * basePrice) / maxWeight;
+
         const adjustedBracket = { ...highestBracket };
-        adjustedBracket.price = Number(adjustedBracket.price || 0) * 1.025;
+        adjustedBracket.price = basePrice + additionalPrice;
         adjustedBracket.is_overweight = true;
         return { template, match: adjustedBracket };
     }
