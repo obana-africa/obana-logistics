@@ -19,7 +19,12 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: false,
             comment: 'Platform order ID that groups multiple vendor shipments'
         },
-        
+        external_shipment_id: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            comment: 'ZOHO Shipment ID'
+        },
+
         user_id: {
             type: DataTypes.STRING(50),
             allowNull: true

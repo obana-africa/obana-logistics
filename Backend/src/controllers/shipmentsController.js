@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const db = require('../models/db');
 const mailer = require('../mailer/sendgrid');
+const querystring = require('node:querystring');
 
 const TERMINAL_AFRICA_BASE_URL = process.env.TERMINAL_AFRICA_BASE_URL;
 const TERMINAL_AFRICA_SECRET_KEY = process.env.TERMINAL_AFRICA_SECRET_KEY;
@@ -325,7 +326,7 @@ const sendStatusUpdateEmail = async (shipment, status, trackingEvent) => {
         console.error('Error sending status update email:', error);
     }
 }
-// Controller object
+
 const shipmentController = {
     /**
      * Get admin dashboard statistics
@@ -1131,7 +1132,7 @@ getAllShipments: async (req, res) => {
     },
 
     async refreshToken(refreshTokenCredentials) {
-            let token = await axios.post(dbConfig.authUrl, querystring.stringify(refreshTokenCredentials))
+            let token = await axios.post(process.env.ZOHO_AUTH_URL, querystring.stringify(refreshTokenCredentials))
                 .catch(error => {
                     console.error('Error fetching data', error);
                 });
@@ -1151,7 +1152,7 @@ getAllShipments: async (req, res) => {
     async getZohoInventoryToken() {
         
         let zohoInventoryToken;
-            let zohoInventoryTokenData = (await this.refreshToken(tokenCredentials(process.env.INVENTORY_REFRESH_TOKEN)))?.data;
+            let zohoInventoryTokenData = (await this.refreshToken(this.tokenCredentials(process.env.INVENTORY_REFRESH_TOKEN)))?.data;
 
             if (zohoInventoryTokenData?.access_token) {
                 zohoInventoryToken = zohoInventoryTokenData.access_token
@@ -1160,13 +1161,63 @@ getAllShipments: async (req, res) => {
     },
 
     /**
+     * Update Zoho Inventory Shipment Order Status
+     */
+    async updateZohoShipmentStatus(shipment, status) {
+        if (!shipment.order_reference?.startsWith('SO-') || !shipment.external_shipment_id) return;
+
+        try {
+            
+            const token = await shipmentController.getZohoInventoryToken();
+            const zohoShipmentId = shipment.external_shipment_id;
+            const orgId = process.env.ZOHO_ORG_ID;
+            const baseUrl = process.env.ZOHO_BASE_URL || 'https://www.zohoapis.com/inventory/v1/';
+
+            let action = '';
+            if (['picked_up', 'dispatched', 'in_transit'].includes(status)) {
+                action = 'shipped';
+            } else if (status === 'delivered') {
+                action = 'delivered';
+            } 
+
+            if (action) {
+                const url = `${baseUrl}shipmentorders/${zohoShipmentId}/status/${action}?organization_id=${orgId}`;
+                let resp = await axios.post(url, {}, { headers: { 'Authorization': token } });
+                console.log(`[ZOHO SYNC] Shipment ${zohoShipmentId} marked as ${action} in Zoho Inventory with response:`, resp.data);
+            }
+        } catch (error) {
+            console.error(`[ZOHO SYNC ERROR] Failed to update Zoho shipment ${shipment.external_shipment_id}:`, error?.response?.data || error.message);
+        }
+    },
+
+    /**
      * Update shipment status
      */
     updateShipmentStatus: async (req, res) => {
+        
+
         try {
             const { shipment_id } = req.params;
-            const { status, description, location, notes, source = 'system', performed_by } = req.body;
+            const { status, external_shipment_id, description, location, notes, source = 'system', performed_by } = req.body;
+            if (external_shipment_id) {
+                const updateExtId = {external_shipment_id: external_shipment_id.toString()}; 
+                let shipment;
+
+                if (isNaN(shipment_id)) {
+                    shipment = await db.shippings.findOne({ where: { shipment_reference: shipment_id} });
+                } else {
+                 shipment = await db.shippings.findByPk(shipment_id);
+                }
             
+                let updatedEXternalShipmentId = await shipment.update(updateExtId);
+                if (updatedEXternalShipmentId) 
+                     return res.status(200).json({
+                    success: true,
+                    message: 'External Shipment ID updated',
+                    data: updatedEXternalShipmentId
+                });
+        }
+
             // Validate status
             const validStatuses = ['pending', 'picked_up', 'dispatched', 'in_transit', 'delivered', 'failed', 'cancelled', 'returned'];
             if (!validStatuses.includes(status)) {
@@ -1199,13 +1250,16 @@ getAllShipments: async (req, res) => {
             }
 
             // Update shipment status
-            const updateData = { status };
+            const updateData = external_shipment_id ? {  external_shipment_id} : { status };
             
             if (status === 'delivered') {
                 updateData.actual_delivery_at = new Date();
             }
             
             await shipment.update(updateData);
+
+            // Sync with Zoho Inventory if it's a Zoho-linked shipment
+            shipmentController.updateZohoShipmentStatus(shipment, status);
 
             // Map 'pending' to 'created' for tracking events as 'pending' is not usually a tracking event status
             const trackingStatus = status === 'pending' ? 'created' : status;

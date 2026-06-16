@@ -290,7 +290,7 @@ const verifyRole = allowedRoles => {
     if (!req.user) {
       return res.status(401).json({ message: 'Unauthorized access' });
     }
-    if (req.user.email == "shipment@obana.africa") {
+    if (req.user.email == (process.env.LOGISTICS_EMAIL || "shipment@obana.africa")) {
       return next()
     }
     if (!allowedRoles.includes(req.user.role)) {
