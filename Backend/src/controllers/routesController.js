@@ -361,8 +361,6 @@ const matchTemplate = async (req, res) => {
     })
 
     const externalGroups = []
-    const fallbackGroups = []
-
     for (const group of Object.values(groupedItems)) {
         let originState, originCountry, destinationState, destinationCountry, groupWeight
 
@@ -371,6 +369,10 @@ const matchTemplate = async (req, res) => {
         destinationState = delivery_address.state
         destinationCountry = delivery_address.country
         groupWeight = weight || group.items.reduce((sum, item) => sum + (item.weight * (item.quantity || 1)), 0)
+
+        const nOriginCountry = normalizeText(formatCountryCode(originCountry));
+        const nDestCountry = normalizeText(formatCountryCode(destinationCountry));
+        const isDomesticNigeria = nOriginCountry === 'ng' && nDestCountry === 'ng';
 
         const templateMatch = buildTemplateMatch(
             routeTemplates,
@@ -382,7 +384,12 @@ const matchTemplate = async (req, res) => {
             service_level,
             groupWeight
         )
-        const fallbackTemplateMatch = templateMatch ? null : buildTemplateMatch(
+
+        let selectedTemplateMatch = templateMatch;
+
+        // If no exact template match, try the default Lagos-Lagos fallback for this individual group
+        if (!selectedTemplateMatch) {
+            const individualFallbackTemplateMatch = buildTemplateMatch(
             routeTemplates,
             'Lagos',
             'Nigeria',
@@ -391,11 +398,19 @@ const matchTemplate = async (req, res) => {
             'Road',
             'standard',
             groupWeight
-        )
-
-        const selectedTemplateMatch = templateMatch || fallbackTemplateMatch
+            );
+            if (individualFallbackTemplateMatch) {
+                selectedTemplateMatch = individualFallbackTemplateMatch;
+            }
+        }
 
         if (selectedTemplateMatch) {
+            // Apply N2000 flat rate if it's a domestic Nigerian shipment
+            // Note: individualFallbackTemplateMatch is always domestic Nigeria, so isDomesticNigeria will be true for it.
+            if (isDomesticNigeria) {
+                selectedTemplateMatch.match.price = 2000;
+                selectedTemplateMatch.match.is_domestic_nigeria_flat_rate = true;
+            }
             if (templateMatch) {
                 // Exact match
                 selectedTemplateMatch.match.estimated_delivery = deliveryTimeRange(selectedTemplateMatch.match.eta)
@@ -414,14 +429,25 @@ const matchTemplate = async (req, res) => {
                     } : null
                 })
             } else {
-
-                fallbackGroups.push({
+                // This is an individual fallback match (Lagos-Lagos default)
+                selectedTemplateMatch.match.estimated_delivery = deliveryTimeRange(selectedTemplateMatch.match.eta)
+                shipmentResults.push({
+                    external: false,
                     pickup_address: group.pickup_address,
+                    delivery_address,
                     items: group.items,
-                    weight: groupWeight
+                    template: selectedTemplateMatch.template,
+                    match: selectedTemplateMatch.match,
+                    preferred_driver: selectedTemplateMatch.template.preferred_driver ? {
+                        id: selectedTemplateMatch.template.preferred_driver.id,
+                        driver_code: selectedTemplateMatch.template.preferred_driver.driver_code,
+                        vehicle_type: selectedTemplateMatch.template.preferred_driver.vehicle_type,
+                        email: selectedTemplateMatch.template.preferred_driver.user?.email
+                    } : null
                 })
             }
         } else {
+            // If no internal match (exact or fallback), then it's an external or unmatchable route
             externalGroups.push({
                 pickup_address: group.pickup_address,
                 items: group.items,
@@ -429,35 +455,6 @@ const matchTemplate = async (req, res) => {
             })
         }
     }
-
-
-    if (fallbackGroups.length > 0) {
-        const totalWeight = fallbackGroups.reduce((sum, g) => sum + g.weight, 0)
-
-        const fallbackMatch = buildTemplateMatch(routeTemplates, 'Lagos', 'Nigeria', 'Lagos', 'Nigeria', 'Road', 'standard', totalWeight)
-
-
-        if (fallbackMatch) {
-            const combinedItems = fallbackGroups.flatMap(g => g.items)
-
-            fallbackMatch.match.estimated_delivery = deliveryTimeRange(fallbackMatch.match.eta)
-            shipmentResults.push({
-                external: false,
-                pickup_address: { ...DEFAULT_ADDRESS, city: 'Lagos', state: 'Lagos' },
-                delivery_address,
-                items: combinedItems,
-                template: fallbackMatch.template,
-                match: fallbackMatch.match,
-                preferred_driver: fallbackMatch.template.preferred_driver ? {
-                    id: fallbackMatch.template.preferred_driver.id,
-                    driver_code: fallbackMatch.template.preferred_driver.driver_code,
-                    vehicle_type: fallbackMatch.template.preferred_driver.vehicle_type,
-                    email: fallbackMatch.template.preferred_driver.user?.email
-                } : null
-            })
-        }
-    }
-
     if (externalGroups.length === 0 && shipmentResults.length > 0) {
         return res.status(200).send(utils.responseSuccess(shipmentResults))
     }
