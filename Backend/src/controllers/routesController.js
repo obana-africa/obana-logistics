@@ -388,12 +388,13 @@ const matchTemplate = async (req, res) => {
         let selectedTemplateMatch = templateMatch;
 
         // If no exact template match, try the default Lagos-Lagos fallback for this individual group
+        const isDeliveryToFulfilmentCentre = delivery_address?.last_name === 'Fulfilment Centre';
         if (!selectedTemplateMatch) {
             const individualFallbackTemplateMatch = buildTemplateMatch(
-            routeTemplates,
-            'Lagos',
+                routeTemplates,
+                'Lagos', 
             'Nigeria',
-            'Lagos',
+                'Lagos',
             'Nigeria',
             'Road',
             'standard',
@@ -405,11 +406,10 @@ const matchTemplate = async (req, res) => {
         }
 
         if (selectedTemplateMatch) {
-            // Apply N2000 flat rate if it's a domestic Nigerian shipment
-            // Note: individualFallbackTemplateMatch is always domestic Nigeria, so isDomesticNigeria will be true for it.
-            if (isDomesticNigeria) {
+            // Apply N2000 flat rate if it's a domestic Nigerian shipment AND delivery is to Fulfilment Centre
+            if (isDomesticNigeria && isDeliveryToFulfilmentCentre) {
                 selectedTemplateMatch.match.price = 2000;
-                selectedTemplateMatch.match.is_domestic_nigeria_flat_rate = true;
+                selectedTemplateMatch.match.is_fulfilment_centre_handling_fee = true;
             }
             if (templateMatch) {
                 // Exact match
