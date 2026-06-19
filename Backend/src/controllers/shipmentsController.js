@@ -884,18 +884,23 @@ getAllShipments: async (req, res) => {
                 {
                     model: db.addresses,
                     as: 'delivery_address',
-                    attributes: ['city', 'state', 'country', 'phone']
+                    attributes: ['name', 'line1', 'line2', 'city', 'state', 'country', 'zip_code', 'phone']
                 },
                 {
                     model: db.addresses,
                     as: 'pickup_address',
-                    attributes: ['city', 'state', 'country']
+                    attributes: ['name', 'line1', 'line2', 'city', 'state', 'country', 'zip_code']
                 },
                 {
                     model: db.drivers,
                     as: 'driver',
-                    // attributes: ['driver_code', 'first_name', 'last_name', 'phone']
-                    attributes: ['driver_code', 'user_id'] 
+                    attributes: ['driver_code', 'user_id'],
+                    include: [{
+                        model: db.users,
+                        as: 'user',
+                        attributes: ['email'],
+                        required: false
+                    }]
                 },
                 {
                     model: db.agents,

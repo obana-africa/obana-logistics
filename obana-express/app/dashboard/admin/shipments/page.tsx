@@ -7,8 +7,50 @@ import { apiClient } from '@/lib/api';
 import { Search, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 
+interface ShipmentType {
+  id: number;
+  shipment_reference: string;
+  order_reference: string;
+  vendor_name: string;
+  carrier_name: string;
+  agent?: {
+    agent_code: string;
+    user?: {
+      email: string;
+    } | null;
+  } | null;
+  driver?: {
+    driver_code: string;
+    user?: {
+      email: string;
+    } | null;
+  } | null;
+  pickup_address?: {
+    name?: string | null;
+    line1?: string | null;
+    line2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
+    zip_code?: string | null;
+  } | null;
+  delivery_address?: {
+    name?: string | null;
+    line1?: string | null;
+    line2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
+    zip_code?: string | null;
+  } | null;
+  status: string;
+  createdAt: string;
+  currency: string;
+  shipping_fee: number;
+}
+
 export default function AdminShipmentsPage() {
-  const [shipments, setShipments] = useState<any[]>([]);
+  const [shipments, setShipments] = useState<ShipmentType[]>([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({
     page: 1,
@@ -24,6 +66,7 @@ export default function AdminShipmentsPage() {
 
   useEffect(() => {
     loadShipments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pagination.page, filters.status, filters.carrier_type]);
 
   const loadShipments = async () => {
@@ -58,6 +101,26 @@ export default function AdminShipmentsPage() {
     if (newPage >= 1 && newPage <= pagination.pages) {
       setPagination(prev => ({ ...prev, page: newPage }));
     }
+  };
+
+  const formatAddress = (address: {
+    line1?: string | null;
+    line2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
+    zip_code?: string | null;
+  } | null | undefined) => {
+    if (!address) return '';
+    const parts = [
+      address.line1,
+      address.line2,
+      address.city,
+      address.state,
+      address.country
+    ].filter(Boolean);
+    const mainAddress = parts.join(', ');
+    return address.zip_code ? `${mainAddress} - ${address.zip_code}` : mainAddress;
   };
 
   return (
@@ -128,12 +191,13 @@ export default function AdminShipmentsPage() {
                 <table className="w-full text-sm text-left">
                   <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3">Reference</th>
+                      <th className="px-6 py-3">Reference / Order ID</th>
                       <th className="px-6 py-3">Vendor</th>
-                      <th className="px-6 py-3">Agent</th>
-                      <th className="px-6 py-3">Route</th>
+                      <th className="px-6 py-3">Assigned Staff</th>
+                      <th className="px-6 py-3">Pickup Contact & Address</th>
+                      <th className="px-6 py-3">Destination Contact & Address</th>
                       <th className="px-6 py-3">Status</th>
-                      <th className="px-6 py-3">Date</th>
+                      <th className="px-6 py-3 text-nowrap">Date</th>
                       <th className="px-6 py-3">Amount</th>
                       <th className="px-6 py-3 text-right">Actions</th>
                     </tr>
@@ -142,28 +206,50 @@ export default function AdminShipmentsPage() {
                     {shipments.length > 0 ? (
                       shipments.map((shipment) => (
                         <tr key={shipment.id} className="bg-white border-b hover:bg-gray-50">
-                          <td className="px-6 py-4 font-medium text-gray-900">
-                            {shipment.shipment_reference}
-                            <div className="text-xs text-gray-500">{shipment.carrier_name}</div>
+                          <td className="px-6 py-4 font-medium text-gray-500">
+                            <div className="font-semibold text-blue-900">{shipment.shipment_reference}</div>
+                            <div className="text-xs text-gray-500 mt-1">Order Ref: <span className="font-semibold text-gray-700">{shipment.order_reference}</span></div>
+                            <div className="text-xs text-gray-400 mt-0.5">{shipment.carrier_name}</div>
                           </td>
                           <td className="px-6 py-4">
-                            {shipment.vendor_name}
+                            <div className="font-medium text-gray-800">{shipment.vendor_name}</div>
                           </td>
                           <td className="px-6 py-4">
-                            {shipment.agent ? (
+                            <div className="space-y-2">
                               <div>
-                                <div className="font-medium text-gray-900">{shipment.agent.agent_code}</div>
-                                <div className="text-xs text-gray-500">{shipment.agent.user?.email}</div>
+                                <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 block mb-0.5">Agent</span>
+                                {shipment.agent ? (
+                                  <div>
+                                    <div className="font-medium text-gray-900 text-xs">{shipment.agent.agent_code}</div>
+                                    <div className="text-xs text-gray-500 max-w-[140px] truncate" title={shipment.agent.user?.email}>{shipment.agent.user?.email}</div>
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400 text-xs italic">Unassigned</span>
+                                )}
                               </div>
-                            ) : (
-                              <span className="text-gray-400 text-xs">Unassigned</span>
-                            )}
+                              <div>
+                                <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 block mb-0.5">Driver</span>
+                                {shipment.driver ? (
+                                  <div>
+                                    <div className="font-medium text-gray-900 text-xs">{shipment.driver.driver_code}</div>
+                                    <div className="text-xs text-gray-500 max-w-[140px] truncate" title={shipment.driver.user?.email}>{shipment.driver.user?.email}</div>
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400 text-xs italic">Unassigned</span>
+                                )}
+                              </div>
+                            </div>
                           </td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col">
-                              <span>{shipment.pickup_address?.city}</span>
-                              <span className="text-gray-400 text-xs">↓</span>
-                              <span>{shipment.delivery_address?.city}</span>
+                          <td className="px-6 py-4 max-w-[220px]">
+                            <div className="font-medium text-gray-900 text-xs mb-1">{shipment.pickup_address?.name || 'N/A'}</div>
+                            <div className="text-xs text-gray-500 whitespace-normal break-words" title={formatAddress(shipment.pickup_address)}>
+                              {formatAddress(shipment.pickup_address) || <span className="text-gray-400 italic">No address details</span>}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 max-w-[220px]">
+                            <div className="font-medium text-gray-900 text-xs mb-1">{shipment.delivery_address?.name || 'N/A'}</div>
+                            <div className="text-xs text-gray-500 whitespace-normal break-words" title={formatAddress(shipment.delivery_address)}>
+                              {formatAddress(shipment.delivery_address) || <span className="text-gray-400 italic">No address details</span>}
                             </div>
                           </td>
                           <td className="px-6 py-4">
@@ -179,10 +265,10 @@ export default function AdminShipmentsPage() {
                               {shipment.status.replace('_', ' ')}
                             </Badge>
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 whitespace-nowrap">
                             {new Date(shipment.createdAt).toLocaleDateString()}
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 whitespace-nowrap">
                             {new Intl.NumberFormat('en-NG', { style: 'currency', currency: shipment.currency }).format(shipment.shipping_fee)}
                           </td>
                           <td className="px-6 py-4 text-right">
@@ -196,7 +282,7 @@ export default function AdminShipmentsPage() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                        <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
                           No shipments found matching your criteria
                         </td>
                       </tr>

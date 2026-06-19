@@ -126,12 +126,12 @@ function deliveryTimeRange(delivery_time) {
 
 const listTemplates = async (req, res) => {
     const templates = await RouteTemplates.findAll({
-        order: [['id', 'ASC']],
+        order: [['id', 'DESC']],
         include: [{
             model: db.drivers,
             as: 'preferred_driver',
             include: [{ model: db.users, as: 'user', attributes: ['email'] }]
-        }]
+        }] 
     })
     return res.status(200).send(utils.responseSuccess(templates))
 }
