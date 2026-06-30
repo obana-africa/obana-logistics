@@ -55,3 +55,4 @@ tajiri.pem
 
 # Sequelize (Uncomment if this folder contains build artifacts. Keep tracked if it has models/migrations)
 # sequelize/
+.env*

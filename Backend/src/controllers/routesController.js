@@ -149,15 +149,109 @@ const getTemplate = async (req, res) => {
     return res.status(200).send(utils.responseSuccess(template))
 }
 
+
+const util = require('../utility/utils.js');
+const querystring = require('node:querystring');
+
+
+
+
+const createZohoInventoryItem = async (accessToken, routeTemplate, driverEmail) => {
+    const {
+        origin_city,
+        destination_city,
+        transport_mode,
+        service_level,
+        weight_brackets,
+        metadata,
+        preferred_driver_id
+    } = routeTemplate;
+
+    const itemName = `${origin_city} → ${destination_city} (${transport_mode})`;
+    const skuString = `${itemName.replace(/\s+/g, '-').toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    const payload = {
+        name: itemName,
+        item_type: 'inventory',
+        sku: skuString,
+        custom_fields: [
+            {
+                label: 'origin',
+                value: `${origin_city}, ${metadata?.origin_state || ''}, ${metadata?.origin_country || ''}`
+            },
+            {
+                label: 'destination',
+                value: `${destination_city}, ${metadata?.destination_state || ''}, ${metadata?.destination_country || ''}`
+            },
+            {
+                label: 'Shipping Mode',
+                value: transport_mode
+            },
+            {
+                label: 'service_level',
+                value: service_level
+            },
+            {
+                label: 'weight_brackets',
+                value: JSON.stringify(weight_brackets)
+            },
+            {
+                label: 'Preferred Driver',
+                value: driverEmail || preferred_driver_id
+            }
+        ]
+    };
+
+    const response = await axios.post(
+        `${process.env.ZOHO_BASE_URL}items?organization_id=${process.env.ZOHO_ORG_ID}`,
+        payload,
+        {
+            headers: {
+                Authorization: `${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        }
+    );
+    console.log(response.data)
+    return response.data;
+};
+
 const createTemplate = async (req, res) => {
-    const body = req.body
+    const body = req.body;
     try {
-        const t = await RouteTemplates.create(body)
-        return res.status(201).send(utils.responseSuccess(t))
+        // 1. Create route template in DB
+        const t = await RouteTemplates.create(body);
+
+        // 2. Find driver email
+        let driverEmail = null;
+        if (body.preferred_driver_id) {
+            const driver = await Drivers.findOne({
+                where: { id: body.preferred_driver_id },
+                include: [{
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'email', 'phone', 'createdAt']
+                }]
+            });
+            driverEmail = driver?.user?.email || null;
+        }
+
+        console.log("DRIVER: ", driverEmail)
+
+        // 3. Get Zoho access token
+        const accessToken = await util.getZohoInventoryToken();
+        console.log(accessToken)
+
+        // 4. Create Zoho inventory item
+        await createZohoInventoryItem(accessToken, body, driverEmail);
+
+        return res.status(201).send(utils.responseSuccess(t));
     } catch (err) {
-        return res.status(422).send(utils.responseError(err.message))
+        // Still return success if Zoho fails but log it
+        console.error('Zoho inventory sync error:', err?.response?.data || err.message);
+        return res.status(422).send(utils.responseError(err.message));
     }
-}
+};
 
 const updateTemplate = async (req, res) => {
     const id = req.params.id

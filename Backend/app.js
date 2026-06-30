@@ -58,7 +58,7 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// Mount Google OAuth routes
+
 const authRoute = require("./src/routes/auth").router;
 app.use("/auth", authRoute);
 
@@ -102,7 +102,7 @@ app.use("/api-doc", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *        description: API is running
  */
 app.get("/", (req, res) => {
-	res.send("Welcome to Obana Project.");
+	res.send("Welcome to Obana Logistics.");
 });
 
 /**
@@ -124,5 +124,5 @@ app.use("/agents", agentRoutes);
 app.use("/locations", locations)
  
 server.listen(PORT, () => {
-	console.log(`Obana is running on port ${PORT}`);
+	console.log(`Obana Logistics is running on port ${PORT}`);
 });
