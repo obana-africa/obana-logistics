@@ -124,6 +124,7 @@ function deliveryTimeRange(delivery_time) {
     return `${startStr} - ${endStr}`;
 }
 
+
 const listTemplates = async (req, res) => {
     const templates = await RouteTemplates.findAll({
         order: [['id', 'DESC']],
@@ -599,11 +600,83 @@ const matchTemplate = async (req, res) => {
     }
 }
 
+// webhookController.js
+const util = require('../utility/utils.js');
+
+const createTemplateFromZoho = async (req, res) => {
+    try {
+        const item = req.body?.item || req.body; 
+        const hash = item.custom_field_hash || {};
+
+        // Loop guard: ignore items app created via API
+        if (item.source === 'api') {
+            return res.status(200).send(utils.responseSuccess({ skipped: true, reason: 'source=api' }));
+        }
+
+        // Reverse-parse origin/destination strings: "City, State, Country"
+        const parseLocation = (str = '') => {
+            const [city, state, country] = str.split(',').map(s => s?.trim());
+            return { city, state, country };
+        };
+
+        const origin = parseLocation(hash.cf_origin);
+        const destination = parseLocation(hash.cf_destination);
+
+        let weight_brackets = [];
+        try {
+            weight_brackets = JSON.parse(hash.cf_weight_brackets || '[]');
+        } catch (e) {
+            weight_brackets = [];
+        }
+
+        // Reverse lookup: driver by email instead of ID
+        let preferred_driver_id = null;
+        const driverEmailOrId = hash.cf_preferred_driver;
+        if (driverEmailOrId) {
+            const driver = await Drivers.findOne({
+                include: [{
+                    model: User,
+                    as: 'user',
+                    where: { email: driverEmailOrId },
+                    attributes: ['id', 'email']
+                }]
+            });
+            preferred_driver_id = driver?.id || null;
+        }
+
+        const body = {
+            origin_city: origin.city,
+            destination_city: destination.city,
+            transport_mode: hash.cf_shipping_mode,
+            service_level: hash.cf_service_level,
+            weight_brackets,
+            metadata: {
+                origin_state: origin.state,
+                origin_country: origin.country,
+                destination_state: destination.state,
+                destination_country: destination.country
+            },
+            preferred_driver_id,
+            source: 'zoho',          // <-- flag so createTemplate knows to SKIP re-pushing to Zoho
+            zoho_item_id: item.item_id
+        };
+
+        const t = await RouteTemplates.create(body);
+        return res.status(201).send(utils.responseSuccess(t));
+    } catch (err) {
+        console.error('Zoho webhook sync error:', err.message);
+        return res.status(422).send(utils.responseError(err.message));
+    }
+};
+
+module.exports = { createTemplateFromZoho };
+
 module.exports = {
     listTemplates,
     getTemplate,
     createTemplate,
     updateTemplate,
     deleteTemplate,
+    createTemplateFromZoho,
     matchTemplate
 }

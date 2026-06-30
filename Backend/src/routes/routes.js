@@ -11,5 +11,6 @@ router.delete('/:id', auth.authenticateToken, auth.verifyRole(['admin']), contro
 
 // Matching endpoint
 router.post('/match', auth.authenticateToken, controller.matchTemplate)
+router.post('/zohoitem', controller.createTemplateFromZoho)
 
 module.exports = router
