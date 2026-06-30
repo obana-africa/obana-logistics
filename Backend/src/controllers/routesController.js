@@ -4,6 +4,9 @@ const axios = require('axios')
 const { getCode } = require('country-list')
 const lookup = require('country-code-lookup')
 const { parsePhoneNumber } = require('libphonenumber-js');
+const util = require('../utility/utils.js');
+const querystring = require('node:querystring');
+
 
 require('dotenv').config()
 
@@ -151,8 +154,6 @@ const getTemplate = async (req, res) => {
 }
 
 
-const util = require('../utility/utils.js');
-const querystring = require('node:querystring');
 
 
 
@@ -601,7 +602,7 @@ const matchTemplate = async (req, res) => {
 }
 
 // webhookController.js
-const util = require('../utility/utils.js');
+
 
 const createTemplateFromZoho = async (req, res) => {
     try {
