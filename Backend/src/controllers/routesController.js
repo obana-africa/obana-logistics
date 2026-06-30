@@ -227,7 +227,7 @@ const createTemplate = async (req, res) => {
         // 2. Find driver email
         let driverEmail = null;
         if (body.preferred_driver_id) {
-            const driver = await Drivers.findOne({
+            const driver = await  db.drivers.findOne({
                 where: { id: body.preferred_driver_id },
                 include: [{
                     model: User,
@@ -634,7 +634,7 @@ const createTemplateFromZoho = async (req, res) => {
         let preferred_driver_id = null;
         const driverEmailOrId = hash.cf_preferred_driver;
         if (driverEmailOrId) {
-            const driver = await Drivers.findOne({
+            const driver = await  db.drivers.findOne({
                 include: [{
                     model: User,
                     as: 'user',
