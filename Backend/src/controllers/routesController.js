@@ -648,7 +648,7 @@ const createTemplateFromZoho = async (req, res) => {
         const body = {
             origin_city: origin.city,
             destination_city: destination.city,
-            transport_mode: hash.cf_shipping_mode,
+            transport_mode: hash.cf_transport_mode,
             service_level: hash.cf_service_level,
             weight_brackets,
             metadata: {
