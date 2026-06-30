@@ -606,50 +606,62 @@ const matchTemplate = async (req, res) => {
 
 const createTemplateFromZoho = async (req, res) => {
     try {
-        const item = req.body?.item || req.body; 
-        const hash = item.custom_field_hash || {};
+        const item = req.body?.item || req.body;
 
-        // Loop guard: ignore items app created via API
+        // Loop guard: ignore items your app created via API
         if (item.source === 'api') {
             return res.status(200).send(utils.responseSuccess({ skipped: true, reason: 'source=api' }));
         }
 
-        // Reverse-parse origin/destination strings: "City, State, Country"
+        // Map by LABEL, not api_name — Zoho's api_name is frozen at field creation
+        // and does not update when you rename the field's display label.
+        const fieldsByLabel = {};
+        (item.custom_fields || []).forEach(f => {
+            fieldsByLabel[f.label] = f.value;
+        });
+
         const parseLocation = (str = '') => {
-            const [city, state, country] = str.split(',').map(s => s?.trim());
-            return { city, state, country };
+            const parts = (str || '').split(',').map(s => s?.trim() || '');
+            return { city: parts[0] || '', state: parts[1] || '', country: parts[2] || '' };
         };
 
-        const origin = parseLocation(hash.cf_origin);
-        const destination = parseLocation(hash.cf_destination);
+        const origin = parseLocation(fieldsByLabel['origin']);
+        const destination = parseLocation(fieldsByLabel['destination']);
 
         let weight_brackets = [];
-        try {
-            weight_brackets = JSON.parse(hash.cf_weight_brackets || '[]');
-        } catch (e) {
-            weight_brackets = [];
+        const rawBrackets = fieldsByLabel['weight_brackets'];
+        if (rawBrackets) {
+            try {
+                weight_brackets = JSON.parse(rawBrackets);
+            } catch (e) {
+                console.error('weight_brackets parse failed:', rawBrackets);
+                weight_brackets = [];
+            }
         }
 
-        // Reverse lookup: driver by email instead of ID
+        // Driver lookup by email (value of "Preferred Driver" field)
         let preferred_driver_id = null;
-        const driverEmailOrId = hash.cf_preferred_driver;
-        if (driverEmailOrId) {
-            const driver = await  db.drivers.findOne({
-                include: [{
-                    model: db.users,
-                    as: 'user',
-                    where: { email: driverEmailOrId },
-                    attributes: ['id', 'email']
-                }]
-            });
+        const driverFieldValue = fieldsByLabel['Preferred Driver'];
+        if (driverFieldValue) {
+            const isEmail = driverFieldValue.includes('@');
+            const driver = isEmail
+                ? await db.drivers.findOne({
+                    include: [{
+                        model: db.users,
+                        as: 'user',
+                        where: { email: driverFieldValue },
+                        attributes: ['id', 'email']
+                    }]
+                  })
+                : await db.drivers.findOne({ where: { id: driverFieldValue } });
             preferred_driver_id = driver?.id || null;
         }
 
         const body = {
             origin_city: origin.city,
             destination_city: destination.city,
-            transport_mode: hash.cf_transport_mode,
-            service_level: hash.cf_service_level,
+            transport_mode: fieldsByLabel['Shipping Mode'],
+            service_level: fieldsByLabel['service_level'],
             weight_brackets,
             metadata: {
                 origin_state: origin.state,
@@ -658,19 +670,18 @@ const createTemplateFromZoho = async (req, res) => {
                 destination_country: destination.country
             },
             preferred_driver_id,
-            source: 'zoho',          // <-- flag so createTemplate knows to SKIP re-pushing to Zoho
+            source: 'zoho',
             zoho_item_id: item.item_id
         };
 
         const t = await RouteTemplates.create(body);
         return res.status(201).send(utils.responseSuccess(t));
     } catch (err) {
-        console.error('Zoho webhook sync error:', err.message);
+        console.error('Zoho webhook sync error:', err);
         return res.status(422).send(utils.responseError(err.message));
     }
 };
 
-module.exports = { createTemplateFromZoho };
 
 module.exports = {
     listTemplates,
