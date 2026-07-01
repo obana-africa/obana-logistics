@@ -158,6 +158,14 @@ const getTemplate = async (req, res) => {
 
 
 
+const sanitizeSku = (str) =>
+    str.normalize('NFKD')
+       .replace(/[\u0300-\u036f]/g, '')   // strip diacritics
+       .replace(/[^a-zA-Z0-9\s-]/g, '')   // strip special chars (→, parentheses, etc.)
+       .trim()
+       .replace(/\s+/g, '-')
+       .toUpperCase();
+
 const createZohoInventoryItem = async (accessToken, routeTemplate, driverEmail) => {
     const {
         origin_city,
@@ -170,54 +178,33 @@ const createZohoInventoryItem = async (accessToken, routeTemplate, driverEmail) 
     } = routeTemplate;
 
     const itemName = `${origin_city} → ${destination_city} (${transport_mode})`;
-    const skuString = `${itemName.replace(/\s+/g, '-').toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const skuString = `${sanitizeSku(itemName)}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    const safe = (val) => (val === null || val === undefined ? '' : String(val));
 
     const payload = {
         name: itemName,
-        item_type: 'inventory',
+        item_type: 'sales_and_purchases',  // non-tracked, appears in invoices & vendor bills
+        product_type: 'service',            // intangible — no stock/inventory metrics
         sku: skuString,
         custom_fields: [
-            {
-                label: 'origin',
-                value: `${origin_city}, ${metadata?.origin_state || ''}, ${metadata?.origin_country || ''}`
-            },
-            {
-                label: 'destination',
-                value: `${destination_city}, ${metadata?.destination_state || ''}, ${metadata?.destination_country || ''}`
-            },
-            {
-                label: 'Shipping Mode',
-                value: transport_mode
-            },
-            {
-                label: 'service_level',
-                value: service_level
-            },
-            {
-                label: 'weight_brackets',
-                value: JSON.stringify(weight_brackets)
-            },
-            {
-                label: 'Preferred Driver',
-                value: driverEmail || preferred_driver_id
-            }
+            { label: 'origin',           value: `${safe(origin_city)}, ${safe(metadata?.origin_state)}, ${safe(metadata?.origin_country)}` },
+            { label: 'destination',      value: `${safe(destination_city)}, ${safe(metadata?.destination_state)}, ${safe(metadata?.destination_country)}` },
+            { label: 'Shipping Mode',    value: safe(transport_mode) },
+            { label: 'service_level',    value: safe(service_level) },
+            { label: 'weight_brackets',  value: JSON.stringify(weight_brackets) },
+            { label: 'Preferred Driver', value: driverEmail || safe(preferred_driver_id) }
         ]
     };
 
     const response = await axios.post(
         `${process.env.ZOHO_BASE_URL}items?organization_id=${process.env.ZOHO_ORG_ID}`,
         payload,
-        {
-            headers: {
-                Authorization: `${accessToken}`,
-                'Content-Type': 'application/json'
-            }
-        }
+        { headers: { Authorization: accessToken, 'Content-Type': 'application/json' } }
     );
-    console.log(response.data)
+
     return response.data;
 };
-
 const createTemplate = async (req, res) => {
     const body = req.body;
     try {
