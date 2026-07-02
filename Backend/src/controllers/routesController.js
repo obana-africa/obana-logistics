@@ -177,15 +177,18 @@ const createZohoInventoryItem = async (accessToken, routeTemplate, driverEmail) 
         preferred_driver_id
     } = routeTemplate;
 
-    const itemName = `${origin_city} → ${destination_city} (${transport_mode})`;
-    const skuString = `${sanitizeSku(itemName)}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    // Route service items are prefixed "Ob-Log-" so downstream systems (e.g. Tajiri's
+    // manual-salesorder flow) can reliably distinguish a route item from a product item.
+    const routeLabel = `${origin_city} → ${destination_city} (${transport_mode})`;
+    const itemName = `Ob-Log-${routeLabel}`;
+    const skuString = `Ob-Log-${sanitizeSku(routeLabel)}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
     const safe = (val) => (val === null || val === undefined ? '' : String(val));
 
     const payload = {
         name: itemName,
-        item_type: 'sales_and_purchases',  // non-tracked, appears in invoices & vendor bills
-        product_type: 'service',            // intangible — no stock/inventory metrics
+        item_type: 'sales_and_purchases',  
+        product_type: 'service',           
         sku: skuString,
         custom_fields: [
             { label: 'origin',           value: `${safe(origin_city)}, ${safe(metadata?.origin_state)}, ${safe(metadata?.origin_country)}` },
@@ -281,18 +284,23 @@ const buildTemplateMatch = (routeTemplates, origin_state, origin_country, destin
     if (!origin_state || !origin_country || !destination_state || !destination_country || !transport_mode || !service_level || typeof weight === 'undefined') return null
 
     const nOriginState = normalizeText(origin_state);
-    const nOriginCountry = normalizeText(origin_country);
+    // const nOriginCountry = normalizeText(origin_country);
+    const nOriginCountry = normalizeText(formatCountryCode(origin_country));
     const nDestState = normalizeText(destination_state);
-    const nDestCountry = normalizeText(destination_country);
+    // const nDestCountry = normalizeText(destination_country);
+    const nDestCountry = normalizeText(formatCountryCode(destination_country));
     const nMode = normalizeText(transport_mode);
     const nLevel = normalizeText(service_level);
 
     // 1. Find the first matching template based on country, state, and service parameters
     const template = routeTemplates.find(t =>
         normalizeText(t.metadata?.origin_state) === nOriginState &&
-        normalizeText(t.metadata?.origin_country) === nOriginCountry &&
+        // normalizeText(t.metadata?.origin_country) === nOriginCountry &&
+        // normalizeText(t.metadata?.destination_state) === nDestState &&
+        // normalizeText(t.metadata?.destination_country) === nDestCountry &&
+        normalizeText(formatCountryCode(t.metadata?.origin_country)) === nOriginCountry &&
         normalizeText(t.metadata?.destination_state) === nDestState &&
-        normalizeText(t.metadata?.destination_country) === nDestCountry &&
+        normalizeText(formatCountryCode(t.metadata?.destination_country)) === nDestCountry &&
         normalizeText(t.transport_mode) === nMode &&
         normalizeText(t.service_level) === nLevel
     );
