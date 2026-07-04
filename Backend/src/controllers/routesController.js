@@ -310,33 +310,28 @@ const buildTemplateMatch = (routeTemplates, origin_state, origin_country, destin
     const brackets = template.weight_brackets || [];
     if (brackets.length === 0) return null;
 
-    // 2. Try to find an exact weight bracket match
-    for (const bracket of brackets) {
-        const min = Number(bracket.min || 0);
-        const max = Number(bracket.max || Number.POSITIVE_INFINITY);
-        if (weight >= min && weight <= max) {
-            return { template, match: { ...bracket } };
-        }
+    // Price by weight, keyed on the bracket's MAX weight:
+    //   totalWeight <= max  ->  price = the route price set on the bracket
+    //   totalWeight >  max  ->  price = route price + (totalWeight - max) * route price / max
+    // With multiple brackets, use the lowest-max bracket that still covers the weight;
+    // if the weight exceeds every bracket, use the highest-max bracket (overweight case).
+    const sortedByMax = [...brackets].sort((a, b) => Number(a.max || 0) - Number(b.max || 0));
+    let bracket = sortedByMax.find((b) => weight <= Number(b.max || Number.POSITIVE_INFINITY));
+    const isOverweight = !bracket;
+    if (!bracket) bracket = sortedByMax[sortedByMax.length - 1];
+
+    const maxWeight = Number(bracket.max || 0);
+    const basePrice = Number(bracket.price || 0);
+
+    const match = { ...bracket };
+    if (isOverweight && maxWeight > 0) {
+        match.price = basePrice + ((weight - maxWeight) * basePrice) / maxWeight;
+        match.is_overweight = true;
+    } else {
+        match.price = basePrice;
     }
 
-    // 3. If weight exceeds all brackets, use proportional pricing based on the highest bracket
-    const highestBracket = brackets.reduce((prev, curr) =>
-        (Number(curr.max || 0) > Number(prev.max || 0)) ? curr : prev
-        , brackets[0]);
-
-    const maxWeight = Number(highestBracket?.max || 0);
-    if (highestBracket && weight > maxWeight && maxWeight > 0) {
-        const basePrice = Number(highestBracket.price || 0);
-        const additionalWeight = weight - maxWeight;
-        const additionalPrice = (additionalWeight * basePrice) / maxWeight;
-
-        const adjustedBracket = { ...highestBracket };
-        adjustedBracket.price = basePrice + additionalPrice;
-        adjustedBracket.is_overweight = true;
-        return { template, match: adjustedBracket };
-    }
-
-    return null;
+    return { template, match };
 };
 
 const normalizeItem = (item) => ({
