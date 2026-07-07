@@ -914,6 +914,68 @@ const buildOrderResponse = (zohoOrder, shipmentResults, order) => {
     return response;
 };
 
+// ==================== MANUAL ZOHO-UI ROUTE-ITEM FLOW (Zoho <-> logistics, no Tajiri) ====================
+
+// Route service items are named/SKU'd with the "Ob-Log-" prefix (set by createTemplate).
+const isRouteLineItem = (item) => {
+    if (!item) return false
+    const prefix = 'ob-log-'
+    const name = String(item.name || '').trim().toLowerCase()
+    const sku = String(item.sku || '').trim().toLowerCase()
+    return name.startsWith(prefix) || sku.startsWith(prefix)
+}
+
+// Read a route item's custom field by LABEL (durable — Zoho freezes api_name at creation),
+// with custom_field_hash fallback.
+const getRouteItemCf = (item, label, hashKey) => {
+    const arrays = [item.item_custom_fields, item.custom_fields].filter(Array.isArray)
+    for (const arr of arrays) {
+        const f = arr.find((x) => x.label === label)
+        if (f && f.value !== undefined && f.value !== null && f.value !== '') return f.value
+    }
+    const hash = item.custom_field_hash || {}
+    if (hashKey && hash[hashKey] !== undefined && hash[hashKey] !== null && hash[hashKey] !== '') {
+        return hash[hashKey]
+    }
+    return null
+}
+
+// Parse a "City, State, Country" route field into an address with Obana fallbacks.
+const buildRouteAddress = (locationStr, overrides = {}) => {
+    const parts = String(locationStr || '').split(',').map((s) => s.trim())
+    return {
+        contact_name: overrides.contact_name || 'Obana Africa',
+        phone: overrides.phone || '+2348090335245',
+        email: overrides.email || 'obana.africa@gmail.com',
+        line1: overrides.line1 || '77 Opebi Road',
+        line2: overrides.line2 || '',
+        city: parts[0] || 'Ikeja',
+        state: parts[1] || 'Lagos',
+        country: parts[2] || 'Nigeria',
+        zip_code: overrides.zip_code || '100001'
+    }
+}
+
+// Price by weight, keyed on the bracket's MAX weight (same formula as buildTemplateMatch):
+//   totalWeight <= max -> route price; totalWeight > max -> price + (weight - max) * price / max.
+const selectRouteBracket = (brackets, weight) => {
+    if (!Array.isArray(brackets) || brackets.length === 0) return null
+    const sortedByMax = [...brackets].sort((a, b) => Number(a.max || 0) - Number(b.max || 0))
+    let bracket = sortedByMax.find((b) => weight <= Number(b.max || Number.POSITIVE_INFINITY))
+    const isOverweight = !bracket
+    if (!bracket) bracket = sortedByMax[sortedByMax.length - 1]
+    const maxWeight = Number(bracket.max || 0)
+    const basePrice = Number(bracket.price || 0)
+    const result = { ...bracket }
+    if (isOverweight && maxWeight > 0) {
+        result.price = basePrice + ((weight - maxWeight) * basePrice) / maxWeight
+        result.is_overweight = true
+    } else {
+        result.price = basePrice
+    }
+    return result
+}
+
 class WeebHooksHelper {
     log
     constructor(endpoint, req, res, makeRequest) {
@@ -1422,6 +1484,267 @@ class WeebHooksHelper {
         return this.res.status(201).send()
     }
 
+
+    /**
+     * Webhook entry for a manually-created Zoho salesorder carrying an "Ob-Log-" route item.
+     * Reached via POST /requests/zohoSalesOrder. Handles the whole flow Zoho <-> logistics with
+     * no Tajiri involvement: native shipment + Zoho package + Zoho shipment order + salesorder update.
+     */
+    zohoSalesOrder = async () => {
+        const request = this.req.body
+        const salesorder = request?.salesorder
+
+        if (!salesorder || !Array.isArray(salesorder.line_items)) {
+            return this.res.status(200).send(utils.responseSuccess({ skipped: true, reason: 'not a salesorder payload' }))
+        }
+
+        // Guard: act only on manual route orders. Shop/Tajiri orders carry cf_meta_data and no route item.
+        const cfHash = salesorder.custom_field_hash || {}
+        const metaRaw = cfHash.cf_meta_data
+        const hasMetaData =
+            metaRaw !== undefined && metaRaw !== null &&
+            String(metaRaw).trim() !== '' && String(metaRaw).trim() !== '{}'
+        const routeLineItem = salesorder.line_items.find((li) => isRouteLineItem(li))
+
+        if (!routeLineItem || hasMetaData) {
+            return this.res.status(200).send(utils.responseSuccess({ skipped: true, reason: 'not a manual route order' }))
+        }
+
+        try {
+            const result = await this.handleManualRouteOrder(salesorder)
+            this.log.response = JSON.stringify(result)
+            await this.log.save()
+            return this.res.status(201).send(utils.responseSuccess(result))
+        } catch (error) {
+            console.error('[zohoSalesOrder] failed:', error?.response?.data || error.message)
+            try {
+                await db.webhook_logs.create({
+                    event_type: 'manual_route_order_failed',
+                    order_id: salesorder.salesorder_id,
+                    payload: JSON.stringify({ error: error?.response?.data || error.message, order_ref: salesorder.salesorder_number }),
+                    processed: false,
+                    error_message: error.message,
+                    source: 'zoho_webhook'
+                })
+            } catch (_) {}
+            // 200 so Zoho does not enter a retry storm on a business-logic failure.
+            return this.res.status(200).send(utils.responseError(error.message))
+        }
+    }
+
+    handleManualRouteOrder = async (salesorder) => {
+        const salesOrderId = salesorder.salesorder_id
+        const orderRef = salesorder.salesorder_number
+
+        // Idempotency (order_reference == salesorder number).
+        const existing = await db.shippings.findOne({ where: { order_reference: orderRef } })
+        if (existing) {
+            console.log(`[manualRoute] shipping already exists for ${orderRef} — skipping`)
+            return { shipment_reference: existing.shipment_reference, skipped: true }
+        }
+
+        const routeLineItem = salesorder.line_items.find((li) => isRouteLineItem(li))
+
+        // --- Route details from the route line item ---
+        const originStr = getRouteItemCf(routeLineItem, 'origin', 'cf_origin_city')
+        const destinationStr = getRouteItemCf(routeLineItem, 'destination', 'cf_destination_city')
+        let transportMode = String(getRouteItemCf(routeLineItem, 'Shipping Mode', 'cf_transport_mode') || 'road').toLowerCase()
+        if (!['road', 'air', 'sea'].includes(transportMode)) transportMode = 'road'
+        let serviceLevel = getRouteItemCf(routeLineItem, 'service_level', 'cf_service_level') || 'Standard'
+        if (!['Express', 'Standard', 'Economy'].includes(serviceLevel)) serviceLevel = 'Standard'
+        const driverEmail = getRouteItemCf(routeLineItem, 'Preferred Driver', 'cf_origin_state')
+
+        let weightBrackets = []
+        const rawBrackets = getRouteItemCf(routeLineItem, 'weight_brackets', 'cf_weight_brackets')
+        if (rawBrackets) {
+            try { weightBrackets = typeof rawBrackets === 'string' ? JSON.parse(rawBrackets) : rawBrackets }
+            catch (e) { console.warn('[manualRoute] weight_brackets parse failed:', e.message) }
+        }
+
+        // Pickup = route origin; delivery = route destination (contact from salesorder shipping address).
+        const pickupAddress = buildRouteAddress(originStr)
+        const deliveryFallback = buildRouteAddress(destinationStr)
+        const shipTo = salesorder.shipping_address || {}
+        const custName = String(salesorder.customer_name || '').trim().split(' ')
+        const deliveryAddress = {
+            first_name: shipTo.first_name || custName[0] || 'Obana',
+            last_name: shipTo.last_name || (custName.length > 1 ? custName.slice(1).join(' ') : 'Africa'),
+            email: salesorder.contact_persons_associated?.[0]?.contact_person_email || deliveryFallback.email,
+            phone: salesorder.contact_person_details?.[0]?.phone || deliveryFallback.phone,
+            line1: shipTo.address || deliveryFallback.line1,
+            line2: shipTo.street2 || '',
+            city: deliveryFallback.city,
+            state: deliveryFallback.state,
+            country: deliveryFallback.country,
+            zip: shipTo.zip || deliveryFallback.zip_code
+        }
+
+        // --- Product items (exclude route item). Weight from package_details.weight; qty scales total. ---
+        const productLineItems = salesorder.line_items.filter((li) => !isRouteLineItem(li))
+        const items = []
+        let totalWeight = 0
+        for (const li of productLineItems) {
+            const quantity = parseInt(li.quantity) || 1
+            const unitWeight = parseFloat(li.package_details?.weight) || 0
+            const rate = parseFloat(li.rate) || 0
+            const totalPrice = parseFloat(li.item_total) || rate * quantity
+            totalWeight += unitWeight * quantity
+            items.push({
+                name: li.name || 'Product',
+                description: li.description || li.name || 'Product',
+                currency: 'NGN',
+                value: totalPrice,
+                weight: unitWeight,
+                quantity,
+                item_id: li.item_id || li.variant_id || li.line_item_id,
+                price: rate
+            })
+        }
+        if (items.length === 0) throw new Error('Route item present but no product line items to ship')
+
+        // --- Pricing from the route item's weight brackets ---
+        const bracket = selectRouteBracket(weightBrackets, totalWeight) || {}
+        const shippingPrice = Number(bracket.price || 0)
+        const eta = bracket.eta || 'To be determined'
+
+        // --- Owner + preferred driver ---
+        const systemUserId = await this.resolveSystemUserId()
+        if (!systemUserId) throw new Error('System shipment user (shipment@obana.africa) not found in logistics DB')
+        const preferredDriverId = driverEmail ? await this.resolveDriverIdByEmail(driverEmail) : null
+
+        // 1) Native logistics shipment (reuse createShipment in-process)
+        const shipmentPayload = {
+            delivery_address: deliveryAddress,
+            pickup_address: pickupAddress,
+            items,
+            transport_mode: transportMode,
+            service_level: serviceLevel,
+            currency: { symbol: 'NGN' },
+            shipping_fee: shippingPrice,
+            carrier_slug: 'obana',
+            order_id: orderRef,
+            vendor_name: `${pickupAddress.city} Vendor`,
+            preferred_driver_id: preferredDriverId,
+            notes: `Manual Zoho order ${orderRef}${driverEmail ? ` | preferred driver: ${driverEmail}` : ''}`,
+            dispatcher: { carrier_name: 'Obana Logistics', carrier_slug: 'obana', delivery_time: eta }
+        }
+        const created = await this.createShipmentInProcess(shipmentPayload, systemUserId)
+        const shipmentRef = created?.shipment_reference
+        if (!shipmentRef) throw new Error(`Shipment creation failed: ${created?.message || 'unknown'}`)
+        const trackingUrl = created?.tracking_url || null
+
+        // 2) Zoho package + shipment order + salesorder status (direct Zoho Inventory API)
+        let zohoShipmentId = null
+        try {
+            const token = await require('../utility/utils.js').getZohoInventoryToken()
+            const pkg = await this.createZohoPackage(token, salesorder, productLineItems)
+            const packageId = pkg?.package?.package_id
+            if (packageId) {
+                const zshp = await this.createZohoShipment(token, salesOrderId, packageId, shipmentRef, shippingPrice)
+                zohoShipmentId = zshp?.shipmentorder?.shipment_id || null
+                if (zohoShipmentId) {
+                    await db.shippings.update(
+                        { external_shipment_id: zohoShipmentId },
+                        { where: { shipment_reference: shipmentRef } }
+                    )
+                }
+            }
+            await this.updateZohoSalesOrderFields(token, salesOrderId, {
+                'Shipment Status': 'shipments_created',
+                'Shipment Id': shipmentRef,
+                'Tracking URL': trackingUrl || '',
+                'Carrier Name': 'Obana Logistics'
+            })
+        } catch (zErr) {
+            console.error('[manualRoute] Zoho package/shipment/update failed (non-fatal):', zErr?.response?.data || zErr.message)
+        }
+
+        console.log(`[manualRoute] Shipment ${shipmentRef} (Zoho shipment ${zohoShipmentId}) created for order ${orderRef}`)
+        return { shipment_reference: shipmentRef, zoho_shipment_id: zohoShipmentId, price: shippingPrice, total_weight: totalWeight }
+    }
+
+    // Resolve the single owning user for ecosystem shipments (shipment@obana.africa).
+    resolveSystemUserId = async () => {
+        try {
+            const email = process.env.LOGISTICS_SYSTEM_EMAIL || 'shipment@obana.africa'
+            const user = await db.users.findOne({ where: { email } })
+            return user?.id || null
+        } catch (e) {
+            console.warn('[manualRoute] system user resolve failed:', e.message)
+            return null
+        }
+    }
+
+    resolveDriverIdByEmail = async (email) => {
+        try {
+            const driver = await db.drivers.findOne({
+                include: [{ model: db.users, as: 'user', where: { email }, attributes: ['id', 'email'] }]
+            })
+            return driver?.id || null
+        } catch (e) {
+            console.warn('[manualRoute] driver resolve failed:', e.message)
+            return null
+        }
+    }
+
+    // Reuse the full createShipment controller in-process (addresses, items, tracking, emails, driver).
+    createShipmentInProcess = async (payload, ownerUserId) => {
+        const shipmentController = require('../controllers/shipmentsController')
+        const captured = {}
+        const fakeReq = { body: payload, user: ownerUserId ? { id: ownerUserId } : null, tenant: null, params: {}, query: {} }
+        const fakeRes = {
+            status(code) { captured.code = code; return this },
+            json(body) { captured.body = body; return this },
+            send(body) { captured.body = body; return this }
+        }
+        await shipmentController.createShipment(fakeReq, fakeRes)
+        if (captured.code !== 201) {
+            const msg = captured.body?.message || JSON.stringify(captured.body || {})
+            throw new Error(`createShipment returned ${captured.code}: ${msg}`)
+        }
+        return captured.body?.data || {}
+    }
+
+    // Direct Zoho Inventory API: create a package for the salesorder's product line items.
+    createZohoPackage = async (token, salesorder, productLineItems) => {
+        const axios = require('axios')
+        const url = `${process.env.ZOHO_BASE_URL}packages?salesorder_id=${salesorder.salesorder_id}&organization_id=${process.env.ZOHO_ORG_ID}`
+        const body = {
+            package_number: `OBN-PA-${crypto.randomBytes(4).toString('hex')}`,
+            date: new Date().toISOString().split('T')[0],
+            line_items: (productLineItems || []).map((li) => ({ so_line_item_id: li.line_item_id, quantity: li.quantity })),
+            notes: 'obana package for order ' + salesorder.salesorder_number
+        }
+        const resp = await axios.post(url, body, { headers: { Authorization: token, 'Content-Type': 'application/json' } })
+        if (resp.data?.code !== 0) throw new Error(`Zoho package failed: ${resp.data?.message}`)
+        return resp.data
+    }
+
+    // Direct Zoho Inventory API: create a shipment order for the package.
+    createZohoShipment = async (token, salesOrderId, packageId, trackingNumber, shippingCharge) => {
+        const axios = require('axios')
+        const url = `${process.env.ZOHO_BASE_URL}shipmentorders?salesorder_id=${salesOrderId}&package_ids=${packageId}&organization_id=${process.env.ZOHO_ORG_ID}`
+        const body = {
+            shipment_number: `OBN-SHIP-${crypto.randomBytes(4).toString('hex')}`,
+            date: new Date().toISOString().split('T')[0],
+            delivery_method: 'Obana Logistics',
+            tracking_number: trackingNumber,
+            shipping_charge: shippingCharge,
+            notes: 'obana africa shipment for order'
+        }
+        const resp = await axios.post(url, body, { headers: { Authorization: token, 'Content-Type': 'application/json' } })
+        if (resp.data?.code !== 0) throw new Error(`Zoho shipment failed: ${resp.data?.message}`)
+        return resp.data
+    }
+
+    // Direct Zoho Inventory API: set salesorder custom fields after shipment creation.
+    updateZohoSalesOrderFields = async (token, salesOrderId, labelValueMap) => {
+        const axios = require('axios')
+        const url = `${process.env.ZOHO_BASE_URL}salesorders/${salesOrderId}?organization_id=${process.env.ZOHO_ORG_ID}`
+        const custom_fields = Object.entries(labelValueMap).map(([label, value]) => ({ label, value }))
+        const resp = await axios.put(url, { custom_fields }, { headers: { Authorization: token, 'Content-Type': 'application/json' } })
+        return resp.data
+    }
 
     payagent = async () => {
         const request = this.req.body
