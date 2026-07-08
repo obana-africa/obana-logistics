@@ -914,7 +914,7 @@ const buildOrderResponse = (zohoOrder, shipmentResults, order) => {
     return response;
 };
 
-// ==================== MANUAL ZOHO-UI ROUTE-ITEM FLOW (Zoho <-> logistics, no Tajiri) ====================
+
 
 // Route service items are named/SKU'd with the "Ob-Log-" prefix (set by createTemplate).
 const isRouteLineItem = (item) => {
@@ -1514,6 +1514,7 @@ class WeebHooksHelper {
             const result = await this.handleManualRouteOrder(salesorder)
             this.log.response = JSON.stringify(result)
             await this.log.save()
+            console.log(utils.responseSuccess(result))
             return this.res.status(201).send(utils.responseSuccess(result))
         } catch (error) {
             console.error('[zohoSalesOrder] failed:', error?.response?.data || error.message)
