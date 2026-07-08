@@ -935,6 +935,7 @@ const getRouteItemCf = (item, label, hashKey) => {
     }
     const hash = item.custom_field_hash || {}
     if (hashKey && hash[hashKey] !== undefined && hash[hashKey] !== null && hash[hashKey] !== '') {
+        console.log(hash[hashKey])
         return hash[hashKey]
     }
     return null
@@ -1546,21 +1547,29 @@ class WeebHooksHelper {
 
         const routeLineItem = salesorder.line_items.find((li) => isRouteLineItem(li))
 
-        // --- Route details from the route line item ---
-        const originStr = getRouteItemCf(routeLineItem, 'origin', 'cf_origin_city')
-        const destinationStr = getRouteItemCf(routeLineItem, 'destination', 'cf_destination_city')
-        let transportMode = String(getRouteItemCf(routeLineItem, 'Shipping Mode', 'cf_transport_mode') || 'road').toLowerCase()
+        // Salesorder line items DO NOT carry the route custom fields or product weights — those live
+        // on the ITEM records. Fetch the full items from Zoho Inventory (itemdetails) and read there.
+        const token = await require('../utility/utils.js').getZohoInventoryToken()
+        const allItemIds = salesorder.line_items.map((li) => li.item_id || li.variant_id).filter(Boolean)
+        const itemsMap = await this.fetchZohoItems(token, allItemIds)
+        const routeItem = itemsMap[routeLineItem.item_id] || itemsMap[routeLineItem.variant_id] || routeLineItem
+
+        // --- Route details from the route ITEM (custom fields read by label) ---
+        const originStr = getRouteItemCf(routeItem, 'origin', 'cf_origin_city')
+        const destinationStr = getRouteItemCf(routeItem, 'destination', 'cf_destination_city')
+        let transportMode = String(getRouteItemCf(routeItem, 'Shipping Mode', 'cf_transport_mode') || 'road').toLowerCase()
         if (!['road', 'air', 'sea'].includes(transportMode)) transportMode = 'road'
-        let serviceLevel = getRouteItemCf(routeLineItem, 'service_level', 'cf_service_level') || 'Standard'
+        let serviceLevel = getRouteItemCf(routeItem, 'service_level', 'cf_service_level') || 'Standard'
         if (!['Express', 'Standard', 'Economy'].includes(serviceLevel)) serviceLevel = 'Standard'
-        const driverEmail = getRouteItemCf(routeLineItem, 'Preferred Driver', 'cf_origin_state')
+        const driverEmail = getRouteItemCf(routeItem, 'Preferred Driver', 'cf_origin_state')
 
         let weightBrackets = []
-        const rawBrackets = getRouteItemCf(routeLineItem, 'weight_brackets', 'cf_weight_brackets')
+        const rawBrackets = getRouteItemCf(routeItem, 'weight_brackets', 'cf_weight_brackets')
         if (rawBrackets) {
             try { weightBrackets = typeof rawBrackets === 'string' ? JSON.parse(rawBrackets) : rawBrackets }
             catch (e) { console.warn('[manualRoute] weight_brackets parse failed:', e.message) }
         }
+        console.log(`[manualRoute] origin="${originStr}" destination="${destinationStr}" mode=${transportMode} level=${serviceLevel} brackets=${JSON.stringify(weightBrackets)}`)
 
         // Pickup = route origin; delivery = route destination (contact from salesorder shipping address).
         const pickupAddress = buildRouteAddress(originStr)
@@ -1586,7 +1595,9 @@ class WeebHooksHelper {
         let totalWeight = 0
         for (const li of productLineItems) {
             const quantity = parseInt(li.quantity) || 1
-            const unitWeight = parseFloat(li.package_details?.weight) || 0
+            const prodItem = itemsMap[li.item_id] || itemsMap[li.variant_id]
+            let unitWeight = parseFloat(li.package_details?.weight) || parseFloat(prodItem?.package_details?.weight) || 0
+            if (!unitWeight) unitWeight = 0.5 // last-resort default so pricing isn't zeroed out
             const rate = parseFloat(li.rate) || 0
             const totalPrice = parseFloat(li.item_total) || rate * quantity
             totalWeight += unitWeight * quantity
@@ -1603,10 +1614,20 @@ class WeebHooksHelper {
         }
         if (items.length === 0) throw new Error('Route item present but no product line items to ship')
 
-        // --- Pricing from the route item's weight brackets ---
+        // --- Pricing from the route item's weight brackets (NGN, kept as-is for logistics) ---
         const bracket = selectRouteBracket(weightBrackets, totalWeight) || {}
         const shippingPrice = Number(bracket.price || 0)
         const eta = bracket.eta || 'To be determined'
+
+        // Logistics stores NGN; Zoho stores $ (USD). Convert NGN -> USD via the SO exchange rate
+        // for anything written back to Zoho (shipment order shipping_charge + salesorder).
+        const exchangeRate = parseFloat(
+            salesorder.custom_field_hash?.cf_exchange_rate_unformatted ||
+            salesorder.custom_field_hash?.cf_exchange_rate ||
+            salesorder.custom_fields?.find((f) => f.label === 'Exchange Rate' || f.api_name === 'cf_exchange_rate')?.value ||
+            1
+        ) || 1
+        const zohoShippingCharge = exchangeRate > 0 ? shippingPrice / exchangeRate : shippingPrice
 
         // --- Owner + preferred driver ---
         const systemUserId = await this.resolveSystemUserId()
@@ -1634,14 +1655,15 @@ class WeebHooksHelper {
         if (!shipmentRef) throw new Error(`Shipment creation failed: ${created?.message || 'unknown'}`)
         const trackingUrl = created?.tracking_url || null
 
-        // 2) Zoho package + shipment order + salesorder status (direct Zoho Inventory API)
+        // 2) Zoho package + shipment order (direct Zoho Inventory API). Isolated in its own try so a
+        //    failure here (e.g. Zoho blocks package creation on a draft SO) does NOT skip the
+        //    salesorder update below. Amounts written to Zoho are converted to USD.
         let zohoShipmentId = null
         try {
-            const token = await require('../utility/utils.js').getZohoInventoryToken()
             const pkg = await this.createZohoPackage(token, salesorder, productLineItems)
             const packageId = pkg?.package?.package_id
             if (packageId) {
-                const zshp = await this.createZohoShipment(token, salesOrderId, packageId, shipmentRef, shippingPrice)
+                const zshp = await this.createZohoShipment(token, salesOrderId, packageId, shipmentRef, zohoShippingCharge)
                 zohoShipmentId = zshp?.shipmentorder?.shipment_id || null
                 if (zohoShipmentId) {
                     await db.shippings.update(
@@ -1650,14 +1672,21 @@ class WeebHooksHelper {
                     )
                 }
             }
+        } catch (zErr) {
+            console.error('[manualRoute] Zoho package/shipment failed (non-fatal):', zErr?.response?.data || zErr.message)
+        }
+
+        // 3) Always reflect status + computed shipping price (USD) onto the salesorder, independent
+        //    of whether the package/shipment step above succeeded.
+        try {
             await this.updateZohoSalesOrderFields(token, salesOrderId, {
                 'Shipment Status': 'shipments_created',
                 'Shipment Id': shipmentRef,
                 'Tracking URL': trackingUrl || '',
                 'Carrier Name': 'Obana Logistics'
-            })
-        } catch (zErr) {
-            console.error('[manualRoute] Zoho package/shipment/update failed (non-fatal):', zErr?.response?.data || zErr.message)
+            }, zohoShippingCharge)
+        } catch (uErr) {
+            console.error('[manualRoute] Zoho salesorder update failed (non-fatal):', uErr?.response?.data || uErr.message)
         }
 
         console.log(`[manualRoute] Shipment ${shipmentRef} (Zoho shipment ${zohoShipmentId}) created for order ${orderRef}`)
@@ -1738,13 +1767,50 @@ class WeebHooksHelper {
         return resp.data
     }
 
-    // Direct Zoho Inventory API: set salesorder custom fields after shipment creation.
-    updateZohoSalesOrderFields = async (token, salesOrderId, labelValueMap) => {
+    // Direct Zoho Inventory API: fetch full item records (custom fields + package_details) by ids.
+    // The salesorder line items don't carry route custom fields or product weights; the items do.
+    fetchZohoItems = async (token, itemIds) => {
+        const axios = require('axios')
+        try {
+            const ids = (itemIds || []).filter(Boolean).join(',')
+            if (!ids) return {}
+            const url = `${process.env.ZOHO_BASE_URL}itemdetails?item_ids=${ids}&organization_id=${process.env.ZOHO_ORG_ID}`
+            const resp = await axios.get(url, { headers: { Authorization: token, 'Content-Type': 'application/json' } })
+            const map = {}
+            for (const it of (resp.data?.items || [])) {
+                if (it.item_id) map[it.item_id] = it
+                if (it.variant_id) map[it.variant_id] = it
+                if (it.group_id) map[it.group_id] = it
+            }
+            return map
+        } catch (e) {
+            console.error('[manualRoute] fetchZohoItems failed:', e?.response?.data || e.message)
+            return {}
+        }
+    }
+
+    // Direct Zoho Inventory API: set salesorder custom fields (+ optional shipping charge) after creation.
+    // Falls back to a shipping_charge-only PUT if the combined update is rejected (e.g. a custom-field
+    // label not defined on this salesorder would otherwise fail the whole request).
+    updateZohoSalesOrderFields = async (token, salesOrderId, labelValueMap, shippingCharge) => {
         const axios = require('axios')
         const url = `${process.env.ZOHO_BASE_URL}salesorders/${salesOrderId}?organization_id=${process.env.ZOHO_ORG_ID}`
+        const headers = { Authorization: token, 'Content-Type': 'application/json' }
         const custom_fields = Object.entries(labelValueMap).map(([label, value]) => ({ label, value }))
-        const resp = await axios.put(url, { custom_fields }, { headers: { Authorization: token, 'Content-Type': 'application/json' } })
-        return resp.data
+        const body = { custom_fields }
+        const hasCharge = shippingCharge !== undefined && shippingCharge !== null
+        if (hasCharge) body.shipping_charge = shippingCharge
+        try {
+            const resp = await axios.put(url, body, { headers })
+            return resp.data
+        } catch (e) {
+            if (hasCharge) {
+                console.warn('[manualRoute] SO update with custom_fields failed; retrying shipping_charge only:', e?.response?.data || e.message)
+                const resp = await axios.put(url, { shipping_charge: shippingCharge }, { headers })
+                return resp.data
+            }
+            throw e
+        }
     }
 
     payagent = async () => {
