@@ -927,7 +927,7 @@ const isRouteLineItem = (item) => {
 
 // Read a route item's custom field by LABEL (durable — Zoho freezes api_name at creation),
 // with custom_field_hash fallback.
-const shipmengetRouteItemCf = (item, label, hashKey) => {
+const getRouteItemCf = (item, label, hashKey) => {
     const arrays = [item.item_custom_fields, item.custom_fields].filter(Array.isArray)
     for (const arr of arrays) {
         const f = arr.find((x) => x.label === label)
@@ -1506,7 +1506,7 @@ class WeebHooksHelper {
             String(metaRaw).trim() !== '' && String(metaRaw).trim() !== '{}'
         const routeLineItem = salesorder.line_items.find((li) => isRouteLineItem(li))
 
-        if (!routeLineItem ) {
+        if (!routeLineItem  || hasMetaData) {
             return this.res.status(200).send(utils.responseSuccess({ skipped: true, reason: 'not a manual route order' }))
         }
 
