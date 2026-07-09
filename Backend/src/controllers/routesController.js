@@ -166,6 +166,25 @@ const sanitizeSku = (str) =>
        .replace(/\s+/g, '-')
        .toUpperCase();
 
+const getZohoUsdExchangeRate = () => {
+    const envRate = process.env.ZOHO_USD_EXCHANGE_RATE || process.env.NAIRA_TO_USD_RATE || process.env.EXCHANGE_RATE || process.env.ZOHO_EXCHANGE_RATE;
+    const parsed = parseFloat(envRate);
+    return parsed > 0 ? parsed : 1000;
+};
+
+const deriveRouteItemUnitPrice = (weight_brackets = []) => {
+    if (!Array.isArray(weight_brackets) || weight_brackets.length === 0) return 0;
+    const first = weight_brackets[0] || {};
+    const explicit = Number(first.unit_price || 0);
+    if (explicit > 0) return explicit;
+
+    const price = Number(first.price || 0);
+    const min = Number(first.min || 0);
+    const max = Number(first.max || 0);
+    const width = max > min ? max - min : max > 0 ? max : 1;
+    return width > 0 ? price / width : price;
+};
+
 const buildZohoRouteItemData = (routeTemplate, driverEmail) => {
     const {
         origin_city,
@@ -185,11 +204,18 @@ const buildZohoRouteItemData = (routeTemplate, driverEmail) => {
 
     const safe = (val) => (val === null || val === undefined ? '' : String(val));
 
+    const routeUnitPriceNgn = deriveRouteItemUnitPrice(weight_brackets);
+    const zohoExchangeRate = getZohoUsdExchangeRate();
+    const routeUnitPriceUsd = routeUnitPriceNgn && zohoExchangeRate > 0
+        ? Number((routeUnitPriceNgn / zohoExchangeRate).toFixed(2))
+        : 0;
+
     const payload = {
         name: itemName,
         item_type: 'sales_and_purchases',
         product_type: 'service',
         sku: skuString,
+        rate: routeUnitPriceUsd,
         custom_fields: [
             { label: 'origin', value: `${safe(origin_city)}, ${safe(metadata?.origin_state)}, ${safe(metadata?.origin_country)}` },
             { label: 'destination', value: `${safe(destination_city)}, ${safe(metadata?.destination_state)}, ${safe(metadata?.destination_country)}` },

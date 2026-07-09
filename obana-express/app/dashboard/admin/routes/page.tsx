@@ -6,7 +6,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, Button, Input, Select, Alert, Loader, Label, SelectP, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui";
 import { LocationInput } from "@/components/LocationInput";
 import { apiClient } from "@/lib/api";
-import { Plus, Edit2, Trash2, X, MapPin, Package } from "lucide-react";
+import { Plus, Edit2, Trash2, X, MapPin, Package, CheckCircle, AlertCircle } from "lucide-react";
 
 interface RouteTemplate {
 	id: string;
@@ -26,6 +26,13 @@ export default function RoutesManagement() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 	const [showModal, setShowModal] = useState(false);
+	const [actionLoading, setActionLoading] = useState(false);
+	const [resultMessage, setResultMessage] = useState<{
+		type: "success" | "error";
+		title: string;
+		body: string;
+	} | null>(null);
+	const [showResultModal, setShowResultModal] = useState(false);
 	const [editingRoute, setEditingRoute] = useState<RouteTemplate | null>(null);
 	const [formData, setFormData] = useState<{
 		origin: {
@@ -44,7 +51,7 @@ export default function RoutesManagement() {
 		};
 		transport_mode: string;
 		service_level: string;
-		weight_brackets: { min: string; max: string; price: string; eta: string }[];
+		weight_brackets: { min: string; max: string; price: string; eta: string; unit_price?: string }[];
 		preferred_driver_id: string;
 	}>({
 		origin: { city: "", state: "", country: "", countryCode: "", stateCode: "" },
@@ -82,6 +89,18 @@ export default function RoutesManagement() {
 		}
 	};
 
+	const calculateUnitPrice = (bracket: { min: string; max: string; price: string }) => {
+		const min = parseFloat(bracket.min);
+		const max = parseFloat(bracket.max);
+		const price = parseFloat(bracket.price);
+		if (Number.isNaN(price) || price <= 0) return null;
+
+		const width = Number.isNaN(max - min) || max - min <= 0 ? (max > 0 ? max : null) : max - min;
+		if (!width || width <= 0) return null;
+
+		return Number((price / width).toFixed(2));
+	};
+
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 
@@ -97,6 +116,7 @@ export default function RoutesManagement() {
 			max: parseFloat(b.max),
 			price: parseFloat(b.price),
 			eta: b.eta,
+			unit_price: calculateUnitPrice(b),
 		}));
 
 		if (
@@ -107,6 +127,11 @@ export default function RoutesManagement() {
 			setError("Please fill all fields in weight brackets correctly");
 			return;
 		}
+
+		setError("");
+		setActionLoading(true);
+		setShowResultModal(false);
+		setResultMessage(null);
 
 		try {
 			const payload = {
@@ -139,8 +164,23 @@ export default function RoutesManagement() {
 			setEditingRoute(null);
 			resetForm();
 			setError("");
+			setResultMessage({
+				type: "success",
+				title: editingRoute ? "Route updated" : "Route created",
+				body: editingRoute
+					? "The route was updated successfully."
+					: "The new route was created successfully.",
+			});
+			setShowResultModal(true);
 		} catch (err: any) {
-			setError(err.response?.data?.message || "Error saving route");
+			setResultMessage({
+				type: "error",
+				title: "Unable to save route",
+				body: err.response?.data?.message || "Error saving route",
+			});
+			setShowResultModal(true);
+		} finally {
+			setActionLoading(false);
 		}
 	};
 
@@ -169,6 +209,7 @@ export default function RoutesManagement() {
 						max: String(b.max || ""),
 						price: String(b.price || ""),
 						eta: b.eta || "",
+						unit_price: b.unit_price ? String(b.unit_price) : "",
 					}))
 				: [],
 			preferred_driver_id: route.preferred_driver_id ? String(route.preferred_driver_id) : "none",
@@ -178,12 +219,29 @@ export default function RoutesManagement() {
 
 	const handleDelete = async (id: string) => {
 		if (confirm("Are you sure you want to delete this route?")) {
+			setActionLoading(true);
+			setShowResultModal(false);
+			setResultMessage(null);
+
 			try {
 				await apiClient.deleteRoute(id);
 				await loadRoutes();
 				setError("");
+				setResultMessage({
+					type: "success",
+					title: "Route deleted",
+					body: "The route has been removed successfully.",
+				});
+				setShowResultModal(true);
 			} catch (err: any) {
-				setError(err.response?.data?.message || "Error deleting route");
+				setResultMessage({
+					type: "error",
+					title: "Delete failed",
+					body: err.response?.data?.message || "Error deleting route",
+				});
+				setShowResultModal(true);
+			} finally {
+				setActionLoading(false);
 			}
 		}
 	};
@@ -204,7 +262,7 @@ export default function RoutesManagement() {
 			...formData,
 			weight_brackets: [
 				...formData.weight_brackets,
-				{ min: "", max: "", price: "", eta: "" },
+				{ min: "", max: "", price: "", eta: "", unit_price: "" },
 			],
 		});
 	};
@@ -230,6 +288,49 @@ export default function RoutesManagement() {
 	return (
 		<DashboardLayout role="admin">
 			<div className="space-y-6">
+				{actionLoading && (
+					<div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 p-4">
+						<div className="rounded-3xl border border-gray-200 bg-white/95 px-6 py-5 shadow-2xl backdrop-blur-xl flex items-center gap-4">
+							<Loader />
+							<div>
+								<p className="font-semibold text-gray-900">
+									Processing route changes…
+								</p>
+								<p className="text-sm text-gray-500">
+									Please wait while we save your changes.
+								</p>
+							</div>
+						</div>
+					</div>
+				)}
+
+				{showResultModal && resultMessage && (
+					<div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+						<div className="bg-white rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in duration-200">
+							<div className="p-6 text-center">
+								<div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-sm mb-4">
+									{resultMessage.type === "success" ? (
+										<CheckCircle className="h-8 w-8 text-green-600" />
+									) : (
+										<AlertCircle className="h-8 w-8 text-red-600" />
+									)}
+								</div>
+								<h2 className="text-2xl font-semibold text-gray-900 mb-2">
+									{resultMessage.title}
+								</h2>
+								<p className="text-gray-600 mb-6">{resultMessage.body}</p>
+								<Button
+									variant="primary"
+									onClick={() => setShowResultModal(false)}
+									fullWidth
+								>
+									Okay
+								</Button>
+							</div>
+						</div>
+					</div>
+				)}
+
 				<div className="flex items-center justify-between">
 					<div>
 						<h1 className="text-3xl font-bold text-gray-900">
