@@ -166,7 +166,7 @@ const sanitizeSku = (str) =>
        .replace(/\s+/g, '-')
        .toUpperCase();
 
-const createZohoInventoryItem = async (accessToken, routeTemplate, driverEmail) => {
+const buildZohoRouteItemData = (routeTemplate, driverEmail) => {
     const {
         origin_city,
         destination_city,
@@ -187,18 +187,50 @@ const createZohoInventoryItem = async (accessToken, routeTemplate, driverEmail) 
 
     const payload = {
         name: itemName,
-        item_type: 'sales_and_purchases',  
-        product_type: 'service',           
+        item_type: 'sales_and_purchases',
+        product_type: 'service',
         sku: skuString,
         custom_fields: [
-            { label: 'origin',           value: `${safe(origin_city)}, ${safe(metadata?.origin_state)}, ${safe(metadata?.origin_country)}` },
-            { label: 'destination',      value: `${safe(destination_city)}, ${safe(metadata?.destination_state)}, ${safe(metadata?.destination_country)}` },
-            { label: 'Shipping Mode',    value: safe(transport_mode) },
-            { label: 'service_level',    value: safe(service_level) },
-            { label: 'weight_brackets',  value: JSON.stringify(weight_brackets) },
+            { label: 'origin', value: `${safe(origin_city)}, ${safe(metadata?.origin_state)}, ${safe(metadata?.origin_country)}` },
+            { label: 'destination', value: `${safe(destination_city)}, ${safe(metadata?.destination_state)}, ${safe(metadata?.destination_country)}` },
+            { label: 'Shipping Mode', value: safe(transport_mode) },
+            { label: 'service_level', value: safe(service_level) },
+            { label: 'weight_brackets', value: JSON.stringify(weight_brackets) },
             { label: 'Preferred Driver', value: driverEmail || safe(preferred_driver_id) }
         ]
     };
+
+    return { itemName, skuString, payload };
+};
+
+const getRouteTemplateDriverEmail = async (routeTemplate) => {
+    if (!routeTemplate?.preferred_driver_id) return null;
+
+    const driver = await db.drivers.findOne({
+        where: { id: routeTemplate.preferred_driver_id },
+        include: [{
+            model: db.users,
+            as: 'user',
+            attributes: ['id', 'email', 'phone', 'createdAt']
+        }]
+    });
+
+    return driver?.user?.email || null;
+};
+
+const findZohoInventoryItemId = async (accessToken, itemName, skuString) => {
+    const response = await axios.get(
+        `${process.env.ZOHO_BASE_URL}items?organization_id=${process.env.ZOHO_ORG_ID}`,
+        { headers: { Authorization: accessToken, 'Content-Type': 'application/json' } }
+    );
+
+    const items = response.data?.items || response.data?.data || [];
+    const match = items.find((item) => item?.name === itemName || item?.sku === skuString);
+    return match?.item_id || null;
+};
+
+const createZohoInventoryItem = async (accessToken, routeTemplate, driverEmail) => {
+    const { itemName, skuString, payload } = buildZohoRouteItemData(routeTemplate, driverEmail);
 
     const response = await axios.post(
         `${process.env.ZOHO_BASE_URL}items?organization_id=${process.env.ZOHO_ORG_ID}`,
@@ -206,8 +238,62 @@ const createZohoInventoryItem = async (accessToken, routeTemplate, driverEmail) 
         { headers: { Authorization: accessToken, 'Content-Type': 'application/json' } }
     );
 
-    return response.data;
+    return { ...response.data, itemName, skuString };
 };
+
+const updateZohoInventoryItem = async (accessToken, routeTemplate, driverEmail) => {
+    const { itemName, skuString, payload } = buildZohoRouteItemData(routeTemplate, driverEmail);
+    let itemId = routeTemplate?.zoho_item_id || null;
+
+    if (!itemId) {
+        itemId = await findZohoInventoryItemId(accessToken, itemName, skuString);
+    }
+
+    if (!itemId) {
+        const createdItem = await createZohoInventoryItem(accessToken, routeTemplate, driverEmail);
+        if (routeTemplate?.id) {
+            await RouteTemplates.update(
+                { zoho_item_id: createdItem?.item_id || null },
+                { where: { id: routeTemplate.id } }
+            );
+        }
+        return createdItem;
+    }
+
+    const response = await axios.put(
+        `${process.env.ZOHO_BASE_URL}items/${itemId}?organization_id=${process.env.ZOHO_ORG_ID}`,
+        payload,
+        { headers: { Authorization: accessToken, 'Content-Type': 'application/json' } }
+    );
+
+    if (routeTemplate?.id) {
+        await RouteTemplates.update(
+            { zoho_item_id: response.data?.item_id || itemId },
+            { where: { id: routeTemplate.id } }
+        );
+    }
+
+    return { ...response.data, item_id: itemId, itemName, skuString };
+};
+
+const deleteZohoInventoryItem = async (accessToken, routeTemplate) => {
+    const { itemName, skuString } = buildZohoRouteItemData(routeTemplate, null);
+    let itemId = routeTemplate?.zoho_item_id || null;
+
+    if (!itemId) {
+        itemId = await findZohoInventoryItemId(accessToken, itemName, skuString);
+    }
+
+    if (!itemId) return null;
+
+    await axios.delete(
+        `${process.env.ZOHO_BASE_URL}items/${itemId}?organization_id=${process.env.ZOHO_ORG_ID}`,
+        { headers: { Authorization: accessToken, 'Content-Type': 'application/json' } }
+    );
+
+    return { item_id: itemId };
+};
+
 const createTemplate = async (req, res) => {
     const body = req.body;
     try {
@@ -215,27 +301,14 @@ const createTemplate = async (req, res) => {
         const t = await RouteTemplates.create(body);
 
         // 2. Find driver email
-        let driverEmail = null;
-        if (body.preferred_driver_id) {
-            const driver = await  db.drivers.findOne({
-                where: { id: body.preferred_driver_id },
-                include: [{
-                    model: db.users,
-                    as: 'user',
-                    attributes: ['id', 'email', 'phone', 'createdAt']
-                }]
-            });
-            driverEmail = driver?.user?.email || null;
-        }
-
-        console.log("DRIVER: ", driverEmail)
+        const driverEmail = await getRouteTemplateDriverEmail(t);
 
         // 3. Get Zoho access token
         const accessToken = await util.getZohoInventoryToken();
-        console.log(accessToken)
 
         // 4. Create Zoho inventory item
-        await createZohoInventoryItem(accessToken, body, driverEmail);
+        const createdItem = await createZohoInventoryItem(accessToken, t, driverEmail);
+        await t.update({ zoho_item_id: createdItem?.item_id || null });
 
         return res.status(201).send(utils.responseSuccess(t));
     } catch (err) {
@@ -250,15 +323,34 @@ const updateTemplate = async (req, res) => {
     const body = req.body
     const t = await RouteTemplates.findByPk(id)
     if (!t) return res.status(404).send(utils.responseError('Not found'))
-    await t.update(body)
-    return res.status(200).send(utils.responseSuccess(t))
+
+    const updatedTemplate = await t.update(body)
+
+    try {
+        const accessToken = await util.getZohoInventoryToken();
+        const driverEmail = await getRouteTemplateDriverEmail(updatedTemplate);
+        await updateZohoInventoryItem(accessToken, updatedTemplate, driverEmail);
+    } catch (err) {
+        console.error('Zoho inventory sync error:', err?.response?.data || err.message);
+    }
+
+    return res.status(200).send(utils.responseSuccess(updatedTemplate))
 }
 
 const deleteTemplate = async (req, res) => {
     const id = req.params.id
     const t = await RouteTemplates.findByPk(id)
     if (!t) return res.status(404).send(utils.responseError('Not found'))
+
     await t.destroy()
+
+    try {
+        const accessToken = await util.getZohoInventoryToken();
+        await deleteZohoInventoryItem(accessToken, t);
+    } catch (err) {
+        console.error('Zoho inventory sync error:', err?.response?.data || err.message);
+    }
+
     return res.status(204).send()
 }
 

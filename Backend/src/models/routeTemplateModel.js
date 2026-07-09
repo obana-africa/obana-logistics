@@ -11,7 +11,8 @@ module.exports = (sequelize, DataTypes) => {
         service_level: { type: DataTypes.STRING, allowNull: false },
         weight_brackets: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
         metadata: { type: DataTypes.JSONB, allowNull: true, defaultValue: {} },
-        preferred_driver_id: { type: DataTypes.INTEGER, allowNull: true }
+        preferred_driver_id: { type: DataTypes.INTEGER, allowNull: true },
+        zoho_item_id: { type: DataTypes.STRING, allowNull: true }
     }, {
         timestamps: true,
         underscored: true,
