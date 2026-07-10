@@ -805,17 +805,38 @@ export default function RoutesManagement() {
 												</div>
 
 												{/* Preview */}
-												<div className="mt-3 p-2 bg-orange-50 rounded text-xs text-gray-600">
-													<strong>Preview:</strong> Packages weighing{" "}
-													{bracket.min || "0"} - {bracket.max || "∞"} kg will
-													cost{" "}
-													<strong className="text-green-600">
-														₦{bracket.price || "0"}
-													</strong>{" "}
-													with delivery in{" "}
-													<strong className="text-blue-600">
-														{bracket.eta || "N/A"}
-													</strong>
+											<div className="mt-3 space-y-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-gray-600">
+												<div>
+													<strong>Preview:</strong> Packages weighing {bracket.min || "0"} - {bracket.max || "∞"} kg will
+													cost <strong className="text-green-600">₦{bracket.price || "0"}</strong> with delivery in <strong className="text-blue-600">{bracket.eta || "N/A"}</strong>
+												</div>
+												<div className="flex flex-wrap items-center gap-3 text-sm text-gray-700">
+													<div className="rounded-full bg-white px-3 py-1 shadow-sm">
+														<span className="font-medium text-gray-600">Unit price:</span>{" "}
+														<span className="font-semibold text-orange-700">
+															{(() => {
+																const min = parseFloat(bracket.min);
+																const max = parseFloat(bracket.max);
+																const price = parseFloat(bracket.price);
+																if (Number.isNaN(price) || price <= 0) return "—";
+																const width = Number.isNaN(max - min) || max - min <= 0 ? (max > 0 ? max : null) : max - min;
+																if (!width || width <= 0) return "—";
+																return `₦${Number((price / width).toFixed(2)).toLocaleString()} / kg`;
+															})()}
+													</span>
+													</div>
+													<div className="rounded-full bg-white px-3 py-1 shadow-sm">
+														<span className="font-medium text-gray-600">Weight span:</span>{" "}
+														<span className="font-semibold text-blue-700">
+															{(() => {
+																const min = parseFloat(bracket.min);
+																const max = parseFloat(bracket.max);
+																if (Number.isNaN(min) || Number.isNaN(max) || max <= min) return "—";
+																return `${(max - min).toFixed(2)} kg`;
+															})()}
+													</span>
+													</div>
+												</div>
 												</div>
 											</div>
 										))}

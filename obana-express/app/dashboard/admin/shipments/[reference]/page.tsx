@@ -373,13 +373,13 @@ export default function ShipmentDetailsPage() {
                       <SelectValue placeholder="Select status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="picked_up">Picked Up</SelectItem>
-                      <SelectItem value="dispatched">Dispatched</SelectItem>
+                      {/* <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="picked_up">Picked Up</SelectItem> */}
+                      <SelectItem value="dispatched">confirmed</SelectItem>
                       <SelectItem value="in_transit">In Transit</SelectItem>
                       <SelectItem value="delivered">Delivered</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                      <SelectItem value="returned">Returned</SelectItem>
+                      {/* <SelectItem value="cancelled">Cancelled</SelectItem>
+                      <SelectItem value="returned">Returned</SelectItem> */}
                     </SelectContent>
                   </SelectP>
                 </div>
