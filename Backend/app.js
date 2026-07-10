@@ -44,6 +44,7 @@ const corsOptions = {
 		"https://staging.shop.obana.africa",
 		
 		"https://shop.obana.africa",
+		"https://marketplace.obana.africa",
 		"https://obana-staging.onrender.com",
 		"https://logistics.obana.africa",
 		"https://salesforce.obana.africa",
