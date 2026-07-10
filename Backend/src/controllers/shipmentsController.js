@@ -625,7 +625,7 @@ const shipmentController = {
                     currency: payload.currency?.symbol || 'NGN',
                     total_weight: totalWeight,
                     total_items: itemCount,
-                    status: 'pending',
+                    status: 'confirmed',
                     is_insured: payload.is_insured || false,
                     insurance_amount: payload.insurance_amount || 0,
                     driver_id: isInternal ? payload.preferred_driver_id : null,
@@ -1224,7 +1224,7 @@ getAllShipments: async (req, res) => {
         }
 
             // Validate status
-            const validStatuses = ['pending', 'picked_up', 'dispatched', 'in_transit', 'delivered', 'failed', 'cancelled', 'returned'];
+            const validStatuses = ['pending', 'confirmed', 'picked_up', 'dispatched', 'in_transit', 'delivered', 'failed', 'cancelled', 'returned'];
             if (!validStatuses.includes(status)) {
                 return res.status(400).json({
                     success: false,
@@ -1254,6 +1254,9 @@ getAllShipments: async (req, res) => {
                 }
             }
 
+            const previousStatus = shipment.status;
+            const isStatusChanging = status && status !== previousStatus;
+
             // Update shipment status
             const updateData = external_shipment_id ? {  external_shipment_id} : { status };
             
@@ -1263,8 +1266,10 @@ getAllShipments: async (req, res) => {
             
             await shipment.update(updateData);
 
-            // Sync with Zoho Inventory if it's a Zoho-linked shipment
-            shipmentController.updateZohoShipmentStatus(shipment, status);
+            // Sync with Zoho Inventory if it's a Zoho-linked shipment and status is actually changing
+            if (isStatusChanging) {
+                await shipmentController.updateZohoShipmentStatus(shipment, status);
+            }
 
             // Map 'pending' to 'created' for tracking events as 'pending' is not usually a tracking event status
             const trackingStatus = status === 'pending' ? 'created' : status;

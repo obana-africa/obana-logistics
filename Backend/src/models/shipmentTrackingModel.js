@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
         status: {
             type: DataTypes.ENUM(
                 'created',              // Shipment created
+                'confirmed',            // Confirmed and ready for pickup/dispatch
                 'picked_up',
                 'dispatched',
                 'in_transit',           // Package in transit

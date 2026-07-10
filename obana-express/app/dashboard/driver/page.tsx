@@ -206,6 +206,7 @@ export default function DriverDashboard() {
                   }}
                   options={[
                     { value: 'pending', label: 'Pending' },
+                    { value: 'confirmed', label: 'Confirmed' },
                     { value: 'picked_up', label: 'Picked Up' },
                     { value: 'dispatched', label: 'Dispatched' },
                     { value: 'in_transit', label: 'In Transit' },

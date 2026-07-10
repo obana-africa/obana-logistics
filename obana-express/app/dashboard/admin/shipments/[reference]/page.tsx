@@ -375,7 +375,9 @@ export default function ShipmentDetailsPage() {
                     <SelectContent>
                       {/* <SelectItem value="pending">Pending</SelectItem>
                       <SelectItem value="picked_up">Picked Up</SelectItem> */}
-                      <SelectItem value="dispatched">confirmed</SelectItem>
+                      {/* <SelectItem value="dispatched">Dispatched</SelectItem> */}
+                      {/* <SelectItem value="in_transit">In Transit</SelectItem> */}
+                      <SelectItem value="confirmed">Confirmed</SelectItem>
                       <SelectItem value="in_transit">In Transit</SelectItem>
                       <SelectItem value="delivered">Delivered</SelectItem>
                       {/* <SelectItem value="cancelled">Cancelled</SelectItem>

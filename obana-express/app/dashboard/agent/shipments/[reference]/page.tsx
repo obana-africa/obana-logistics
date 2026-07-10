@@ -213,6 +213,7 @@ export default function AgentShipmentDetailsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="confirmed">Confirmed</SelectItem>
                     <SelectItem value="picked_up">Picked Up</SelectItem>
                     <SelectItem value="dispatched">Dispatched</SelectItem>
                     <SelectItem value="in_transit">In Transit</SelectItem>

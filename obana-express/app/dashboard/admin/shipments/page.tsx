@@ -151,6 +151,7 @@ export default function AdminShipmentsPage() {
                     options={[
                       { value: 'all', label: 'All Status' },
                       { value: 'pending', label: 'Pending' },
+                      { value: 'confirmed', label: 'Confirmed' },
                       { value: 'in_transit', label: 'In Transit' },
                       { value: 'delivered', label: 'Delivered' },
                       { value: 'cancelled', label: 'Cancelled' },

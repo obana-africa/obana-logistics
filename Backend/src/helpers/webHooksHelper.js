@@ -74,6 +74,29 @@ const selectRouteBracket = (brackets, weight) => {
     return result
 }
 
+const normalizeZohoStatusValue = (value) => {
+    return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+const findZohoPayloadValue = (node, keys) => {
+    if (!node || typeof node !== 'object') return null
+    if (Array.isArray(node)) {
+        for (const item of node) {
+            const found = findZohoPayloadValue(item, keys)
+            if (found !== null && found !== undefined && found !== '') return found
+        }
+        return null
+    }
+
+    const lowerKeys = new Set(keys.map((key) => String(key).toLowerCase()))
+    for (const [key, value] of Object.entries(node)) {
+        if (lowerKeys.has(String(key).toLowerCase())) return value
+        const nested = findZohoPayloadValue(value, keys)
+        if (nested !== null && nested !== undefined && nested !== '') return nested
+    }
+    return null
+}
+
 class WeebHooksHelper {
     log
     constructor(endpoint, req, res, makeRequest) {
@@ -161,6 +184,54 @@ class WeebHooksHelper {
         // Idempotency (order_reference == salesorder number).
         const existing = await db.shippings.findOne({ where: { order_reference: orderRef } })
         if (existing) {
+            console.log(`[manualRoute] shipping already exists for ${orderRef} — checking for status updates`)
+            const statusValue = normalizeZohoStatusValue(
+                salesorder.status || salesorder.shipment_status || salesorder.delivery_status ||
+                findZohoPayloadValue(salesorder, ['status', 'shipment_status', 'delivery_status'])
+            )
+            let targetStatus = null
+            if (statusValue === 'shipped') {
+                targetStatus = 'in_transit'
+            } else if (['delivered', 'fulfilled', 'complete', 'completed', 'fulfilled_completed'].includes(statusValue)) {
+                targetStatus = 'delivered'
+            }
+
+            if (targetStatus) {
+                // Loop prevention & downgrade guards
+                if (existing.status === targetStatus) {
+                    console.log(`[manualRoute] status already matched (${existing.status}) for ${orderRef} — skipping update`)
+                    return { shipment_reference: existing.shipment_reference, skipped: true, reason: 'status already matched' }
+                }
+                if (existing.status === 'delivered') {
+                    console.log(`[manualRoute] shipment already delivered for ${orderRef} — skipping update`)
+                    return { shipment_reference: existing.shipment_reference, skipped: true, reason: 'shipment is already delivered' }
+                }
+                if (['cancelled', 'failed', 'returned'].includes(existing.status)) {
+                    console.log(`[manualRoute] shipment is in terminal state (${existing.status}) for ${orderRef} — skipping update`)
+                    return { shipment_reference: existing.shipment_reference, skipped: true, reason: `shipment is in terminal state: ${existing.status}` }
+                }
+
+                const updateData = { status: targetStatus }
+                if (targetStatus === 'delivered') {
+                    updateData.actual_delivery_at = new Date()
+                }
+                await existing.update(updateData)
+
+                await db.shipment_tracking.create({
+                    shipment_id: existing.id,
+                    status: targetStatus,
+                    location: findZohoPayloadValue(salesorder, ['location', 'city']) || '',
+                    description: `Zoho Inventory reported salesorder status is ${statusValue}`,
+                    notes: 'Updated from Zoho salesorder webhook',
+                    source: 'carrier_api',
+                    performed_by: 'zoho_inventory',
+                    metadata: { webhook_data: salesorder, source_status: statusValue }
+                })
+
+                console.log(`[manualRoute] shipment status updated to ${targetStatus} for order ${orderRef}`)
+                return { shipment_reference: existing.shipment_reference, updated: true, status: targetStatus }
+            }
+
             console.log(`[manualRoute] shipping already exists for ${orderRef} — skipping`)
             return { shipment_reference: existing.shipment_reference, skipped: true }
         }
@@ -326,6 +397,80 @@ class WeebHooksHelper {
         console.log(`[manualRoute] Shipment ${shipmentRef} (Zoho shipment ${zohoShipmentId}) created for order ${orderRef}`)
         return { shipment_reference: shipmentRef, zoho_shipment_id: zohoShipmentId, price: shippingPrice, total_weight: totalWeight }
     }
+
+    handleZohoShipmentEvent = async () => {
+        const payload = this.req?.body || {}
+        const statusValue = normalizeZohoStatusValue(
+            findZohoPayloadValue(payload, ['status', 'event', 'event_type', 'shipment_status', 'shipment_event'])
+        )
+
+        let targetStatus = null
+        if (statusValue === 'shipped') {
+            targetStatus = 'in_transit'
+        } else if (['delivered', 'fulfilled', 'complete', 'completed', 'fulfilled_completed'].includes(statusValue)) {
+            targetStatus = 'delivered'
+        }
+
+        if (!targetStatus) {
+            return this.res.status(200).send(utils.responseSuccess({ skipped: true, reason: `status ${statusValue} not mapped` }))
+        }
+
+        const shipmentId = findZohoPayloadValue(payload, ['shipment_id', 'shipmentorder_id', 'shipment_order_id'])
+        const orderRef = findZohoPayloadValue(payload, ['salesorder_number', 'sales_order_number', 'order_number', 'order_ref'])
+
+        if (!shipmentId && !orderRef) {
+            return this.res.status(200).send(utils.responseSuccess({ skipped: true, reason: 'missing shipment identifier' }))
+        }
+
+        let shipment = null
+        if (shipmentId) {
+            shipment = await db.shippings.findOne({ where: { external_shipment_id: String(shipmentId) } })
+        }
+        if (!shipment && orderRef) {
+            shipment = await db.shippings.findOne({ where: { order_reference: String(orderRef) } })
+        }
+
+        if (!shipment) {
+            return this.res.status(200).send(utils.responseSuccess({ skipped: true, reason: 'shipment not found' }))
+        }
+
+        // Loop prevention & downgrade guards
+        if (shipment.status === targetStatus) {
+            return this.res.status(200).send(utils.responseSuccess({ updated: false, shipment_reference: shipment.shipment_reference, status: shipment.status, reason: 'status already matched' }))
+        }
+        if (shipment.status === 'delivered') {
+            return this.res.status(200).send(utils.responseSuccess({ updated: false, shipment_reference: shipment.shipment_reference, status: shipment.status, reason: 'shipment is already delivered' }))
+        }
+        if (['cancelled', 'failed', 'returned'].includes(shipment.status)) {
+            return this.res.status(200).send(utils.responseSuccess({ updated: false, shipment_reference: shipment.shipment_reference, status: shipment.status, reason: `shipment is in terminal state: ${shipment.status}` }))
+        }
+
+        const updateData = { status: targetStatus }
+        if (targetStatus === 'delivered') {
+            updateData.actual_delivery_at = new Date()
+        }
+
+        await shipment.update(updateData)
+
+        await db.shipment_tracking.create({
+            shipment_id: shipment.id,
+            status: targetStatus,
+            location: findZohoPayloadValue(payload, ['location', 'city']) || '',
+            description: `Zoho Inventory reported shipment status is ${statusValue}`,
+            notes: 'Updated from Zoho shipment webhook',
+            source: 'carrier_api',
+            performed_by: 'zoho_inventory',
+            metadata: { webhook_data: payload, source_status: statusValue }
+        })
+
+        return this.res.status(200).send(utils.responseSuccess({ updated: true, shipment_reference: shipment.shipment_reference, status: targetStatus }))
+    }
+
+    zohoShipmentStatus = async () => this.handleZohoShipmentEvent()
+    zohoShipmentFulfillment = async () => this.handleZohoShipmentEvent()
+    zohoInventoryShipment = async () => this.handleZohoShipmentEvent()
+    zohoInventoryFulfillment = async () => this.handleZohoShipmentEvent()
+    zohoFulfillment = async () => this.handleZohoShipmentEvent()
 
     // Resolve the single owning user for ecosystem shipments (shipment@obana.africa).
     resolveSystemUserId = async () => {
