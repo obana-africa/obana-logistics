@@ -209,7 +209,10 @@ class WeebHooksHelper {
             zip: shipTo.zip || deliveryFallback.zip_code
         }
 
-        // --- Product items (exclude route item). Weight from package_details.weight; qty scales total. ---
+        // --- Route item quantity is used to scale the actual total weight for this shipment.
+        const routeQuantity = parseInt(routeLineItem.quantity) || 1
+
+        // --- Product items (exclude route item). Weight from package_details.weight; qty scales total.
         const productLineItems = salesorder.line_items.filter((li) => !isRouteLineItem(li))
         const items = []
         let totalWeight = 0
@@ -218,35 +221,46 @@ class WeebHooksHelper {
             const prodItem = itemsMap[li.item_id] || itemsMap[li.variant_id]
             let unitWeight = parseFloat(li.package_details?.weight) || parseFloat(prodItem?.package_details?.weight) || 0
             if (!unitWeight) unitWeight = 0.5 // last-resort default so pricing isn't zeroed out
-            const rate = parseFloat(li.rate) || 0
-            const totalPrice = parseFloat(li.item_total) || rate * quantity
+            const rateUsd = parseFloat(li.rate) || 0
+            const totalPriceUsd = parseFloat(li.item_total) || rateUsd * quantity
+            const exchangeRate = parseFloat(
+                salesorder.custom_field_hash?.cf_exchange_rate_unformatted ||
+                salesorder.custom_field_hash?.cf_exchange_rate ||
+                salesorder.custom_fields?.find((f) => f.label === 'Exchange Rate' || f.api_name === 'cf_exchange_rate')?.value ||
+                1460
+            ) || 1460
+            const rateNgn = rateUsd * exchangeRate
+            const totalPriceNgn = totalPriceUsd * exchangeRate
             totalWeight += unitWeight * quantity
             items.push({
                 name: li.name || 'Product',
                 description: li.description || li.name || 'Product',
                 currency: 'NGN',
-                value: totalPrice,
+                value: totalPriceNgn,
                 weight: unitWeight,
                 quantity,
                 item_id: li.item_id || li.variant_id || li.line_item_id,
-                price: rate
+                price: rateNgn
             })
         }
         if (items.length === 0) throw new Error('Route item present but no product line items to ship')
 
-        // --- Pricing from the route item's weight brackets (NGN, kept as-is for logistics) ---
-        const bracket = selectRouteBracket(weightBrackets, totalWeight) || {}
-        const shippingPrice = Number(bracket.price || 0)
-        const eta = bracket.eta || 'To be determined'
+        // --- Total current product weight is scaled by route quantity. ---
+        totalWeight = totalWeight * routeQuantity
 
-        // Logistics stores NGN; Zoho stores $ (USD). Convert NGN -> USD via the SO exchange rate
-        // for anything written back to Zoho (shipment order shipping_charge + salesorder).
+        // --- Pricing from the route item's Zoho-computed line amount (USD) converted to NGN locally. ---
+        const routeAmountUsd = parseFloat(routeLineItem.item_total) || (parseFloat(routeLineItem.rate) || 0) * routeQuantity
         const exchangeRate = parseFloat(
             salesorder.custom_field_hash?.cf_exchange_rate_unformatted ||
             salesorder.custom_field_hash?.cf_exchange_rate ||
             salesorder.custom_fields?.find((f) => f.label === 'Exchange Rate' || f.api_name === 'cf_exchange_rate')?.value ||
-            1
-        ) || 1
+            1460
+        ) || 1460
+        const shippingPrice = routeAmountUsd * exchangeRate
+        const eta = selectRouteBracket(weightBrackets, totalWeight)?.eta || 'To be determined'
+
+        // Logistics stores NGN; Zoho stores $ (USD). Convert NGN -> USD via the SO exchange rate
+        // for anything written back to Zoho (shipment order shipping_charge + salesorder).
         const zohoShippingCharge = exchangeRate > 0 ? shippingPrice / exchangeRate : shippingPrice
 
         // --- Owner + preferred driver ---

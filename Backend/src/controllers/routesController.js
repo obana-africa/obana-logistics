@@ -169,7 +169,7 @@ const sanitizeSku = (str) =>
 const getZohoUsdExchangeRate = () => {
     const envRate = process.env.ZOHO_USD_EXCHANGE_RATE || process.env.NAIRA_TO_USD_RATE || process.env.EXCHANGE_RATE || process.env.ZOHO_EXCHANGE_RATE;
     const parsed = parseFloat(envRate);
-    return parsed > 0 ? parsed : 1000;
+    return parsed > 0 ? parsed : 1460;
 };
 
 const deriveRouteItemUnitPrice = (weight_brackets = []) => {
