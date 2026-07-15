@@ -6,7 +6,7 @@ const validator = require('validator');
 const FormData = require('form-data');
 
 const sendMail = async (payload) => {
-    console.log('token', process.env.KUDISMS_API_KEY)
+    
     const email = payload.email;
     const content = payload.content || payload.contents || payload.text || payload.body || '';
     const templateName = payload.template;
