@@ -1,13 +1,12 @@
-const sgMail = require('@sendgrid/mail');
+const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
 const validator = require('validator');
-
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+const FormData = require('form-data');
 
 const sendMail = async (payload) => {
-    
+    console.log('token', process.env.KUDISMS_API_KEY)
     const email = payload.email;
     const content = payload.content || payload.contents || payload.text || payload.body || '';
     const templateName = payload.template;
@@ -15,7 +14,7 @@ const sendMail = async (payload) => {
 
     const mailValidated = validator.isEmail(email);
     if (!mailValidated) {
-        console.warn('sendgrid: invalid email', email);
+        console.warn('kudisms mailer: invalid email', email);
         return { success: false, error: 'invalid_email' };
     }
 
@@ -24,7 +23,6 @@ const sendMail = async (payload) => {
     // Handle Template compilation
     if (templateName) {
         try {
-            // Check for .hbs or .handlebars extensions
             let templatePath = path.join(__dirname, 'views', `${templateName}.hbs`);
             if (!fs.existsSync(templatePath)) {
                 templatePath = path.join(__dirname, 'views', `${templateName}.handlebars`);
@@ -50,21 +48,25 @@ const sendMail = async (payload) => {
         }
     }
 
-    const msg = {
-        to: email,
-        from:  process.env.EMAIL_SENDER_USER || 'obana.africa@gmail.com',
-        subject: subject,
-        html: html,
-    };
+    // Set up form-data for KudiSMS transactional API
+    const form = new FormData();
+    form.append('token', process.env.KUDISMS_API_KEY || '');
+    form.append('senderEmail', process.env.KUDISMS_SENDER_EMAIL || process.env.EMAIL_SENDER_USER || 'obana.africa@gmail.com');
+    form.append('senderName', process.env.KUDISMS_SENDER_NAME || 'Obana Logistics');
+    form.append('senderFrom', process.env.KUDISMS_SENDER_FROM || process.env.KUDISMS_SENDER_NAME || 'Obana Logistics');
+    form.append('transactionName', payload.transactionName || templateName || 'Obana Transaction');
+    form.append('recipient', email);
+    form.append('subject', subject);
+    form.append('message', html);
 
-    // console.log(msg)
     try {
-        await sgMail.send(msg);
-        console.log(`Message sent to ${email}`);
-        return { success: true };
+        const response = await axios.post('https://my.kudisms.net/api/transactional', form, {
+            headers: form.getHeaders()
+        });
+        console.log(`Message sent to ${email} via KudiSMS:`, response.data);
+        return { success: true, data: response.data };
     } catch (error) {
-        console.error('SendGrid Error:', error);
-        if (error.response) console.error(error.response.body);
+        console.error('KudiSMS Error:', error.response ? error.response.data : error.message);
         return { success: false, error: error.message };
     }
 };

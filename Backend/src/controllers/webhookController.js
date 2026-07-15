@@ -1,56 +1,44 @@
 const db = require('../models/db.js');
 const { Op } = require('sequelize');
 const crypto = require('crypto');
-const mailer = require('../mailer/sendgrid');
+const mailer = require('../mailer/kudisms');
 const userController = require('./userController');
-
-
 class WebhookController {
-
     /**
      * MAIN TERMINAL AFRICA WEBHOOK HANDLER
      * Use this as the single source of truth for Terminal Africa webhooks
      */
     handleTerminalAfricaWebhook = async (req, res) => {
         const io = req.app.get('socketio');
-
         try {
             // Verify webhook signature
             const SECRET_KEY = process.env.TERMINAL_AFRICA_SECRET_KEY || process.env.NEXT_PUBLIC_TERMINAL_AFRICA_SECRET_KEY;
             const signature = req.headers['x-terminal-signature'];
             const payload = req.body;
-
             const hash = req.headers['x-terminal-signature'];
-
             // Simplified event detection: TA sometimes wraps the object in {event, data} 
             // or sends the raw shipment object.
             let event = payload.event;
             let data = payload.data;
-
             if (!event && payload.shipment_id) {
                 // Fallback for raw shipment object payload
                 data = payload;
                 event = `shipment.${data.status?.replace('-', '.') || 'updated'}`;
             }
-
             if (!data || !data.shipment_id) {
                 console.warn('Webhook received without valid shipment data');
                 return res.status(400).send('Invalid payload');
             }
-
             // Process the webhook
             await this.processTerminalAfricaEvent(event, data, io);
-
             // await this.logWebhook(event, data?.shipment_id, null, payload);
             return res.status(200).send('Webhook processed');
-
         } catch (error) {
             console.error('Webhook processing error:', error);
             // await this.logWebhook('processing_error', null, null, req.body, error.message);
             return res.status(500).send('Error processing webhook');
         }
     }
-
     /**
      * PROCESS TERMINAL AFRICA EVENTS
      */
@@ -65,9 +53,6 @@ class WebhookController {
                 ]
             });
         }
-
-
-
         // Shipment status mapping
         const eventToStatus = {
             'shipment.created': 'created',
@@ -78,7 +63,6 @@ class WebhookController {
             'shipment.cancelled': 'cancelled',
             'shipment.exception': 'exception'
         };
-
         // Handle events
         switch (event) {
             case 'shipment.created':
@@ -91,27 +75,21 @@ class WebhookController {
             case 'shipment.exception':
                 await this.handleShipmentEvent(event, data, shipment, io);
                 break;
-
             case 'transaction.success':
                 // await this.handleTransactionSuccess(event, data, order, io);
-
                 break;
-
             case 'transaction.failed':
                 await this.handleTransactionFailed(event, data, order, io);
                 break;
-
             case 'tracking.updated':
                 await this.handleTrackingUpdate(event, data, shipment, order, io);
                 break;
-
             default:
                 console.log(`Unhandled webhook event: ${event}`);
                 // await this.logWebhook(event, data?.shipment_id, order?.id, data, 'Unhandled event type');
                 break;
         }
     }
-
     /**
      * HANDLE SHIPMENT EVENTS
      */
@@ -127,16 +105,13 @@ class WebhookController {
             'shipment.cancelled': 'cancelled',
             'shipment.exception': 'exception'
         };
-
         const status = eventToStatus[event] || 'unknown';
-
         if (shipment) {
             // Update shipment status
             await shipment.update({
                 status: status,
                 
             });
-
             // Create tracking record
             await db.shipment_tracking.create({
                 shipment_id: shipment.id,
@@ -147,10 +122,8 @@ class WebhookController {
                 source: 'carrier_api',
                 performed_by: 'terminal_africa'
             });
-
             // Send status email to customer
             await this.sendShipmentStatusEmail(shipment, status, data);
-
             // Notify frontend
             this.notifyFrontend(io, event, {
                 shipment_id: data.shipment_id,
@@ -161,7 +134,6 @@ class WebhookController {
             });
         }
     }
-
     /**
      * HANDLE TRANSACTION SUCCESS
      */
@@ -169,20 +141,16 @@ class WebhookController {
         if (order) {
             await order.update({
                 payments: 'paid',
-
                 shipping_fee: data.amount
             });
-
             this.notifyFrontend(io, event, {
                 order_id: order.id,
                 transaction_id: data.transaction_id,
                 amount: data.amount
             });
-
             await this.sendPaymentEmail(order, 'success', data);
         }
     }
-
     /**
      * HANDLE TRANSACTION FAILED
      */
@@ -192,16 +160,13 @@ class WebhookController {
                 payments: 'failed',
                 payment_failure_reason: data.reason
             });
-
             this.notifyFrontend(io, event, {
                 order_id: order.id,
                 reason: data.reason
             });
-
             await this.sendPaymentEmail(order, 'failed', data);
         }
     }
-
     /**
      * HANDLE TRACKING UPDATE
      */
@@ -211,7 +176,6 @@ class WebhookController {
                 tracking_number: data.tracking_number,
                 tracking_url: data.tracking_url
             });
-
             this.notifyFrontend(io, event, {
                 shipment_id: data.shipment_id,
                 tracking_number: data.tracking_number,
@@ -219,7 +183,6 @@ class WebhookController {
             });
         }
     }
-
     sendShipmentStatusEmail = async (shipment, status, data) => {
         try {
             const statusEmails = {
@@ -244,18 +207,14 @@ class WebhookController {
                     template: 'shipment_cancelled'
                 }
             };
-
             const emailConfig = statusEmails[status];
             if (!emailConfig) return;
-
             const trackingInfo = shipment?.tracking_number ?
                 `<p><strong>Tracking Number:</strong> ${shipment.tracking_number}</p>` :
                 '';
-
             const trackingLink = shipment?.tracking_url ?
                 `<p><a href="${shipment.tracking_url}" style="color: #1b3b5f;">Track Your Package</a></p>` :
                 '';
-
             const emailContent = `
                 <h2>Shipment Update</h2>
                 
@@ -264,7 +223,6 @@ class WebhookController {
                 ${trackingLink}
                 <p>Thank you for your business!</p>
             `;
-
             // Send to customer (from shipment_details)
             await this.sendCustomerEmail(
                 shipment,
@@ -272,14 +230,11 @@ class WebhookController {
                 emailContent,
                 emailConfig.template
             );
-
             
-
         } catch (error) {
             console.error('Error sending shipment status email:', error);
         }
     }
-
     /**
      * PAYMENT EMAIL
      */
@@ -288,7 +243,6 @@ class WebhookController {
             const subject = status === 'success'
                 ? 'Payment Received Successfully'
                 : 'Payment Failed';
-
             const content = status === 'success'
                 ? `
                     <h2>Payment Confirmed</h2>
@@ -303,14 +257,11 @@ class WebhookController {
                     <p><strong>Reason:</strong> ${data.reason}</p>
                     <p>Please try again or contact support.</p>
                 `;
-
             await this.sendCustomerEmail(order, subject, content, `payment_${status}`);
-
         } catch (error) {
             console.error('Error sending payment email:', error);
         }
     }
-
     /**
      * HANDLE DELIVERY COMPLETION
      */
@@ -318,15 +269,12 @@ class WebhookController {
         try {
             order.delivered_at = new Date();
             await order.save();
-
             // Approve agent commission
             await this.approveAgentCommission(order);
-
         } catch (error) {
             console.error('Error handling delivery completion:', error);
         }
     }
-
     /**
      * HANDLE SHIPMENT CANCELLATION
      */
@@ -334,17 +282,14 @@ class WebhookController {
         try {
             order.cancellation_reason = data.cancellation_reason;
             await order.save();
-
             // Reverse commission if needed
             if (order.commission && order.order_id) {
                 await walletController.reverseCommision(order.order_id, order.amount);
             }
-
         } catch (error) {
             console.error('Error handling shipment cancellation:', error);
         }
     }
-
     /**
      * APPROVE AGENT COMMISSION
      */
@@ -359,7 +304,6 @@ class WebhookController {
             console.error('Error approving agent commission:', error);
         }
     }
-
     
     /**
      * Extract email from shipment_details
@@ -374,46 +318,38 @@ class WebhookController {
         }
         return null;
     };
-
     /**
      * Send email to customer
      */
     sendCustomerEmail = async (shipment, subject, emailData, template) => {
         try {
             const customerEmail = await this.getCustomerEmail(shipment);
-
             if (!customerEmail) {
                 console.log(' No customer email found for shipment:', shipment.shipment_reference);
                 return false;
             }
-
             await mailer.sendMail({
                 email: customerEmail,
                 subject: subject,
                 content: emailData,
                 template: template
             });
-
             // await this.logWebhook(`email_${template}_sent`, shipment.shipment_reference, null, {
             //     recipient: customerEmail,
             //     subject: subject,
             //     email_type: template,
             //     sent_at: new Date()
             // });
-
             return true;
         } catch (error) {
             console.error('Error sending customer email:', error);
-
             // await this.logWebhook(`email_${template}_failed`, shipment.shipment_reference, null, {
             //     error: error.message,
             //     subject: subject
             // });
-
             return false;
         }
     }
-
     /**
      * Log webhook events
      */
@@ -431,14 +367,12 @@ class WebhookController {
             console.error('Error logging webhook:', error);
         }
     }
-
     /**
      * Append tracking history
      */
     appendTrackingHistory = async (order, status, description, metadata = {}) => {
         try {
             let trackingHistory = [];
-
             if (order.tracking_history) {
                 try {
                     trackingHistory = JSON.parse(order.tracking_history);
@@ -446,7 +380,6 @@ class WebhookController {
                     console.error('Error parsing tracking history:', e);
                 }
             }
-
             trackingHistory.push({
                 timestamp: new Date(),
                 status: status,
@@ -454,14 +387,12 @@ class WebhookController {
                 metadata: metadata,
                 source: 'terminal_africa'
             });
-
             order.tracking_history = JSON.stringify(trackingHistory);
             await order.save();
         } catch (error) {
             console.error('Error appending tracking history:', error);
         }
     }
-
     /**
      * Notify frontend via Socket.IO
      */
@@ -479,7 +410,6 @@ class WebhookController {
             console.error('Error notifying frontend:', error);
         }
     }
-
     /**
      * Get webhook logs for debugging
      */
@@ -487,18 +417,15 @@ class WebhookController {
         try {
             const { page = 1, limit = 20, event_type, processed } = req.query;
             const offset = (page - 1) * limit;
-
             const whereClause = {};
             if (event_type) whereClause.event_type = event_type;
             if (processed !== undefined) whereClause.processed = processed === 'true';
-
             const logs = await db.webhook_logs.findAndCountAll({
                 where: whereClause,
                 order: [['createdAt', 'DESC']],
                 limit: parseInt(limit),
                 offset: parseInt(offset)
             });
-
             return res.status(200).json({
                 success: true,
                 data: logs.rows,
@@ -508,7 +435,6 @@ class WebhookController {
                     total_items: logs.count
                 }
             });
-
         } catch (error) {
             console.error('Get webhook logs error:', error);
             return res.status(500).json({
@@ -518,9 +444,6 @@ class WebhookController {
             });
         }
     }
-
-
 }
-
 // Export singleton instance
 module.exports = new WebhookController();

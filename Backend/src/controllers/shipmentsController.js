@@ -2,7 +2,7 @@ const { Op } = require('sequelize');
 const crypto = require('crypto');
 const axios = require('axios');
 const db = require('../models/db');
-const mailer = require('../mailer/sendgrid');
+const mailer = require('../mailer/kudisms');
 const querystring = require('node:querystring');
 
 const TERMINAL_AFRICA_BASE_URL = process.env.TERMINAL_AFRICA_BASE_URL;
@@ -77,7 +77,7 @@ const calculateShipmentTotals = (items) => {
             const weight = parseFloat(item.weight) || 0;
             const value = parseFloat(item.total_price) || parseFloat(item.value) || parseFloat(item.price) || 0;
             const quantity = parseInt(item.quantity) || 1;
-            
+
             totalWeight += weight;
             // totalWeight += weight * quantity;
             totalValue += value;
@@ -92,30 +92,30 @@ const getVehicleTypesForTransportMode = (transportMode) => {
 
     const modeToVehicles = {
         'road': ['car', 'van', 'truck', 'bike'],
-        'air': ['car', 'van'],  
-        'sea': ['van', 'truck']  
+        'air': ['car', 'van'],
+        'sea': ['van', 'truck']
     };
-    
+
     return modeToVehicles[transportMode] || ['car', 'bike', 'van', 'truck'];
 };
 
 const triggerPostCreationProcesses = async (shipmentId, isInternal) => {
     setImmediate(async () => {
         try {
-            
+
             await sendShipmentConfirmation(shipmentId);
-            
-            
+
+
             if (isInternal) {
                 await notifyPickupTeam(shipmentId);
             }
-            
-         
+
+
             await updateOrderStatus(shipmentId);
-            
+
         } catch (error) {
             console.error('Error in post-creation processes:', error);
-        
+
         }
     });
 };
@@ -127,10 +127,10 @@ const sendShipmentConfirmation = async (shipmentId) => {
                 { model: db.addresses, as: 'delivery_address' }
             ]
         });
-        
+
         if (shipment && shipment.delivery_address?.contact_email) {
             console.log(`[NOTIFICATION] Sending confirmation email to ${shipment.delivery_address.contact_email} for shipment ${shipment.shipment_reference}`);
-            
+
         }
     } catch (error) {
         console.error('Error sending confirmation:', error);
@@ -144,10 +144,10 @@ const notifyPickupTeam = async (shipmentId) => {
                 { model: db.addresses, as: 'pickup_address' }
             ]
         });
-        
+
         if (shipment && shipment.carrier_type === 'internal') {
             console.log(`[AGENT NOTIFICATION] New internal shipment ${shipment.shipment_reference} needs pickup from ${shipment.pickup_address?.line1}`);
-            
+
         }
     } catch (error) {
         console.error('Error notifying pickup team:', error);
@@ -156,7 +156,7 @@ const notifyPickupTeam = async (shipmentId) => {
 
 const updateOrderStatus = async (shipmentId) => {
     try {
-    
+
         console.log(`[ORDER SYNC] Would update order status for shipment ${shipmentId}`);
     } catch (error) {
         console.error('Error updating order status:', error);
@@ -168,23 +168,23 @@ const updateOrderStatus = async (shipmentId) => {
  */
 const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) => {
     try {
-        
+
         let agentData = { name: 'Unassigned', email: '', code: '' };
         if (shipment.agent_id) {
             const agent = await db.agents.findByPk(shipment.agent_id, {
                 include: [{ model: db.users, as: 'user' }]
             });
-            
+
             if (agent && agent.user) {
                 // Fetch attributes to get agent's name
                 const attributes = await db.user_attributes.findAll({
                     where: { user_id: agent.user.id },
                     include: [{ model: db.attributes, as: 'attribute' }]
                 });
-                
+
                 const attrMap = {};
                 attributes.forEach(a => { if (a.attribute) attrMap[a.attribute.slug] = a.value; });
-                
+
                 agentData = {
                     name: `${attrMap.first_name || ''} ${attrMap.last_name || ''}`.trim() || 'Agent',
                     email: agent.user.email,
@@ -193,15 +193,15 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
             }
         }
 
-        
+
         let customerEmail = deliveryAddress.contact_email;
         if (shipment.user_id) {
-             const user = await db.users.findByPk(shipment.user_id);
-             if (user && user.email) {
-                 customerEmail = user.email;
-             }
+            const user = await db.users.findByPk(shipment.user_id);
+            if (user && user.email) {
+                customerEmail = user.email;
+            }
         }
-        
+
         const emailData = {
             shipment_reference: shipment.shipment_reference,
             order_reference: shipment.order_reference,
@@ -228,57 +228,57 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
             delivery_country: deliveryAddress.country,
             delivery_phone: deliveryAddress.phone,
             delivery_instructions: deliveryAddress.instructions || '',
-            
+
             agent_name: agentData.name,
             agent_email: agentData.email,
             agent_code: agentData.code,
-            
+
             is_insured: shipment.is_insured,
             insurance_amount: shipment.insurance_amount,
-            
-            
+
+
             notes: shipment.notes || '',
-            
-            
+
+
             dashboard_url: process.env.DASHBOARD_URL || 'https://logistics.obana.africa'
         };
 
-        
+
         if (customerEmail) {
             await mailer.sendMail({
-                email: customerEmail, 
+                email: customerEmail,
                 subject: `Your Shipment has been created: ${shipment.shipment_reference}`,
                 content: emailData,
                 template: 'newShipmentCustomer'
             });
         }
 
-        
+
         if (agentData.email) {
             await mailer.sendMail({
-                email: agentData.email, 
+                email: agentData.email,
                 subject: `New Shipment Assigned: ${shipment.shipment_reference}`,
                 content: emailData,
                 template: 'newShipmentAgent'
             });
         }
 
-        
-        const adminEmails = [ 'chimebukaanyanwu@gmail.com', 'product@obana.africa', 'shipment@obana.africa'];
+
+        const adminEmails = ['chimebukaanyanwu@gmail.com', 'product@obana.africa', 'shipment@obana.africa'];
         for (const email of adminEmails) {
             await mailer.sendMail({
-                email: email, 
+                email: email,
                 subject: `New Shipment Alert: ${shipment.shipment_reference}`,
                 content: emailData,
                 template: 'newShipmentAdmin'
             });
         }
-        
+
         console.log(`Role-based emails sent for shipment ${shipment.shipment_reference}`);
 
     } catch (error) {
         console.error('Error sending shipment email:', error);
-        
+
     }
 }
 
@@ -292,14 +292,14 @@ const sendStatusUpdateEmail = async (shipment, status, trackingEvent) => {
             const user = await db.users.findByPk(shipment.user_id);
             if (user) customerEmail = user.email;
         }
-        
+
         if (!customerEmail && shipment.delivery_address_id) {
             const address = await db.addresses.findByPk(shipment.delivery_address_id);
             if (address) customerEmail = address.contact_email;
         }
-        
+
         const emails = customerEmail ? [customerEmail] : [];
-        
+
         const emailData = {
             shipment_reference: shipment.shipment_reference,
             order_reference: shipment.order_reference,
@@ -318,7 +318,7 @@ const sendStatusUpdateEmail = async (shipment, status, trackingEvent) => {
                 email: email,
                 subject: ` Shipment Update: ${shipment.shipment_reference} - ${status.toUpperCase()}`,
                 content: emailData,
-                template: 'statusUpdate' 
+                template: 'statusUpdate'
             });
         }
 
@@ -378,7 +378,7 @@ const shipmentController = {
 
             // Normalize and merge activities
             const activities = [];
-            
+
             recentTracking.forEach(t => {
                 activities.push({
                     type: 'shipment',
@@ -419,7 +419,8 @@ const shipmentController = {
                     pendingShipments,
                     revenue: revenueResult || 0,
                     recentActivity: sortedActivities
-            }});
+                }
+            });
         } catch (error) {
             console.error('Error fetching admin stats:', error);
             return res.status(500).json({ success: false, message: 'Error fetching stats' });
@@ -433,7 +434,7 @@ const shipmentController = {
         try {
             const user_id = req.user.id;
             const agent = await db.agents.findOne({ where: { user_id } });
-            
+
             if (!agent) {
                 return res.status(404).json({ success: false, message: 'Agent profile not found' });
             }
@@ -509,15 +510,15 @@ const shipmentController = {
      */
     createShipment: async (req, res) => {
         try {
-            
+
             let userId = null;
             let tenantId = null;
 
             if (req.user && req.user.id) {
-                
+
                 userId = req.user.id;
             } else if (req.tenant && req.tenant.id) {
-                
+
                 tenantId = req.tenant.id;
             } else {
                 return res.status(403).json({
@@ -528,12 +529,12 @@ const shipmentController = {
 
             const payload = req.body;
             // console.log("SHIPMENT PAYLLOADDDDDD", payload)
-            
+
             // If items are missing at root but present in nested shipments
             if ((!payload.items || payload.items.length === 0) && payload.dispatcher?.shipments?.[0]) {
                 const nestedShipment = payload.dispatcher.shipments[0];
                 payload.items = nestedShipment.items || [];
-                
+
                 if (!payload.rate_id) {
                     payload.rate_id = nestedShipment.rate_id;
                 }
@@ -541,7 +542,7 @@ const shipmentController = {
                     payload.external_shipment_id = nestedShipment.id || nestedShipment.metadata?.shipment_id;
                 }
             }
-            
+
 
             // Validate payload
             const validation = validateShipmentPayload(payload);
@@ -552,11 +553,11 @@ const shipmentController = {
                     errors: validation.errors
                 });
             }
-            
+
             const transaction = await db.sequelize.transaction();
-            
+
             try {
-                
+
                 const deliveryAddress = await db.addresses.create({
                     address_type: 'delivery',
                     name: `${payload.delivery_address.first_name || ''} ${payload.delivery_address.last_name || ''}`.trim(),
@@ -573,7 +574,7 @@ const shipmentController = {
                     metadata: payload.delivery_address.metadata || {}
                 }, { transaction });
 
-                
+
                 const pickupAddressData = {
                     address_type: 'pickup',
                     name: payload.pickup_address.contact_name || 'Vendor',
@@ -594,16 +595,16 @@ const shipmentController = {
 
 
                 // A shipment is internal only if it's explicitly 'obana' AND doesn't have an external shipment ID
-                const isInternal = (payload.carrier_slug === 'obana' || 
-                                 (payload.dispatcher && payload.dispatcher.carrier_slug === 'obana')) 
+                const isInternal = (payload.carrier_slug === 'obana' ||
+                    (payload.dispatcher && payload.dispatcher.carrier_slug === 'obana'))
                 // console.log("isInternal: ", isInternal, "payload.rate_id: ", payload.rate_id, "payload.carrier_slug: ", payload.carrier_slug, "dispatcher carrier slug: ", payload.dispatcher?.carrier_slug)
-                
+
                 const shipmentReference = generateShipmentReference(isInternal);
-                
-                
+
+
                 const { totalWeight, totalValue, itemCount } = calculateShipmentTotals(payload.items);
 
-                
+
                 const shipment = await db.shippings.create({
                     user_id: userId,
                     tenant_id: tenantId,
@@ -644,9 +645,9 @@ const shipmentController = {
                     notes: payload.notes || ''
                 }, { transaction });
 
-                
-                    try {
-                        if (isInternal && !shipment.driver_id) {
+
+                try {
+                    if (isInternal && !shipment.driver_id) {
                         const availableAgent = await db.agents.findOne({
                             where: {
                                 // status: 'active',
@@ -654,25 +655,25 @@ const shipmentController = {
                                 // city: pickupAddress.
                                 id: 6
                             },
-                             
-                                // Simple load balancing: random or by ID for now
+
+                            // Simple load balancing: random or by ID for now
                             // order: [
                             //     [db.sequelize.fn('RANDOM')]
                             // ]
                         });
-                        
-                    
+
+
                         if (availableAgent) {
                             shipment.agent_id = availableAgent.id;
                             await shipment.save({ transaction });
-                            
+
                             console.log(`[AGENT ASSIGNMENT] Assigned agent ${availableAgent.agent_code} to shipment ${shipmentReference}`);
                         } else {
                             console.warn(`[AGENT ASSIGNMENT] No available agent found for location: ${pickupAddress.city}, ${pickupAddress.state}`);
                         }
                     }
-                    } catch (agentError) {
-                        console.error('[AGENT ASSIGNMENT ERROR]', agentError);
+                } catch (agentError) {
+                    console.error('[AGENT ASSIGNMENT ERROR]', agentError);
                 }
 
                 if (payload.items && Array.isArray(payload.items) && payload.items.length > 0) {
@@ -680,18 +681,19 @@ const shipmentController = {
                         payload.items.map((item, index) => {
                             const itemNumber = String(index + 1).padStart(3, '0');
                             return {
-                            shipment_id: shipment.id,
-                            item_id: `ITEM-${itemNumber}`,
-                            name: item.name,
-                            description: item.description || '',
-                            quantity: parseInt(item.quantity) || 1,
-                            unit_price: parseFloat(item.price) || parseFloat(item.value) || 0,
-                            total_price: parseFloat(item.total_price) || parseFloat(item.value) || 0,
-                            weight: parseFloat(item.weight) || 0,
-                            dimensions: item.dimensions || null,
-                            currency: item.currency || 'NGN',
-                            metadata: { original_item: item }
-                        }}),
+                                shipment_id: shipment.id,
+                                item_id: `ITEM-${itemNumber}`,
+                                name: item.name,
+                                description: item.description || '',
+                                quantity: parseInt(item.quantity) || 1,
+                                unit_price: parseFloat(item.price) || parseFloat(item.value) || 0,
+                                total_price: parseFloat(item.total_price) || parseFloat(item.value) || 0,
+                                weight: parseFloat(item.weight) || 0,
+                                dimensions: item.dimensions || null,
+                                currency: item.currency || 'NGN',
+                                metadata: { original_item: item }
+                            }
+                        }),
                         { transaction }
                     );
                 }
@@ -708,18 +710,18 @@ const shipmentController = {
                         carrier_type: isInternal ? 'internal' : 'external'
                     }
                 }, { transaction });
-                
-                
+
+
                 if (!isInternal) {
                     console.log(`[EXTERNAL CARRIER] Shipment ${shipmentReference} assigned to ${payload.dispatcher?.carrier_name || 'External Carrier'}`);
                     console.log(`[EXTERNAL CARRIER] Reference: ${payload.carrier_reference}, Rate ID: ${payload.rate_id}`);
                 }
 
                 await transaction.commit();
-                
-                
+
+
                 sendNewShipmentEmail(shipment, deliveryAddress, pickupAddress);
-                
+
                 triggerPostCreationProcesses(shipment.id, isInternal);
 
                 return res.status(201).json({
@@ -764,7 +766,7 @@ const shipmentController = {
                 return res.status(404).json({ success: false, message: 'Shipment not found' });
             }
 
-            if (shipment.carrier_type !== 'external' || !shipment.external_rate_id ) {
+            if (shipment.carrier_type !== 'external' || !shipment.external_rate_id) {
                 return res.status(400).json({ success: false, message: 'Shipment is not an unconfirmed external shipment' });
             }
 
@@ -808,244 +810,244 @@ const shipmentController = {
         }
     },
 
-   /**
- * Get all shipments for admin overview/monitoring
- */
-getAllShipments: async (req, res) => {
-    try {
-        const {
-            page = 1,
-            limit = 50,
-            status,
-            carrier_type,
-            start_date,
-            end_date,
-            search,
-            sort_by = 'createdAt',
-            sort_order = 'DESC'
-        } = req.query;
+    /**
+  * Get all shipments for admin overview/monitoring
+  */
+    getAllShipments: async (req, res) => {
+        try {
+            const {
+                page = 1,
+                limit = 50,
+                status,
+                carrier_type,
+                start_date,
+                end_date,
+                search,
+                sort_by = 'createdAt',
+                sort_order = 'DESC'
+            } = req.query;
 
-        // Build where clause
-        const where = {};
+            // Build where clause
+            const where = {};
 
-        // Filter by status
-        if (status) {
-            if (status === 'active') {
-                // Active shipments are those not completed/cancelled
-                where.status = {
-                    [Op.notIn]: ['delivered', 'cancelled', 'returned']
-                };
-            } else {
-                where.status = status;
-            }
-        }
-
-        
-        if (carrier_type) {
-            where.carrier_type = carrier_type;
-        }
-
-        
-        if (start_date || end_date) {
-            where.createdAt = {};
-            
-            if (start_date) {
-                where.createdAt[Op.gte] = new Date(start_date);
-            }
-            
-            if (end_date) {
-                where.createdAt[Op.lte] = new Date(end_date);
-            }
-        }
-
-        // Search filter (by reference, order reference, vendor name, customer)
-        if (search) {
-            where[Op.or] = [
-                { shipment_reference: { [Op.like]: `%${search}%` } },
-                { order_reference: { [Op.like]: `%${search}%` } },
-                { vendor_name: { [Op.like]: `%${search}%` } },
-                { user_id: { [Op.like]: `%${search}%` } }
-            ];
-        }
-
-        // Pagination
-        const offset = (parseInt(page) - 1) * parseInt(limit);
-        
-        // Sorting
-        const order = [];
-        if (sort_by) {
-            order.push([sort_by, sort_order.toUpperCase()]);
-        }
-
-        // Get shipments with pagination and includes
-        const shipments = await db.shippings.findAndCountAll({
-            where,
-            include: [
-                {
-                    model: db.addresses,
-                    as: 'delivery_address',
-                    attributes: ['name', 'line1', 'line2', 'city', 'state', 'country', 'zip_code', 'phone']
-                },
-                {
-                    model: db.addresses,
-                    as: 'pickup_address',
-                    attributes: ['name', 'line1', 'line2', 'city', 'state', 'country', 'zip_code']
-                },
-                {
-                    model: db.drivers,
-                    as: 'driver',
-                    attributes: ['driver_code', 'user_id'],
-                    include: [{
-                        model: db.users,
-                        as: 'user',
-                        attributes: ['email'],
-                        required: false
-                    }]
-                },
-                {
-                    model: db.agents,
-                    as: 'agent',
-                    attributes: ['agent_code'],
-                    required: false,
-                    include: [{
-                        model: db.users,
-                        as: 'user',
-                        attributes: ['email'],
-                        required: false
-                    }]
-                },
-                {
-                    model: db.shipment_tracking,
-                    as: 'tracking_events',
-                    attributes: ['status', 'createdAt'],
-                    order: [['createdAt', 'DESC']],
-                    limit: 1
-                }
-            ],
-            attributes: [
-                'id',
-                'shipment_reference',
-                'order_reference',
-                'user_id',
-                'vendor_name',
-                'carrier_type',
-                'carrier_name',
-                'status',
-                'product_value',
-                'shipping_fee',
-                'currency',
-                'total_weight',
-                'total_items',
-                'actual_delivery_at',
-                'createdAt',
-                'updatedAt'
-            ],
-            order,
-            limit: parseInt(limit),
-            offset: offset,
-            distinct: true 
-        });
-
-        
-        const statistics = {
-            total: shipments.count,
-            by_status: {},
-            by_carrier: {},
-            by_day: {}
-        };
-
-        
-        const statusCounts = await db.shippings.findAll({
-            attributes: [
-                'status',
-                [db.sequelize.fn('COUNT', db.sequelize.col('id')), 'count']
-            ],
-            group: ['status']
-        });
-
-        statusCounts.forEach(item => {
-            statistics.by_status[item.status] = parseInt(item.dataValues.count);
-        });
-
-        
-        const carrierCounts = await db.shippings.findAll({
-            attributes: [
-                'carrier_type',
-                [db.sequelize.fn('COUNT', db.sequelize.col('id')), 'count']
-            ],
-            group: ['carrier_type']
-        });
-
-        carrierCounts.forEach(item => {
-            statistics.by_carrier[item.carrier_type] = parseInt(item.dataValues.count);
-        });
-
-        
-        const last7Days = new Date();
-        last7Days.setDate(last7Days.getDate() - 7);
-
-        const dailyCounts = await db.shippings.findAll({
-            attributes: [
-                [db.sequelize.fn('DATE', db.sequelize.col('createdAt')), 'date'],
-                [db.sequelize.fn('COUNT', db.sequelize.col('id')), 'count']
-            ],
-            where: {
-                createdAt: {
-                    [Op.gte]: last7Days
-                }
-            },
-            group: [db.sequelize.fn('DATE', db.sequelize.col('createdAt'))],
-            order: [[db.sequelize.fn('DATE', db.sequelize.col('createdAt')), 'ASC']]
-        });
-
-        dailyCounts.forEach(item => {
-            statistics.by_day[item.dataValues.date] = parseInt(item.dataValues.count);
-        });
-
-        return res.status(200).json({
-            success: true,
-            data: {
-                shipments: shipments.rows,
-                pagination: {
-                    total: shipments.count,
-                    page: parseInt(page),
-                    pages: Math.ceil(shipments.count / parseInt(limit)),
-                    limit: parseInt(limit)
-                },
-                statistics: statistics,
-                filters: {
-                    status,
-                    carrier_type,
-                    start_date,
-                    end_date,
-                    search
+            // Filter by status
+            if (status) {
+                if (status === 'active') {
+                    // Active shipments are those not completed/cancelled
+                    where.status = {
+                        [Op.notIn]: ['delivered', 'cancelled', 'returned']
+                    };
+                } else {
+                    where.status = status;
                 }
             }
-        });
 
-    } catch (error) {
-        console.error('Error getting all shipments:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Error fetching shipments',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-},
+
+            if (carrier_type) {
+                where.carrier_type = carrier_type;
+            }
+
+
+            if (start_date || end_date) {
+                where.createdAt = {};
+
+                if (start_date) {
+                    where.createdAt[Op.gte] = new Date(start_date);
+                }
+
+                if (end_date) {
+                    where.createdAt[Op.lte] = new Date(end_date);
+                }
+            }
+
+            // Search filter (by reference, order reference, vendor name, customer)
+            if (search) {
+                where[Op.or] = [
+                    { shipment_reference: { [Op.like]: `%${search}%` } },
+                    { order_reference: { [Op.like]: `%${search}%` } },
+                    { vendor_name: { [Op.like]: `%${search}%` } },
+                    { user_id: { [Op.like]: `%${search}%` } }
+                ];
+            }
+
+            // Pagination
+            const offset = (parseInt(page) - 1) * parseInt(limit);
+
+            // Sorting
+            const order = [];
+            if (sort_by) {
+                order.push([sort_by, sort_order.toUpperCase()]);
+            }
+
+            // Get shipments with pagination and includes
+            const shipments = await db.shippings.findAndCountAll({
+                where,
+                include: [
+                    {
+                        model: db.addresses,
+                        as: 'delivery_address',
+                        attributes: ['name', 'line1', 'line2', 'city', 'state', 'country', 'zip_code', 'phone']
+                    },
+                    {
+                        model: db.addresses,
+                        as: 'pickup_address',
+                        attributes: ['name', 'line1', 'line2', 'city', 'state', 'country', 'zip_code']
+                    },
+                    {
+                        model: db.drivers,
+                        as: 'driver',
+                        attributes: ['driver_code', 'user_id'],
+                        include: [{
+                            model: db.users,
+                            as: 'user',
+                            attributes: ['email'],
+                            required: false
+                        }]
+                    },
+                    {
+                        model: db.agents,
+                        as: 'agent',
+                        attributes: ['agent_code'],
+                        required: false,
+                        include: [{
+                            model: db.users,
+                            as: 'user',
+                            attributes: ['email'],
+                            required: false
+                        }]
+                    },
+                    {
+                        model: db.shipment_tracking,
+                        as: 'tracking_events',
+                        attributes: ['status', 'createdAt'],
+                        order: [['createdAt', 'DESC']],
+                        limit: 1
+                    }
+                ],
+                attributes: [
+                    'id',
+                    'shipment_reference',
+                    'order_reference',
+                    'user_id',
+                    'vendor_name',
+                    'carrier_type',
+                    'carrier_name',
+                    'status',
+                    'product_value',
+                    'shipping_fee',
+                    'currency',
+                    'total_weight',
+                    'total_items',
+                    'actual_delivery_at',
+                    'createdAt',
+                    'updatedAt'
+                ],
+                order,
+                limit: parseInt(limit),
+                offset: offset,
+                distinct: true
+            });
+
+
+            const statistics = {
+                total: shipments.count,
+                by_status: {},
+                by_carrier: {},
+                by_day: {}
+            };
+
+
+            const statusCounts = await db.shippings.findAll({
+                attributes: [
+                    'status',
+                    [db.sequelize.fn('COUNT', db.sequelize.col('id')), 'count']
+                ],
+                group: ['status']
+            });
+
+            statusCounts.forEach(item => {
+                statistics.by_status[item.status] = parseInt(item.dataValues.count);
+            });
+
+
+            const carrierCounts = await db.shippings.findAll({
+                attributes: [
+                    'carrier_type',
+                    [db.sequelize.fn('COUNT', db.sequelize.col('id')), 'count']
+                ],
+                group: ['carrier_type']
+            });
+
+            carrierCounts.forEach(item => {
+                statistics.by_carrier[item.carrier_type] = parseInt(item.dataValues.count);
+            });
+
+
+            const last7Days = new Date();
+            last7Days.setDate(last7Days.getDate() - 7);
+
+            const dailyCounts = await db.shippings.findAll({
+                attributes: [
+                    [db.sequelize.fn('DATE', db.sequelize.col('createdAt')), 'date'],
+                    [db.sequelize.fn('COUNT', db.sequelize.col('id')), 'count']
+                ],
+                where: {
+                    createdAt: {
+                        [Op.gte]: last7Days
+                    }
+                },
+                group: [db.sequelize.fn('DATE', db.sequelize.col('createdAt'))],
+                order: [[db.sequelize.fn('DATE', db.sequelize.col('createdAt')), 'ASC']]
+            });
+
+            dailyCounts.forEach(item => {
+                statistics.by_day[item.dataValues.date] = parseInt(item.dataValues.count);
+            });
+
+            return res.status(200).json({
+                success: true,
+                data: {
+                    shipments: shipments.rows,
+                    pagination: {
+                        total: shipments.count,
+                        page: parseInt(page),
+                        pages: Math.ceil(shipments.count / parseInt(limit)),
+                        limit: parseInt(limit)
+                    },
+                    statistics: statistics,
+                    filters: {
+                        status,
+                        carrier_type,
+                        start_date,
+                        end_date,
+                        search
+                    }
+                }
+            });
+
+        } catch (error) {
+            console.error('Error getting all shipments:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Error fetching shipments',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
+    },
     /**
      * Get shipment status
      */
     getShipment: async (req, res) => {
         try {
-        const userController = require('./userController');
-        const { shipment_reference } = req.params;
+            const userController = require('./userController');
+            const { shipment_reference } = req.params;
             const user_id = String(req.user.id);
             const user_role = req.user.role;
-            
+
             let where = { shipment_reference };
 
             if (user_role === 'admin') {
-                
+
             } else if (user_role === 'driver') {
                 const driver = await db.drivers.findOne({ where: { user_id: req.user.id } });
                 if (driver) {
@@ -1054,36 +1056,36 @@ getAllShipments: async (req, res) => {
                     where.user_id = user_id;
                 }
             } else if (user_role === 'agent') {
-                    
 
-                    const agent = await db.agents.findOne({ where: {user_id: req.user.id }})
-                    
-                    if (agent) {
-                        where.agent_id = agent.id
-                        
-                    }
-                } else {
+
+                const agent = await db.agents.findOne({ where: { user_id: req.user.id } })
+
+                if (agent) {
+                    where.agent_id = agent.id
+
+                }
+            } else {
                 where.user_id = user_id;
             }
-            
+
 
             const shipment = await db.shippings.findOne({
                 where,
                 include: [
-                    { 
-                        model: db.addresses, 
-                        as: 'delivery_address' 
+                    {
+                        model: db.addresses,
+                        as: 'delivery_address'
                     },
-                    { 
-                        model: db.addresses, 
-                        as: 'pickup_address' 
+                    {
+                        model: db.addresses,
+                        as: 'pickup_address'
                     },
-                    { 
-                        model: db.shipment_items, 
-                        as: 'items' 
+                    {
+                        model: db.shipment_items,
+                        as: 'items'
                     },
-                    { 
-                        model: db.shipment_tracking, 
+                    {
+                        model: db.shipment_tracking,
                         as: 'tracking_events',
                         order: [['createdAt', 'DESC']]
                     },
@@ -1101,7 +1103,7 @@ getAllShipments: async (req, res) => {
                     {
                         model: db.drivers,
                         as: 'driver',
-                        required: false 
+                        required: false
                     }
                 ]
             });
@@ -1137,16 +1139,16 @@ getAllShipments: async (req, res) => {
     },
 
     async refreshToken(refreshTokenCredentials) {
-            let token = await axios.post(process.env.ZOHO_AUTH_URL, querystring.stringify(refreshTokenCredentials))
-                .catch(error => {
-                    console.error('Error fetching data', error);
-                });
-    
-            return token;
+        let token = await axios.post(process.env.ZOHO_AUTH_URL, querystring.stringify(refreshTokenCredentials))
+            .catch(error => {
+                console.error('Error fetching data', error);
+            });
+
+        return token;
     },
 
     tokenCredentials(reToken) {
-    return {
+        return {
             client_id: process.env.ZOHO_CLIENT_ID,
             client_secret: process.env.ZOHO_CLIENT_SECRET,
             grant_type: 'refresh_token',
@@ -1155,13 +1157,13 @@ getAllShipments: async (req, res) => {
     },
 
     async getZohoInventoryToken() {
-        
-        let zohoInventoryToken;
-            let zohoInventoryTokenData = (await this.refreshToken(this.tokenCredentials(process.env.INVENTORY_REFRESH_TOKEN)))?.data;
 
-            if (zohoInventoryTokenData?.access_token) {
-                zohoInventoryToken = zohoInventoryTokenData.access_token
-            }
+        let zohoInventoryToken;
+        let zohoInventoryTokenData = (await this.refreshToken(this.tokenCredentials(process.env.INVENTORY_REFRESH_TOKEN)))?.data;
+
+        if (zohoInventoryTokenData?.access_token) {
+            zohoInventoryToken = zohoInventoryTokenData.access_token
+        }
         return 'Zoho-oauthtoken ' + zohoInventoryToken;
     },
 
@@ -1172,7 +1174,7 @@ getAllShipments: async (req, res) => {
         if (!shipment.order_reference?.startsWith('SO-') || !shipment.external_shipment_id) return;
 
         try {
-            
+
             const token = await shipmentController.getZohoInventoryToken();
             const zohoShipmentId = shipment.external_shipment_id;
             const orgId = process.env.ZOHO_ORG_ID;
@@ -1183,7 +1185,7 @@ getAllShipments: async (req, res) => {
                 action = 'shipped';
             } else if (status === 'delivered') {
                 action = 'delivered';
-            } 
+            }
 
             if (action) {
                 const url = `${baseUrl}shipmentorders/${zohoShipmentId}/status/${action}?organization_id=${orgId}`;
@@ -1199,29 +1201,29 @@ getAllShipments: async (req, res) => {
      * Update shipment status
      */
     updateShipmentStatus: async (req, res) => {
-        
+
 
         try {
             const { shipment_id } = req.params;
             const { status, external_shipment_id, description, location, notes, source = 'system', performed_by } = req.body;
             if (external_shipment_id) {
-                const updateExtId = {external_shipment_id: external_shipment_id.toString()}; 
+                const updateExtId = { external_shipment_id: external_shipment_id.toString() };
                 let shipment;
 
                 if (isNaN(shipment_id)) {
-                    shipment = await db.shippings.findOne({ where: { shipment_reference: shipment_id} });
+                    shipment = await db.shippings.findOne({ where: { shipment_reference: shipment_id } });
                 } else {
-                 shipment = await db.shippings.findByPk(shipment_id);
+                    shipment = await db.shippings.findByPk(shipment_id);
                 }
-            
+
                 let updatedEXternalShipmentId = await shipment.update(updateExtId);
-                if (updatedEXternalShipmentId) 
-                     return res.status(200).json({
-                    success: true,
-                    message: 'External Shipment ID updated',
-                    data: updatedEXternalShipmentId
-                });
-        }
+                if (updatedEXternalShipmentId)
+                    return res.status(200).json({
+                        success: true,
+                        message: 'External Shipment ID updated',
+                        data: updatedEXternalShipmentId
+                    });
+            }
 
             // Validate status
             const validStatuses = ['pending', 'confirmed', 'picked_up', 'dispatched', 'in_transit', 'delivered', 'failed', 'cancelled', 'returned'];
@@ -1234,9 +1236,9 @@ getAllShipments: async (req, res) => {
             let shipment;
 
             if (isNaN(shipment_id)) {
-                shipment = await db.shippings.findOne({ where: { shipment_reference: shipment_id} });
+                shipment = await db.shippings.findOne({ where: { shipment_reference: shipment_id } });
             } else {
-             shipment = await db.shippings.findByPk(shipment_id);
+                shipment = await db.shippings.findByPk(shipment_id);
             }
 
             if (!shipment) {
@@ -1258,12 +1260,12 @@ getAllShipments: async (req, res) => {
             const isStatusChanging = status && status !== previousStatus;
 
             // Update shipment status
-            const updateData = external_shipment_id ? {  external_shipment_id} : { status };
-            
+            const updateData = external_shipment_id ? { external_shipment_id } : { status };
+
             if (status === 'delivered') {
                 updateData.actual_delivery_at = new Date();
             }
-            
+
             await shipment.update(updateData);
 
             // Sync with Zoho Inventory if it's a Zoho-linked shipment and status is actually changing
@@ -1288,12 +1290,12 @@ getAllShipments: async (req, res) => {
                     previous_status: shipment.status
                 }
             });
-            
+
             // Send email notification (fire-and-forget to avoid blocking response)
             sendStatusUpdateEmail(shipment, status, req.body).catch(err => {
                 console.error('Error sending status update email:', err);
             });
-            
+
             return res.status(200).json({
                 success: true,
                 message: 'Shipment status updated',
@@ -1362,7 +1364,7 @@ getAllShipments: async (req, res) => {
 
         try {
             const shipment = await db.shippings.findByPk(shipment_id);
-            
+
             if (!shipment) {
                 return res.status(404).json({
                     success: false,
@@ -1417,11 +1419,11 @@ getAllShipments: async (req, res) => {
      * Get all shipments for a user
      */
     getUserShipments: async (req, res) => {
-        
+
         try {
             const { user_id } = req.params;
             const { status, carrier_type, role, page = 1, limit = 20 } = req.query;
-            
+
             let where = {};
 
             if (role === 'driver') {
@@ -1441,29 +1443,29 @@ getAllShipments: async (req, res) => {
             } else {
                 where.user_id = user_id;
             }
-            
+
             if (status) where.status = status;
             if (carrier_type) where.carrier_type = carrier_type;
-            
+
             const offset = (page - 1) * limit;
-            
+
             const shipments = await db.shippings.findAndCountAll({
                 where,
                 include: [
                     { model: db.addresses, as: 'delivery_address' },
                     { model: db.addresses, as: 'pickup_address' },
-                    { 
-                        model: db.shipment_tracking, 
+                    {
+                        model: db.shipment_tracking,
                         as: 'tracking_events',
                         order: [['createdAt', 'DESC']],
-                        limit: 1 
+                        limit: 1
                     }
                 ],
                 order: [['createdAt', 'DESC']],
                 limit: parseInt(limit),
                 offset: offset
             });
-            
+
             return res.status(200).json({
                 success: true,
                 data: {
@@ -1492,29 +1494,29 @@ getAllShipments: async (req, res) => {
         try {
             const { carrier } = req.params;
             const webhookData = req.body;
-            
+
             console.log(`[WEBHOOK] Received from ${carrier}:`, JSON.stringify(webhookData, null, 2));
-            
+
             // Look for external reference in webhook data
-            let externalReference = webhookData.tracking_number || 
-                                   webhookData.reference || 
-                                   webhookData.carrier_reference;
-            
+            let externalReference = webhookData.tracking_number ||
+                webhookData.reference ||
+                webhookData.carrier_reference;
+
             if (!externalReference) {
                 return res.status(400).json({
                     success: false,
                     message: 'No tracking reference found in webhook'
                 });
             }
-            
+
             // Find shipment by external reference
             const shipment = await db.shippings.findOne({
-                where: { 
+                where: {
                     external_carrier_reference: externalReference,
                     carrier_type: 'external'
                 }
             });
-            
+
             if (!shipment) {
                 console.log(`[WEBHOOK] No shipment found for external reference: ${externalReference}`);
                 return res.status(404).json({
@@ -1522,7 +1524,7 @@ getAllShipments: async (req, res) => {
                     message: 'Shipment not found'
                 });
             }
-            
+
             // Map carrier status to our status
             const statusMapping = {
                 'in_transit': 'in_transit',
@@ -1531,10 +1533,10 @@ getAllShipments: async (req, res) => {
                 'exception': 'failed',
                 'cancelled': 'cancelled'
             };
-            
+
             const carrierStatus = webhookData.status || webhookData.tracking_status;
             const ourStatus = statusMapping[carrierStatus] || 'in_transit';
-            
+
             // Update shipment status
             await shipment.update({
                 status: ourStatus,
@@ -1547,7 +1549,7 @@ getAllShipments: async (req, res) => {
                     }
                 }
             });
-            
+
             // Create tracking event
             await db.shipment_tracking.create({
                 shipment_id: shipment.id,
@@ -1558,12 +1560,12 @@ getAllShipments: async (req, res) => {
                 performed_by: carrier,
                 metadata: { webhook_data: webhookData }
             });
-            
+
             return res.status(200).json({
                 success: true,
                 message: 'Webhook processed successfully'
             });
-            
+
         } catch (error) {
             console.error('Error processing webhook:', error);
             return res.status(500).json({
@@ -1580,13 +1582,13 @@ getAllShipments: async (req, res) => {
         try {
             const { shipment_id } = req.params;
             const shipment = await db.shippings.findByPk(shipment_id);
-            
+
             if (!shipment) {
                 return res.status(404).json({ success: false, message: 'Shipment not found' });
             }
 
             await shipment.destroy();
-            
+
             return res.status(200).json({ success: true, message: 'Shipment deleted successfully' });
         } catch (error) {
             console.error('Error deleting shipment:', error);

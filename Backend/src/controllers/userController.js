@@ -3,14 +3,12 @@ const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const db = require('../models/db.js')
 const utils = require('../../utils.js')
-const mailer = require('../mailer/sendgrid')
+const mailer = require('../mailer/kudisms')
 const requestController = require('./requestController.js')
 const fs = require('fs')
 const { uploadImage } = require('../helpers/cloudinary')
 const path = require('path')
 const crypto = require('crypto')
-
-
 const User = db.users
 const Tokens = db.tokens
 const Attribute = db.attributes
@@ -21,7 +19,6 @@ const Scopes = db.scopes
 const RoleScopes = db.role_scopes
 const Drivers = db.drivers
 const Agents = db.agents
-
 /**
  * Method to request user creation
  * @param req
@@ -35,12 +32,10 @@ const Agents = db.agents
 const createUserRequest = async (req, res) => {
     try {
     req.body.email = req.body.email.toLowerCase()
-
     // normalize phone if present
     if (req.body.phone && req.body.phone.length > 50) {
         return res.status(400).send(utils.responseError('Phone number too long. Maximum 50 characters.'))
     }
-
     // Validate role
     const validRoles = ['admin', 'driver', 'customer', 'agent'];
     if (!req.body.role || !validRoles.includes(req.body.role)) {
@@ -48,15 +43,12 @@ const createUserRequest = async (req, res) => {
             utils.responseError(`Role is required and must be one of: ${validRoles.join(', ')}`)
         )
     }
-
     const user = await getUser(req.body.email, req.body.phone)
-
     if (user) {
         return res.status(401).send(
             utils.responseError('Email or Phone number already registered')
         )
     }
-
     
     const authData = await createUser(req.body, req, res);
     return res.status(201).send(utils.responseSuccess(authData));
@@ -66,7 +58,6 @@ const createUserRequest = async (req, res) => {
         )
     }
 }
-
 /**
  * Method to complete user creation request
  * @param payload
@@ -79,24 +70,19 @@ const createUserRequest = async (req, res) => {
  **/
 const createUser = async (payload, req, res) => {
     let user = await getUser(payload.email, payload.phone)
-
     if (user) {
         throw new Error('Email or Phone number already registered')
     }
-
     const { first_name, last_name, vehicle_type, vehicle_registration, role,  ...userData } = payload
     
     const hashedPassword = await hashPassword(userData.password)
-
     // Create user
     user = await User.create({
         email: userData.email,
         phone: userData.phone,
         password: hashedPassword
     })
-
     const attributesToSave = { first_name, last_name, role };
-
     // If user is a driver, link to driver record
     if (role === 'driver' ) {
        let driverObj = await Drivers.create({
@@ -111,10 +97,8 @@ const createUser = async (payload, req, res) => {
             createdAt: new Date(),
             updatedAt: new Date()
         })
-
         attributesToSave.driver_id = driverObj.id;
     }
-
     
     if (role === 'agent') {
         const newAgent = await Agents.create({
@@ -135,7 +119,6 @@ const createUser = async (payload, req, res) => {
             government_id_image: payload.government_id_image,
             profile_photo: payload.profile_photo
         });
-
         await mailer.sendMail({
             email: userData.email,
             subject: 'Welcome to Obana Logistics - Agent Application Received',
@@ -146,7 +129,6 @@ const createUser = async (payload, req, res) => {
             }
         });
     }
-
     if (role === 'customer') {
         attributesToSave.api_key = `OBN-${crypto.randomBytes(20).toString('hex')}`;
     }
@@ -160,7 +142,6 @@ const createUser = async (payload, req, res) => {
     
     return createAuthDetail(user)
 }
-
 /**
  * Method to create all the users attributes supplied
  * @param {*} user_id 
@@ -175,7 +156,6 @@ const createUserAttributes = async (user_id, attributes, parent_id = null) => {
             const name = slug.replaceAll("_", " ");
             theAttribute = await Attribute.create({ name, slug });
         }
-
         let userAttribute = await UserAttribute.findOne({
             where: {
                 user_id,
@@ -188,7 +168,6 @@ const createUserAttributes = async (user_id, attributes, parent_id = null) => {
                 attribute_id: theAttribute.id,
             });
         }
-
         const value = attributes[slug];
         if (typeof value === "object" && value !== null) {
             if (Array.isArray(value)) {
@@ -208,7 +187,6 @@ const createUserAttributes = async (user_id, attributes, parent_id = null) => {
     }
     return createdAttributes;
 }
-
 /**
  * Method to request user password reset
  * @param req
@@ -220,13 +198,11 @@ const resetPasswordRequest = async (req, res) => {
     try {
         req.body.user_identification = req.body?.user_identification?.toLowerCase();
         const user = await getUser(req.body.user_identification, req.body.user_identification, true);
-
         if (!user) {
             return res.status(404).send(
                 utils.responseError('User not found. Check your email or phone and try again')
             );
         }
-
         // Generate Reset Token (valid for 1 hour)
         const secret = process.env.ACCESS_TOKEN_SECRET || 'secret'; 
         const token = jwt.sign(
@@ -234,10 +210,8 @@ const resetPasswordRequest = async (req, res) => {
             secret,
             { expiresIn: '1h' }
         );
-
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
         const resetLink = `${frontendUrl}/auth/reset-password?token=${token}`;
-
         await mailer.sendMail({
             email: user.email,
             subject: 'Reset Your Password - Obana Logistics',
@@ -247,21 +221,18 @@ const resetPasswordRequest = async (req, res) => {
                 link: resetLink
             }
         });
-
         return res.status(200).send(utils.responseSuccess('Password reset link sent to your email.'));
     } catch (error) {
         console.error("Reset Password Request Error:", error);
         return res.status(500).send(utils.responseError(error.message));
     }
 }
-
 const resetPasswordConfirm = async (req, res) => {
     try {
         const { token, password } = req.body;
         if (!token || !password) {
             return res.status(400).send(utils.responseError('Token and new password are required'));
         }
-
         const secret = process.env.ACCESS_TOKEN_SECRET || 'secret';
         
         let decoded;
@@ -270,28 +241,22 @@ const resetPasswordConfirm = async (req, res) => {
         } catch (e) {
             return res.status(400).send(utils.responseError('Invalid or expired reset token'));
         }
-
         if (decoded.scope !== 'password_reset') {
             return res.status(400).send(utils.responseError('Invalid token type'));
         }
-
         const user = await User.findByPk(decoded.id);
         if (!user) {
             return res.status(404).send(utils.responseError('User not found'));
         }
-
         const hashedPassword = await hashPassword(password);
         user.password = hashedPassword;
         await user.save();
-
         return res.status(200).send(utils.responseSuccess('Password has been reset successfully. You can now login.'));
-
     } catch (error) {
         console.error("Reset Password Confirm Error:", error);
         return res.status(500).send(utils.responseError(error.message));
     }
 }
-
 /**
  * Method to complete reset password request (Internal helper, kept for backward compat if needed)
  * @param payload
@@ -304,17 +269,13 @@ const resetPasswordHelper = async (payload, req, res) => {
     let user = await getUser(payload.email, payload.phone)
     if (!user)
         return res.status(401).send(utils.responseError('User Not Found'))
-
     user.password = await hashPassword(payload.password)
     user.save()
-
     user = await getUser(payload.email, payload.phone, true)
     user = JSON.parse(JSON.stringify(user))
     delete user.password
-
     return createAuthDetail(user)
 }
-
 const resetPassword = async (req, res) => {
     let user = req.user
     try {
@@ -326,16 +287,12 @@ const resetPassword = async (req, res) => {
                 return res.status(400).send(utils.responseError('Current password is incorrect'));
             }
         }
-
         const response = await resetPasswordHelper(Object.assign({ email: user.email, phone: user.phone }, req.body), req, res)
         return res.status(200).send(utils.responseSuccess(response))
     } catch (error) {
         return res.status(500).send(utils.responseError(error.message))
     }
 }
-
-
-
 /**
  * Method to request user login
  * @param {*} req 
@@ -346,13 +303,11 @@ const loginRequest = async (req, res) => {
     try {
     req.body.user_identification = req.body.user_identification.toLowerCase()
     const user = await getUser(req.body.user_identification, req.body.user_identification)
-
     if (!user) {
         return res.status(401).send(
             utils.responseError('User not found. Check your credentials and try again')
         )
     }
-
     bcrypt.compare(req.body.password, user.password, async (error, isMatch) => {
         if (isMatch) {
             
@@ -372,7 +327,6 @@ const loginRequest = async (req, res) => {
     )
 }
 }
-
 /**
  * Method to login user after OTP validation
  * @param {*} payload 
@@ -381,13 +335,10 @@ const loginRequest = async (req, res) => {
 const loginHelper = async (payload, req, res) => {
     const user = await getUser(payload.user_identification, payload.user_identification, true, req, res)
     const attributes = utils.flattenObj(user.attributes || {})
-
     user.role = attributes.role || attributes.role_id || 'customer'
-
     const rememberMe = payload.hasOwnProperty('remember_me') ? payload.remember_me : false
     return createAuthDetail(user, rememberMe)
 }
-
 /**
  * Method to refresh users access token
  * @param {*} req 
@@ -420,8 +371,6 @@ const token = async (req, res) => {
         )
     })
 }
-
-
 /**
  * Method to get users profile
  * @param {*} req 
@@ -435,7 +384,6 @@ const getProfile = async (req, res) => {
     // This prevents session issues and unnecessary token generation.
     return res.status(200).send(utils.responseSuccess(userProfile));
 }
-
 /**
  * Method to update users profile
  * @param {*} req 
@@ -449,14 +397,10 @@ const updateProfile = async (req, res) => {
         return res.status(400).send(utils.responseError('Phone number too long. Maximum 50 characters.'))
     }
     let user = req.user
-
     try {
     await createUserAttributes(user.id, attributes)
-
     user = await getUser(user.email, user.phone, true, req, res)
-
   
-
     
     const agent = await Agents.findOne({ where: { user_id: user.id } });
     if (agent) {
@@ -475,7 +419,6 @@ const updateProfile = async (req, res) => {
         });
         if (hasUpdate) await agent.save();
     }
-
     // Update Driver Profile if exists
     const driver = await Drivers.findOne({ where: { user_id: user.id } });
     if (driver) {
@@ -491,7 +434,6 @@ const updateProfile = async (req, res) => {
         
         if (hasUpdate) await driver.save();
     }
-
     // After a successful update, return the updated user profile.
     // Issuing new tokens here is unnecessary and can cause session problems.
     return res.status(200).send(utils.responseSuccess(user));
@@ -501,7 +443,6 @@ const updateProfile = async (req, res) => {
     )
 }
 }
-
 /**
  * Method to logout user
  * @param {*} req 
@@ -526,7 +467,6 @@ const logout = async (req, res) => {
         utils.responseSuccess('You have been logged out successfully')
     )
 }
-
 /**
  * Method to get specific user by email or phone number
  * @param email -Optional
@@ -572,7 +512,6 @@ const getUser = async (email = null, phone = null, withAttr = false, req = null,
                 user.permission = { role: roleVal, scope: [] }
             }
         }
-
         // Attach Agent Profile if exists
         const agentProfile = await Agents.findOne({ where: { user_id: user.id } });
         if (agentProfile) {
@@ -581,14 +520,12 @@ const getUser = async (email = null, phone = null, withAttr = false, req = null,
     }
     return user
 }
-
 /**
  * Get users with optional role filter
  */
 const getUsers = async (req, res) => {
     try {
         const { role } = req.query;
-
         if (role === 'driver') {
             const users = await Drivers.findAll({
                 include: [{
@@ -599,7 +536,6 @@ const getUsers = async (req, res) => {
             });
             return res.status(200).send(utils.responseSuccess(users));
         }
-
         // Fetch users with attributes using raw query for performance
         const createat = process.env.DB_DIALECT == 'mysql' ? 'u.createdAt' : 'u."createdAt"';
         const updateat = process.env.DB_DIALECT == 'mysql' ? 'u.updatedAt' : 'u."updatedAt"';
@@ -609,11 +545,9 @@ const getUsers = async (req, res) => {
                      LEFT JOIN user_attributes ua ON u.id = ua.user_id 
                      LEFT JOIN attributes a ON ua.attribute_id = a.id
                      ORDER BY u.id DESC`;
-
         const [results] = await db.sequelize.query(sql);
         
         const usersMap = new Map();
-
         for (const row of results) {
             if (!usersMap.has(row.id)) {
                 usersMap.set(row.id, {
@@ -625,7 +559,6 @@ const getUsers = async (req, res) => {
                     role: 'customer' // Default role
                 });
             }
-
             if (row.slug && row.value) {
                 const user = usersMap.get(row.id);
                 let val = row.value;
@@ -636,14 +569,12 @@ const getUsers = async (req, res) => {
                 user[row.slug] = val;
             }
         }
-
         return res.status(200).send(utils.responseSuccess(Array.from(usersMap.values())));
     } catch (error) {
         console.error('Error fetching users:', error);
         return res.status(500).send(utils.responseError(error.message));
     }
 }
-
 /**
  * Create user by admin (skips OTP)
  */
@@ -651,16 +582,11 @@ const createUserByAdmin = async (req, res) => {
     try {
         const { email, phone, password, first_name, last_name, role, account_type, vehicle_type, vehicle_registration } = req.body;
         const userRole = role || account_type || 'customer';
-
         let user = await User.findOne({ where: { email } });
         if (user) return res.status(400).send(utils.responseError('User already exists'));
-
         const hashedPassword = await hashPassword(password || '123456'); // Default password
-
         user = await User.create({ email, phone, password: hashedPassword });
-
         await createUserAttributes(user.id, { first_name, last_name, role: userRole });
-
         if (userRole === 'driver') {
             await Drivers.create({
                 driver_code: `OBANA-DRV-${String(user.id).padStart(3, '0')}`,
@@ -673,14 +599,12 @@ const createUserByAdmin = async (req, res) => {
                 metadata: { phone, email, first_name, last_name, rating: 5.0 }
             });
         }
-
         return res.status(201).send(utils.responseSuccess(user));
     } catch (error) {
         console.error('Error creating user:', error);
         return res.status(500).send(utils.responseError(error.message));
     }
 }
-
 /**
  * Update user by admin
  */
@@ -688,17 +612,13 @@ const updateUserByAdmin = async (req, res) => {
     try {
         const { id } = req.params;
         const { first_name, last_name, phone, vehicle_type, vehicle_registration, status } = req.body;
-
         const user = await User.findByPk(id);
         if (!user) return res.status(404).send(utils.responseError('User not found'));
-
         if (phone) {
             user.phone = phone;
             await user.save();
         }
-
         await createUserAttributes(user.id, { first_name, last_name });
-
         const driver = await Drivers.findOne({ where: { user_id: id } });
         if (driver) {
             if (vehicle_type) driver.vehicle_type = vehicle_type;
@@ -713,13 +633,11 @@ const updateUserByAdmin = async (req, res) => {
             
             await driver.save();
         }
-
         return res.status(200).send(utils.responseSuccess(user));
     } catch (error) {
         return res.status(500).send(utils.responseError(error.message));
     }
 }
-
 const deleteUserByAdmin = async (req, res) => {
     try {
         const { id } = req.params;
@@ -730,9 +648,6 @@ const deleteUserByAdmin = async (req, res) => {
         return res.status(500).send(utils.responseError(error.message));
     }
 }
-
-
-
 /**
  * Method to get specific user by id
  * @param id 
@@ -740,16 +655,13 @@ const deleteUserByAdmin = async (req, res) => {
  **/
 const getUserById = async (id) => {
     let user = await User.findOne({ where: { id } })
-
     if (user) {
         user = JSON.parse(JSON.stringify(user))
         delete user.password
         user.attributes = await getUserAttributes(user.id)
     }
-
     return user
 }
-
 /**
  * Method to get user's attribute
  * @param {*} id 
@@ -762,7 +674,6 @@ const getUserAttributes = async (id) => {
     for (let attribute of attributes) {
         const theAttribute = await Attribute.findOne({ where: { id: attribute.attribute_id } })
         if (!theAttribute) continue
-
         let val = attribute.value;
         if (
             val &&
@@ -793,12 +704,9 @@ const getUserAttributes = async (id) => {
     }
     return result
 }
-
 const hashPassword = async (password) => {
     return await bcrypt.hash(password, 10)
 }
-
-
 /**
  * Method to generate JWT
  * @param {*} user 
@@ -813,7 +721,6 @@ const generateToken = (user, refresh = false, expiresIn = false) => {
         { expiresIn: expiresIn }
     )
 }
-
 const generateAgentId = (id) => {
     // DEPRECATED - No longer used with simplified auth system
     let prefix = ''
@@ -823,7 +730,6 @@ const generateAgentId = (id) => {
     }
     return 'OBN-' + prefix + id
 }
-
 /**
  * Method to create authentication details for a given user
  * @param {*} user 
@@ -838,7 +744,6 @@ const createAuthDetail = async (user, rememberMe = false) => {
     
     return { user, access_token, refresh_token, role: user.role}
 }
-
 const createRole = async (req, res) => {
     let role = await Roles.findAll({ where: req.body })
     if (role.length > 0)
@@ -849,7 +754,6 @@ const createRole = async (req, res) => {
     return res.status(201).send(
         utils.responseSuccess(role))
 }
-
 const asignRole = async (req, res) => {
     if (!req.body?.user_id || !req.body?.role_id) return res.status(401).send(
         utils.responseError('Provide user_id and role_id')
@@ -868,7 +772,6 @@ const asignRole = async (req, res) => {
     const createdAtt = await createUserAttributes(user.id, { role_id: req.body?.role_id, role: role.role })
     return res.status(201).send(utils.responseSuccess(createdAtt))
 }
-
 const unasignRole = async (req, res) => {
     if (!Array.isArray(req.body?.userIds)) return res.status(201).send(utils.responseError("Provide array of userIds {userIds:[ user_id]}"))
     for (let user of req?.body?.userIds) {
@@ -877,8 +780,6 @@ const unasignRole = async (req, res) => {
     return res.status(201).send(
         utils.responseSuccess())
 }
-
-
 const createScope = async (req, res) => {
     try {
         let scope = await Scopes.findAll({ where: req.body })
@@ -896,7 +797,6 @@ const createScope = async (req, res) => {
             utils.responseError(error))
     }
 }
-
 const asignScope = async (req, res) => {
     const { scope_ids, role_id } = req.body
     try {
@@ -913,7 +813,6 @@ const asignScope = async (req, res) => {
             utils.responseError(error.name))
     }
 }
-
 const unasignScopes = async (req, res) => {
     const { scope_ids, role_id } = req.body
     for (let scope_id of scope_ids) {
@@ -922,7 +821,6 @@ const unasignScopes = async (req, res) => {
     return res.status(201).send(
         utils.responseSuccess())
 }
-
 const asignAccountType = async (req, res) => {
     if (!req.body?.user_id || !req.body?.account_types) return res.status(401).send(
         utils.responseError('Provide user_id and account_types')
@@ -935,13 +833,10 @@ const asignAccountType = async (req, res) => {
     let accountTypes = attribute.account_types ? attribute.account_types.split(',') : req.body.account_types.split(',')
     if (accountTypes.includes(req.body.account_types))
         return res.status(501).send(utils.responseError(`User is already ${req.body.account_types}`))
-
     const attributeCreated = await createUserAttributes(user.id, { account_types: (accountTypes.concat([req.body.account_types])).toString() })
     return res.status(201).send(
         utils.responseSuccess(attributeCreated))
 }
-
-
 const getRoles = async (req, res) => {
     try {
         const role_id = req?.query?.role_id
@@ -966,7 +861,6 @@ const getScope = async (req, res) => {
             utils.responseError(error))
     }
 }
-
 const getUsersList = async (req, res) => {
     const createat = process.env.DB_DIALECT == 'mysql' ? 'u.createdAt' : 'u."createdAt"'
     const updateat = process.env.DB_DIALECT == 'mysql' ? 'u.updatedAt' : 'u."updatedAt"'
@@ -987,7 +881,6 @@ const getUsersList = async (req, res) => {
     }
     res.status(201).send(Object.values(newArr))
 }
-
 const getRolesAndScopes = async (role_id) => {
     let condition = role_id ? { where: { id: role_id }, include: { model: Scopes } } : { include: { model: Scopes } }
     const roles = await Roles.findAll(condition)
@@ -1002,11 +895,9 @@ const getRolesAndScopes = async (role_id) => {
     }
     return items
 }
-
 const addAdminUser = async (req, res) => {
     const tempPassword = utils.temPassword()
     req.body.password = tempPassword
-
     const payload = req.body
     if (!req.body.attributes && req.body.attributes.account_types !== "admin")
         return res.status(201).send(utils.responseError('Only admin account type is permited'))
@@ -1023,15 +914,10 @@ const addAdminUser = async (req, res) => {
         // return res.status(422).send(utils.responseError())
     }
 }
-
-
 const deleteUserAtribute = async (slug, user_id) => {
     const roleAtribute = await Attribute.findOne({ where: { slug: slug } })
     await UserAttribute.destroy({ where: { user_id: user_id, attribute_id: roleAtribute.id } })
 }
-
-
-
 module.exports = {
     // Auth endpoints
     signup: createUserRequest,
