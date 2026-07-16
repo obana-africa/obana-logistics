@@ -254,25 +254,25 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
         }
 
 
-        if (agentData.email) {
-            await mailer.sendMail({
-                email: agentData.email,
-                subject: `New Shipment Assigned: ${shipment.shipment_reference}`,
-                content: emailData,
-                template: 'newShipmentAgent'
-            });
-        }
+        // if (agentData.email) {
+        //     await mailer.sendMail({
+        //         email: agentData.email,
+        //         subject: `New Shipment Assigned: ${shipment.shipment_reference}`,
+        //         content: emailData,
+        //         template: 'newShipmentAgent'
+        //     });
+        // }
 
 
-        const adminEmails = ['chimebukaanyanwu@gmail.com', 'product@obana.africa', 'shipment@obana.africa'];
-        for (const email of adminEmails) {
-            await mailer.sendMail({
-                email: email,
-                subject: `New Shipment Alert: ${shipment.shipment_reference}`,
-                content: emailData,
-                template: 'newShipmentAdmin'
-            });
-        }
+        // const adminEmails = ['chimebukaanyanwu@gmail.com', 'product@obana.africa', 'shipment@obana.africa'];
+        // for (const email of adminEmails) {
+        //     await mailer.sendMail({
+        //         email: email,
+        //         subject: `New Shipment Alert: ${shipment.shipment_reference}`,
+        //         content: emailData,
+        //         template: 'newShipmentAdmin'
+        //     });
+        // }
 
         console.log(`Role-based emails sent for shipment ${shipment.shipment_reference}`);
 
