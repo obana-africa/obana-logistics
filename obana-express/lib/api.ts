@@ -264,6 +264,12 @@ class ApiClient {
     return response.data;
   }
 
+  
+  async getPublicShipment(id: string) {
+    const response = await this.client.get<ApiResponse>(`/shipments/public/track/${id}`);
+    return response.data;
+  }
+
   async updateShipmentStatus(id: string, status: string, notes?: string, location?: string) {
     const response = await this.client.put<ApiResponse>(`/shipments/status/${id}`, {
       status,

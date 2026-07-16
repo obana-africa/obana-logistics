@@ -67,6 +67,15 @@ const generateShipmentReference = (isInternal = true) => {
     return `${prefix}-${dateStr}-${random}`;
 };
 
+/**
+ * Build a public (no-login) tracking URL that opens the tracking modal on the
+ * marketing/home page, e.g. https://logistics.obana.africa/?track=OBN-...
+ */
+const buildTrackingUrl = (reference) => {
+    const base = (process.env.PUBLIC_TRACK_URL || 'https://logistics.obana.africa').replace(/\/+$/, '');
+    return `${base}/?track=${encodeURIComponent(reference)}`;
+};
+
 const calculateShipmentTotals = (items) => {
     let totalWeight = 0;
     let totalValue = 0;
@@ -281,6 +290,111 @@ const sendNewShipmentEmail = async (shipment, deliveryAddress, pickupAddress) =>
 
     }
 }
+
+/**
+ * Send the "In-Transit" email using the local template that mirrors the
+ * KudiSMS dashboard "In-Transit" template. Dynamic sections are filled here.
+ */
+const sendInTransitEmail = async (shipment, deliveryAddress) => {
+    try {
+        let address = deliveryAddress;
+        if (!address && shipment.delivery_address_id) {
+            address = await db.addresses.findByPk(shipment.delivery_address_id);
+        }
+
+        let customerEmail = address?.contact_email;
+        if (shipment.user_id) {
+            const user = await db.users.findByPk(shipment.user_id);
+            if (user && user.email) customerEmail = user.email;
+        }
+
+        if (!customerEmail) {
+            console.warn(`[IN-TRANSIT EMAIL] No customer email for shipment ${shipment.shipment_reference}`);
+            return;
+        }
+
+        const carrierDetails = shipment.metadata?.carrier_details || {};
+        const shippingAddress = [
+            address?.line1,
+            address?.line2,
+            [address?.city, address?.state].filter(Boolean).join(', '),
+            address?.country
+        ].filter(Boolean).join(', ');
+
+        const emailData = {
+            customer_name: address?.name || 'Customer',
+            order_ref: shipment.order_reference || shipment.shipment_reference,
+            order_date: new Date(shipment.createdAt || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+            shipping_address: shippingAddress || 'Not specified',
+            estimated_delivery: carrierDetails.delivery_time || carrierDetails.delivery_eta || 'To be confirmed',
+            tracking_url: buildTrackingUrl(shipment.shipment_reference),
+            year: new Date().getFullYear()
+        };
+
+        await mailer.sendMail({
+            email: customerEmail,
+            subject: `Your order ${emailData.order_ref} is on its way`,
+            content: emailData,
+            template: 'inTransit'
+        });
+
+        console.log(`[IN-TRANSIT EMAIL] Sent to ${customerEmail} for shipment ${shipment.shipment_reference}`);
+    } catch (error) {
+        console.error('Error sending in-transit email:', error);
+    }
+};
+
+/**
+ * Send the "Delivered" email using the local template that mirrors the
+ * KudiSMS dashboard "Delivered" template. Dynamic sections are filled here.
+ */
+const sendDeliveredEmail = async (shipment, deliveryAddress) => {
+    try {
+        let address = deliveryAddress;
+        if (!address && shipment.delivery_address_id) {
+            address = await db.addresses.findByPk(shipment.delivery_address_id);
+        }
+
+        let customerEmail = address?.contact_email;
+        if (shipment.user_id) {
+            const user = await db.users.findByPk(shipment.user_id);
+            if (user && user.email) customerEmail = user.email;
+        }
+
+        if (!customerEmail) {
+            console.warn(`[DELIVERED EMAIL] No customer email for shipment ${shipment.shipment_reference}`);
+            return;
+        }
+
+        const shippingAddress = [
+            address?.line1,
+            address?.line2,
+            [address?.city, address?.state].filter(Boolean).join(', '),
+            address?.country
+        ].filter(Boolean).join(', ');
+
+        const emailData = {
+            customer_name: address?.name || 'Customer',
+            order_ref: shipment.order_reference || shipment.shipment_reference,
+            order_date: new Date(shipment.createdAt || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+            delivered_date: new Date(shipment.actual_delivery_at || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+            shipping_address: shippingAddress || 'Not specified',
+            tracking_url: buildTrackingUrl(shipment.shipment_reference),
+            year: new Date().getFullYear()
+        };
+
+        await mailer.sendMail({
+            email: customerEmail,
+            subject: `Your order ${emailData.order_ref} has been delivered`,
+            content: emailData,
+            template: 'delivered'
+        });
+
+        console.log(`[DELIVERED EMAIL] Sent to ${customerEmail} for shipment ${shipment.shipment_reference}`);
+    } catch (error) {
+        console.error('Error sending delivered email:', error);
+    }
+};
 
 /**
  * Send status update email
@@ -626,7 +740,7 @@ const shipmentController = {
                     currency: payload.currency?.symbol || 'NGN',
                     total_weight: totalWeight,
                     total_items: itemCount,
-                    status: 'confirmed',
+                    status: 'in_transit',
                     is_insured: payload.is_insured || false,
                     insurance_amount: payload.insurance_amount || 0,
                     driver_id: isInternal ? payload.preferred_driver_id : null,
@@ -722,6 +836,9 @@ const shipmentController = {
 
                 sendNewShipmentEmail(shipment, deliveryAddress, pickupAddress);
 
+                // Notify customer that the order is in-transit (fire-and-forget)
+                // sendInTransitEmail(shipment, deliveryAddress);
+
                 triggerPostCreationProcesses(shipment.id, isInternal);
 
                 return res.status(201).json({
@@ -730,7 +847,7 @@ const shipmentController = {
                     data: {
                         shipment_id: shipment.id,
                         shipment_reference: shipment.shipment_reference,
-                        tracking_url: `${process.env.FBASE_URL || 'http://localhost:3000'}/${shipment.shipment_reference}`,
+                        tracking_url: buildTrackingUrl(shipment.shipment_reference),
                         carrier: shipment.carrier_name,
                         status: shipment.status,
                         estimated_delivery: shipment.metadata?.carrier_details?.delivery_time || 'To be determined',
@@ -1138,6 +1255,50 @@ const shipmentController = {
         }
     },
 
+    /**
+     * Public shipment tracking (NO authentication).
+     * Returns only non-sensitive fields needed to render the tracking modal.
+     */
+    publicTrackShipment: async (req, res) => {
+        try {
+            const { shipment_reference } = req.params;
+
+            const shipment = await db.shippings.findOne({
+                where: { shipment_reference },
+                include: [
+                    { model: db.addresses, as: 'delivery_address', attributes: ['city', 'state', 'country'] },
+                    { model: db.addresses, as: 'pickup_address', attributes: ['city', 'state', 'country'] },
+                    {
+                        model: db.shipment_tracking,
+                        as: 'tracking_events',
+                        attributes: ['id', 'status', 'description', 'location', 'createdAt'],
+                        order: [['createdAt', 'DESC']]
+                    }
+                ],
+                attributes: [
+                    'shipment_reference',
+                    'order_reference',
+                    'status',
+                    'carrier_name',
+                    'service_level',
+                    'transport_mode',
+                    'total_items',
+                    'createdAt',
+                    'actual_delivery_at'
+                ]
+            });
+
+            if (!shipment) {
+                return res.status(404).json({ success: false, message: 'Shipment not found' });
+            }
+
+            return res.status(200).json({ success: true, data: shipment.get({ plain: true }) });
+        } catch (error) {
+            console.error('Error in public tracking:', error);
+            return res.status(500).json({ success: false, message: 'Error fetching shipment' });
+        }
+    },
+
     async refreshToken(refreshTokenCredentials) {
         let token = await axios.post(process.env.ZOHO_AUTH_URL, querystring.stringify(refreshTokenCredentials))
             .catch(error => {
@@ -1291,8 +1452,17 @@ const shipmentController = {
                 }
             });
 
-            // Send email notification (fire-and-forget to avoid blocking response)
-            sendStatusUpdateEmail(shipment, status, req.body).catch(err => {
+            // Send email notification (fire-and-forget to avoid blocking response).
+            // Use the branded per-status templates where we have them, else the generic one.
+            let statusEmail;
+            if (status === 'delivered') {
+                statusEmail = sendDeliveredEmail(shipment, null);
+            } else if (status === 'in_transit' || status === 'dispatched' || status === 'picked_up') {
+                statusEmail = sendInTransitEmail(shipment, null);
+            } else {
+                statusEmail = sendStatusUpdateEmail(shipment, status, req.body);
+            }
+            Promise.resolve(statusEmail).catch(err => {
                 console.error('Error sending status update email:', err);
             });
 

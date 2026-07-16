@@ -8,7 +8,7 @@ const userController = require('../controllers/userController'); // ADD THIS
 const { flattenObj } = require('../../utils');
 const utils = require('../../utils');
 const e = require('cors');
-const mailer = require('../mailer/nodemailer')
+
 const WebhookController = require('../controllers/webhookController');
 
 

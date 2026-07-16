@@ -46,26 +46,42 @@ export default function Navigation({
 		return () => window.removeEventListener("scroll", handleScroll);
 	}, []);
 
+	const runTracking = async (rawId: string) => {
+		const id = rawId.trim();
+		if (!id) return;
+		setShowTrackingModal(true);
+		setTrackingLoading(true);
+		setTrackingError(null);
+		setTrackingResult(null);
+		try {
+			// Public endpoint — works without login (emailed links, guests)
+			const res = await apiClient.getPublicShipment(id);
+			if (res.success) {
+				setTrackingResult(res.data);
+			} else {
+				setTrackingError(res.message || 'Shipment Not found');
+			}
+		} catch (err: any) {
+			setTrackingError(err.response?.data?.message || 'Failed to fetch');
+		}
+		setTrackingLoading(false);
+	};
+
 	const handleTrackShipment = async (e: React.FormEvent) => {
 		e.preventDefault();
-		if (trackingId.trim()) {
-			setTrackingLoading(true);
-			setTrackingError(null);
-			setTrackingResult(null);
-			try {
-				const res = await apiClient.getShipment(trackingId.trim());
-				if (res.success) {
-					setTrackingResult(res.data);
-				} else {
-					setTrackingError(res.message || 'Shipment Not found');
-				}
-			} catch (err: any) {
-				setTrackingError(err.response?.data?.message || 'Failed to fetch');
-			}
-			setTrackingLoading(false);
-			setShowTrackingModal(true);
-		}
+		runTracking(trackingId);
 	};
+
+	// Auto-open the tracking modal when arriving via an emailed link: /?track=OBN-...
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const ref = new URLSearchParams(window.location.search).get("track");
+		if (ref) {
+			setTrackingId(ref);
+			runTracking(ref);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	return (
 		<>

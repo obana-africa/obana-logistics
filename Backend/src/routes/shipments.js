@@ -12,6 +12,9 @@ const controller =  shipmentController
 router.post('', auth.authenticateToken,  controller.createShipment);
     
     
+// Public, unauthenticated tracking (used by the home-page tracking modal / emailed links)
+router.get('/public/track/:shipment_reference', controller.publicTrackShipment);
+
 router.get('/track/:shipment_reference', auth.authenticateToken, controller.getShipment);
     
     
