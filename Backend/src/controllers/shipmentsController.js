@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const db = require('../models/db');
 const mailer = require('../mailer/kudisms');
+const { sendWhatsApp } = require('../notifications/whatsapp');
 const querystring = require('node:querystring');
 
 const TERMINAL_AFRICA_BASE_URL = process.env.TERMINAL_AFRICA_BASE_URL;
@@ -74,6 +75,79 @@ const generateShipmentReference = (isInternal = true) => {
 const buildTrackingUrl = (reference) => {
     const base = (process.env.PUBLIC_TRACK_URL || 'https://logistics.obana.africa').replace(/\/+$/, '');
     return `${base}/?track=${encodeURIComponent(reference)}`;
+};
+
+/**
+ * WhatsApp notification config, keyed by shipment event.
+ * Each event maps to the env var holding the approved KudiSMS template code, for
+ * both the customer (partner/account holder) and the internal admin audience.
+ *
+ * Approved template body params are, in order (see KudiSMS dashboard):
+ *   {{1}} Partner Name   {{2}} Customer Name   {{3}} Order Ref   {{4}} Order Value
+ * Header is static text (no param). Button URL {{1}} = shipment reference (OBN-...).
+ */
+const WA_EVENTS = {
+    created:    { customer: 'KUDISMS_WA_CREATED_TEMPLATE',   admin: 'KUDISMS_WA_ADMIN_CREATED_TEMPLATE' },
+    in_transit: { customer: 'KUDISMS_WA_INTRANSIT_TEMPLATE', admin: 'KUDISMS_WA_ADMIN_INTRANSIT_TEMPLATE' },
+    delivered:  { customer: 'KUDISMS_WA_DELIVERED_TEMPLATE', admin: 'KUDISMS_WA_ADMIN_DELIVERED_TEMPLATE' }
+};
+
+/**
+ * Send the WhatsApp notification(s) for a shipment lifecycle event.
+ * Fire-and-forget; never throws. Skips any audience whose template code isn't configured.
+ */
+const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
+    try {
+        const cfg = WA_EVENTS[event];
+        if (!cfg) return;
+
+        let address = deliveryAddress;
+        if (!address && shipment.delivery_address_id) {
+            address = await db.addresses.findByPk(shipment.delivery_address_id);
+        }
+
+        // Recipient = the partner / account holder (the business Obana serves).
+        let partnerPhone = null;
+        if (shipment.user_id) {
+            const user = await db.users.findByPk(shipment.user_id);
+            if (user?.phone) partnerPhone = user.phone;
+        }
+        if (!partnerPhone && shipment.pickup_address_id) {
+            const pickup = await db.addresses.findByPk(shipment.pickup_address_id);
+            if (pickup?.phone) partnerPhone = pickup.phone;
+        }
+
+        const currency = shipment.currency || 'NGN';
+        // Body params — order MUST match the approved template
+        const parameters = [
+            shipment.vendor_name || 'Partner',                       // {{1}} Partner Name
+            address?.name || 'Customer',                             // {{2}} Customer Name
+            shipment.order_reference || shipment.shipment_reference, // {{3}} Order Ref
+            `${currency} ${Number(shipment.product_value || 0).toLocaleString()}` // {{4}} Order Value
+        ];
+        const buttonParameters = [shipment.shipment_reference];      // {{1}} in track URL
+
+        // Customer (partner) notification
+        const customerTemplate = process.env[cfg.customer];
+        if (customerTemplate && partnerPhone) {
+            await sendWhatsApp({ recipient: partnerPhone, templateCode: customerTemplate, parameters, buttonParameters });
+            console.log(`[WA ${event}] Sent to partner ${partnerPhone} for ${shipment.shipment_reference}`);
+        } else if (!customerTemplate) {
+            console.warn(`[WA ${event}] ${cfg.customer} not set; skipping partner notification`);
+        } else {
+            console.warn(`[WA ${event}] No partner phone for ${shipment.shipment_reference}`);
+        }
+
+        // Internal admin notification (optional — only if both template + recipient configured)
+        const adminTemplate = process.env[cfg.admin];
+        const adminRecipient = process.env.KUDISMS_WA_ADMIN_RECIPIENT;
+        if (adminTemplate && adminRecipient) {
+            await sendWhatsApp({ recipient: adminRecipient, templateCode: adminTemplate, parameters, buttonParameters });
+            console.log(`[WA ${event}] Sent to admin ${adminRecipient} for ${shipment.shipment_reference}`);
+        }
+    } catch (error) {
+        console.error(`Error sending WhatsApp for event '${event}':`, error);
+    }
 };
 
 const calculateShipmentTotals = (items) => {
@@ -834,10 +908,8 @@ const shipmentController = {
                 await transaction.commit();
 
 
-                sendNewShipmentEmail(shipment, deliveryAddress, pickupAddress);
-
-                // Notify customer that the order is in-transit (fire-and-forget)
-                // sendInTransitEmail(shipment, deliveryAddress);
+                // Notify partner that the shipment was created via WhatsApp (fire-and-forget)
+                notifyShipmentEvent(shipment, 'created', deliveryAddress);
 
                 triggerPostCreationProcesses(shipment.id, isInternal);
 
@@ -1452,18 +1524,15 @@ const shipmentController = {
                 }
             });
 
-            // Send email notification (fire-and-forget to avoid blocking response).
-            // Use the branded per-status templates where we have them, else the generic one.
-            let statusEmail;
+            // Send WhatsApp notification (fire-and-forget to avoid blocking response).
+            let statusNotification;
             if (status === 'delivered') {
-                statusEmail = sendDeliveredEmail(shipment, null);
+                statusNotification = notifyShipmentEvent(shipment, 'delivered');
             } else if (status === 'in_transit' || status === 'dispatched' || status === 'picked_up') {
-                statusEmail = sendInTransitEmail(shipment, null);
-            } else {
-                statusEmail = sendStatusUpdateEmail(shipment, status, req.body);
+                statusNotification = notifyShipmentEvent(shipment, 'in_transit');
             }
-            Promise.resolve(statusEmail).catch(err => {
-                console.error('Error sending status update email:', err);
+            Promise.resolve(statusNotification).catch(err => {
+                console.error('Error sending status WhatsApp notification:', err);
             });
 
             return res.status(200).json({

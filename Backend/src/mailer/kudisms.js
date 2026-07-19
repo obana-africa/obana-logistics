@@ -8,6 +8,8 @@ const FormData = require('form-data');
 const sendMail = async (payload) => {
     
     const email = payload.email;
+    console.log("Email: ", email)
+    return
     const content = payload.content || payload.contents || payload.text || payload.body || '';
     const templateName = payload.template;
     const subject = payload.subject || 'Notification from Obana';

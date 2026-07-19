@@ -400,6 +400,18 @@ const updateProfile = async (req, res) => {
     try {
     await createUserAttributes(user.id, attributes)
     user = await getUser(user.email, user.phone, true, req, res)
+
+await User.update(
+  {
+    phone: attributes.phone,
+    first_name: attributes.first_name,
+    last_name: attributes.last_name,
+    email: attributes.email
+  },
+  {
+    where: { id: user.id }
+  }
+);
   
     
     const agent = await Agents.findOne({ where: { user_id: user.id } });
