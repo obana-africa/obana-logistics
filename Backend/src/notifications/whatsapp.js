@@ -43,15 +43,19 @@ const sendWhatsApp = async ({ recipient, templateCode, parameters = [], buttonPa
         console.warn('kudisms whatsapp: KUDISMS_WHATSAPP_PHONE_NUMBER_ID not set');
     }
 
+    // KudiSMS splits each *_parameters field on commas, so a comma or newline INSIDE a
+    // value would be misread as an extra parameter. Strip them from every value.
+    const clean = (v) => (v == null ? '' : String(v).replace(/[\r\n]+/g, ' ').replace(/,/g, ' ').replace(/\s+/g, ' ').trim());
+
     const body = {
         token: process.env.KUDISMS_API_KEY || '',
         recipient: phone,
         phone_number_id: process.env.KUDISMS_WHATSAPP_PHONE_NUMBER_ID || '',
         template_code: templateCode,
-        parameters: parameters.map(v => (v == null ? '' : String(v))).join(',')
+        parameters: parameters.map(clean).join(',')
     };
-    if (buttonParameters.length) body.button_parameters = buttonParameters.map(String).join(',');
-    if (headerParameters.length) body.header_parameters = headerParameters.map(String).join(',');
+    if (buttonParameters.length) body.button_parameters = buttonParameters.map(clean).join(',');
+    if (headerParameters.length) body.header_parameters = headerParameters.map(clean).join(',');
 
     try {
         const response = await axios.post(KUDISMS_WHATSAPP_URL, querystring.stringify(body), {

@@ -124,7 +124,7 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
             shipment.vendor_name || 'Partner',                       // {{1}} Partner Name
             address?.name || 'Customer',                             // {{2}} Customer Name
             shipment.order_reference || shipment.shipment_reference, // {{3}} Order Ref
-            `${currency} ${Number(shipment.product_value || 0).toLocaleString()}` // {{4}} Order Value
+            `${currency} ${Number(shipment.product_value || 0).toFixed(2)}` // {{4}} Order Value (no grouping comma — KudiSMS splits params on commas)
         ];
         const buttonParameters = [shipment.shipment_reference];      // {{1}} in track URL
 
