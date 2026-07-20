@@ -106,15 +106,16 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
             address = await db.addresses.findByPk(shipment.delivery_address_id);
         }
 
-        // Recipient = the partner / account holder (the business Obana serves).
-        let partnerPhone = null;
-        if (shipment.user_id) {
+        // Recipient priority: the phone that came with the order (delivery / salesorder
+        // contact), then the account holder, then the pickup contact.
+        let recipientPhone = address?.phone || null;
+        if (!recipientPhone && shipment.user_id) {
             const user = await db.users.findByPk(shipment.user_id);
-            if (user?.phone) partnerPhone = user.phone;
+            if (user?.phone) recipientPhone = user.phone;
         }
-        if (!partnerPhone && shipment.pickup_address_id) {
+        if (!recipientPhone && shipment.pickup_address_id) {
             const pickup = await db.addresses.findByPk(shipment.pickup_address_id);
-            if (pickup?.phone) partnerPhone = pickup.phone;
+            if (pickup?.phone) recipientPhone = pickup.phone;
         }
 
         const currency = shipment.currency || 'NGN';
@@ -127,15 +128,15 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
         ];
         const buttonParameters = [shipment.shipment_reference];      // {{1}} in track URL
 
-        // Customer (partner) notification
+        // Customer notification
         const customerTemplate = process.env[cfg.customer];
-        if (customerTemplate && partnerPhone) {
-            await sendWhatsApp({ recipient: partnerPhone, templateCode: customerTemplate, parameters, buttonParameters });
-            console.log(`[WA ${event}] Sent to partner ${partnerPhone} for ${shipment.shipment_reference}`);
+        if (customerTemplate && recipientPhone) {
+            await sendWhatsApp({ recipient: recipientPhone, templateCode: customerTemplate, parameters, buttonParameters });
+            console.log(`[WA ${event}] Sent to ${recipientPhone} for ${shipment.shipment_reference}`);
         } else if (!customerTemplate) {
-            console.warn(`[WA ${event}] ${cfg.customer} not set; skipping partner notification`);
+            console.warn(`[WA ${event}] ${cfg.customer} not set; skipping customer notification`);
         } else {
-            console.warn(`[WA ${event}] No partner phone for ${shipment.shipment_reference}`);
+            console.warn(`[WA ${event}] No recipient phone for ${shipment.shipment_reference}`);
         }
 
         // Internal admin notification (optional — only if both template + recipient configured)
