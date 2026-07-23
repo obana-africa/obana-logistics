@@ -78,18 +78,18 @@ const buildTrackingUrl = (reference) => {
 };
 
 /**
- * WhatsApp notification config, keyed by shipment event.
- * Each event maps to the env var holding the approved KudiSMS template code, for
- * both the customer (partner/account holder) and the internal admin audience.
+ * WhatsApp notification config, keyed by shipment event. Each event maps to the env
+ * var holding the approved KudiSMS template code, per audience.
  *
- * Approved template body params are, in order (see KudiSMS dashboard):
- *   {{1}} Partner Name   {{2}} Customer Name   {{3}} Order Ref   {{4}} Order Value
+ * Approved body params (order MUST match the template):
+ *   customer    -> {{1}} Customer Name    {{2}} Shipment Weight  {{3}} Shipping Cost
+ *   salesperson -> {{1}} Salesperson Name {{2}} Customer Name    {{3}} Shipment Weight  {{4}} Shipping Cost
  * Header is static text (no param). Button URL {{1}} = shipment reference (OBN-...).
  */
 const WA_EVENTS = {
-    created:    { customer: 'KUDISMS_WA_CREATED_TEMPLATE',   admin: 'KUDISMS_WA_ADMIN_CREATED_TEMPLATE' },
-    in_transit: { customer: 'KUDISMS_WA_INTRANSIT_TEMPLATE', admin: 'KUDISMS_WA_ADMIN_INTRANSIT_TEMPLATE' },
-    delivered:  { customer: 'KUDISMS_WA_DELIVERED_TEMPLATE', admin: 'KUDISMS_WA_ADMIN_DELIVERED_TEMPLATE' }
+    created:    { customer: 'KUDISMS_WA_CREATED_TEMPLATE',   salesperson: 'KUDISMS_WA_SALESPERSON_CREATED_TEMPLATE' },
+    in_transit: { customer: 'KUDISMS_WA_INTRANSIT_TEMPLATE', salesperson: 'KUDISMS_WA_SALESPERSON_INTRANSIT_TEMPLATE' },
+    delivered:  { customer: 'KUDISMS_WA_DELIVERED_TEMPLATE', salesperson: 'KUDISMS_WA_SALESPERSON_DELIVERED_TEMPLATE' }
 };
 
 /**
@@ -119,32 +119,42 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
         }
 
         const currency = shipment.currency || 'NGN';
-        // Body params — order MUST match the approved template
-        const parameters = [
-            shipment.vendor_name || 'Partner',                       // {{1}} Partner Name
-            address?.name || 'Customer',                             // {{2}} Customer Name
-            shipment.order_reference || shipment.shipment_reference, // {{3}} Order Ref
-            `${currency} ${Number(shipment.product_value || 0).toFixed(2)}` // {{4}} Order Value (no grouping comma — KudiSMS splits params on commas)
-        ];
+        const customerName = address?.name || 'Customer';
+        // No grouping commas — KudiSMS splits the parameters field on commas.
+        const shipmentWeight = `${Number(shipment.total_weight || 0)} kg`;
+        const shippingCost = `${currency} ${Number(shipment.shipping_fee || 0).toFixed(2)}`;
         const buttonParameters = [shipment.shipment_reference];      // {{1}} in track URL
 
-        // Customer notification
-        const customerTemplate = process.env[cfg.customer];
+        // Customer: {{1}} Customer Name  {{2}} Shipment Weight  {{3}} Shipping Cost
+        const customerTemplate = (process.env[cfg.customer] || '').trim();
         if (customerTemplate && recipientPhone) {
-            await sendWhatsApp({ recipient: recipientPhone, templateCode: customerTemplate, parameters, buttonParameters });
-            console.log(`[WA ${event}] Sent to ${recipientPhone} for ${shipment.shipment_reference}`);
+            await sendWhatsApp({
+                recipient: recipientPhone,
+                templateCode: customerTemplate,
+                parameters: [customerName, shipmentWeight, shippingCost],
+                buttonParameters
+            });
+            console.log(`[WA ${event}] Sent to customer ${recipientPhone} for ${shipment.shipment_reference}`);
         } else if (!customerTemplate) {
             console.warn(`[WA ${event}] ${cfg.customer} not set; skipping customer notification`);
         } else {
-            console.warn(`[WA ${event}] No recipient phone for ${shipment.shipment_reference}`);
+            console.warn(`[WA ${event}] No customer phone for ${shipment.shipment_reference}`);
         }
 
-        // Internal admin notification (optional — only if both template + recipient configured)
-        const adminTemplate = process.env[cfg.admin];
-        const adminRecipient = process.env.KUDISMS_WA_ADMIN_RECIPIENT;
-        if (adminTemplate && adminRecipient) {
-            await sendWhatsApp({ recipient: adminRecipient, templateCode: adminTemplate, parameters, buttonParameters });
-            console.log(`[WA ${event}] Sent to admin ${adminRecipient} for ${shipment.shipment_reference}`);
+        // Salesperson: {{1}} Salesperson Name  {{2}} Customer Name  {{3}} Shipment Weight  {{4}} Shipping Cost
+        // Name/phone come from the Zoho salesorder (salesperson_name / cf_salesperson_phone).
+        const salesperson = shipment.metadata?.salesperson || {};
+        const salespersonTemplate = (process.env[cfg.salesperson] || '').trim();
+        if (salespersonTemplate && salesperson.phone) {
+            await sendWhatsApp({
+                recipient: salesperson.phone,
+                templateCode: salespersonTemplate,
+                parameters: [salesperson.name || 'Salesperson', customerName, shipmentWeight, shippingCost],
+                buttonParameters
+            });
+            console.log(`[WA ${event}] Sent to salesperson ${salesperson.phone} for ${shipment.shipment_reference}`);
+        } else if (salespersonTemplate && !salesperson.phone) {
+            console.log(`[WA ${event}] No salesperson phone on ${shipment.shipment_reference}; skipping salesperson notification`);
         }
     } catch (error) {
         console.error(`Error sending WhatsApp for event '${event}':`, error);
@@ -822,6 +832,8 @@ const shipmentController = {
                     metadata: {
                         original_payload: payload,
                         dispatcher: payload.dispatcher,
+                        // Salesperson (Zoho salesorder) — used for WhatsApp notifications
+                        salesperson: payload.salesperson || null,
                         carrier_details: {
                             carrier_name: payload.dispatcher?.carrier_name,
                             carrier_logo: payload.dispatcher?.carrier_logo,

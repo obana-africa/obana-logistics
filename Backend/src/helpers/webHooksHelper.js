@@ -40,6 +40,7 @@ const getRouteItemCf = (item, label, hashKey) => {
 
 // Parse a "City, State, Country" route field into an address with Obana fallbacks.
 const buildRouteAddress = (locationStr, overrides = {}) => {
+    console.log(locationStr)
     const parts = String(locationStr || '').split(',').map((s) => s.trim())
     return {
         contact_name: overrides.contact_name || 'Obana Africa',
@@ -73,6 +74,28 @@ const selectRouteBracket = (brackets, weight) => {
     }
     return result
 }
+
+// Read a SALESORDER-level custom field by api_name (with label fallback).
+const getSalesOrderCf = (salesorder, apiName, label) => {
+    const hash = salesorder.custom_field_hash || {}
+    if (hash[apiName] !== undefined && hash[apiName] !== null && String(hash[apiName]).trim() !== '') {
+        return hash[apiName]
+    }
+    const f = (salesorder.custom_fields || []).find((x) => x.api_name === apiName || x.label === label)
+    if (f && f.value !== undefined && f.value !== null && String(f.value).trim() !== '') return f.value
+    return null
+}
+
+// Salesperson for WhatsApp notifications: name from the native salesperson_name field
+// (falls back to the "Sales Person Name" custom field), phone from cf_salesperson_phone.
+const getSalesPerson = (salesorder) => ({
+    name: String(
+        salesorder.salesperson_name ||
+        getSalesOrderCf(salesorder, 'cf_salesperson', 'Sales Person Name') ||
+        ''
+    ).trim(),
+    phone: String(getSalesOrderCf(salesorder, 'cf_salesperson_phone', 'SalesPerson Phone') || '').trim()
+})
 
 const normalizeZohoStatusValue = (value) => {
     return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
@@ -351,6 +374,7 @@ class WeebHooksHelper {
             carrier_slug: 'obana',
             order_id: orderRef,
             vendor_name: `${pickupAddress.city} Vendor`,
+            salesperson: getSalesPerson(salesorder),
             preferred_driver_id: preferredDriverId,
             notes: `Manual Zoho order ${orderRef}${driverEmail ? ` | preferred driver: ${driverEmail}` : ''}`,
             dispatcher: { carrier_name: 'Obana Logistics', carrier_slug: 'obana', delivery_time: eta }
