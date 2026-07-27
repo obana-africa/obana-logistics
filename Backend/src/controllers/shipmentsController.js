@@ -825,7 +825,7 @@ const shipmentController = {
                     currency: payload.currency?.symbol || 'NGN',
                     total_weight: totalWeight,
                     total_items: itemCount,
-                    status: 'in_transit',
+                    status: 'confirmed',
                     is_insured: payload.is_insured || false,
                     insurance_amount: payload.insurance_amount || 0,
                     driver_id: isInternal ? payload.preferred_driver_id : null,
@@ -1850,3 +1850,5 @@ const shipmentController = {
 };
 
 module.exports = shipmentController;
+// Exposed for webhook flows that update status outside updateShipmentStatus (e.g. Zoho salesorder webhook).
+module.exports.notifyShipmentEvent = notifyShipmentEvent;

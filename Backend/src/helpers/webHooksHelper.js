@@ -220,24 +220,16 @@ class WeebHooksHelper {
             }
 
             if (targetStatus) {
-                // Loop prevention & downgrade guards
+                // Idempotency only: skip a repeated post of the SAME status (avoids duplicate
+                // WhatsApp on Zoho re-fires). Any other transition — including moving off a
+                // terminal state like delivered — is allowed.
                 if (existing.status === targetStatus) {
                     console.log(`[manualRoute] status already matched (${existing.status}) for ${orderRef} — skipping update`)
                     return { shipment_reference: existing.shipment_reference, skipped: true, reason: 'status already matched' }
                 }
-                if (existing.status === 'delivered') {
-                    console.log(`[manualRoute] shipment already delivered for ${orderRef} — skipping update`)
-                    return { shipment_reference: existing.shipment_reference, skipped: true, reason: 'shipment is already delivered' }
-                }
-                if (['cancelled', 'failed', 'returned'].includes(existing.status)) {
-                    console.log(`[manualRoute] shipment is in terminal state (${existing.status}) for ${orderRef} — skipping update`)
-                    return { shipment_reference: existing.shipment_reference, skipped: true, reason: `shipment is in terminal state: ${existing.status}` }
-                }
 
                 const updateData = { status: targetStatus }
-                if (targetStatus === 'delivered') {
-                    updateData.actual_delivery_at = new Date()
-                }
+                updateData.actual_delivery_at = targetStatus === 'delivered' ? new Date() : null
                 await existing.update(updateData)
 
                 await db.shipment_tracking.create({
@@ -250,6 +242,10 @@ class WeebHooksHelper {
                     performed_by: 'zoho_inventory',
                     metadata: { webhook_data: salesorder, source_status: statusValue }
                 })
+
+                // WhatsApp status notification (fire-and-forget)
+                require('../controllers/shipmentsController').notifyShipmentEvent(existing, targetStatus)
+                    .catch((e) => console.error('[manualRoute] WhatsApp notify failed:', e.message))
 
                 console.log(`[manualRoute] shipment status updated to ${targetStatus} for order ${orderRef}`)
                 return { shipment_reference: existing.shipment_reference, updated: true, status: targetStatus }
@@ -458,21 +454,14 @@ class WeebHooksHelper {
             return this.res.status(200).send(utils.responseSuccess({ skipped: true, reason: 'shipment not found' }))
         }
 
-        // Loop prevention & downgrade guards
+        // Idempotency only: skip a repeated post of the SAME status (avoids duplicate
+        // WhatsApp on Zoho re-fires). Any other transition — including off delivered — is allowed.
         if (shipment.status === targetStatus) {
             return this.res.status(200).send(utils.responseSuccess({ updated: false, shipment_reference: shipment.shipment_reference, status: shipment.status, reason: 'status already matched' }))
         }
-        if (shipment.status === 'delivered') {
-            return this.res.status(200).send(utils.responseSuccess({ updated: false, shipment_reference: shipment.shipment_reference, status: shipment.status, reason: 'shipment is already delivered' }))
-        }
-        if (['cancelled', 'failed', 'returned'].includes(shipment.status)) {
-            return this.res.status(200).send(utils.responseSuccess({ updated: false, shipment_reference: shipment.shipment_reference, status: shipment.status, reason: `shipment is in terminal state: ${shipment.status}` }))
-        }
 
         const updateData = { status: targetStatus }
-        if (targetStatus === 'delivered') {
-            updateData.actual_delivery_at = new Date()
-        }
+        updateData.actual_delivery_at = targetStatus === 'delivered' ? new Date() : null
 
         await shipment.update(updateData)
 
@@ -486,6 +475,10 @@ class WeebHooksHelper {
             performed_by: 'zoho_inventory',
             metadata: { webhook_data: payload, source_status: statusValue }
         })
+
+        // WhatsApp status notification (fire-and-forget)
+        require('../controllers/shipmentsController').notifyShipmentEvent(shipment, targetStatus)
+            .catch((e) => console.error('[zohoShipmentEvent] WhatsApp notify failed:', e.message))
 
         return this.res.status(200).send(utils.responseSuccess({ updated: true, shipment_reference: shipment.shipment_reference, status: targetStatus }))
     }
