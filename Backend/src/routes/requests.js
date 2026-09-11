@@ -1,3 +1,4 @@
+const { requireWebhookSecret } = require('../helpers/webhookAuth')
 const { Router } = require('express')
 const requestController = require('../controllers/requestController')
 const auth = require('./auth')
@@ -127,7 +128,7 @@ router.put('/:tenant/:endpoint', auth.authenticateToken, requestController.makeR
 */
 router.delete('/:tenant/:endpoint', auth.authenticateToken, requestController.makeRequest)
 
-router.post('/:endpoint', requestController.webHooks)
+router.post('/:endpoint', requireWebhookSecret, requestController.webHooks)
 
 
 module.exports = router;

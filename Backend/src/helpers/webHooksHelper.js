@@ -131,6 +131,10 @@ class WeebHooksHelper {
 
     async callMethods() {
         const methodName = this.endpoint;
+        // Only the Zoho entry points can be called from a URL, never internal helpers.
+        if (!/^zoho[A-Za-z]+$/.test(String(methodName))) {
+            return this.res.status(404).send('Unknown webhook');
+        }
         this.log = await db.requests.create({
             originating_route: this.req.originalUrl,
             payload: JSON.stringify(this.req.body)

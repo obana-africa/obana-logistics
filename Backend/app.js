@@ -27,7 +27,7 @@ const server = http.createServer(app);
 const session = require("express-session");
 const passport = require("./src/config/passport");
 app.use(
-	session({ secret: "obana", resave: false, saveUninitialized: true })
+	session({ secret: process.env.SESSION_SECRET || "obana", resave: false, saveUninitialized: true })
 );
 app.use(passport.initialize());
 app.use(passport.session());

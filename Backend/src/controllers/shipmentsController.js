@@ -1690,6 +1690,11 @@ const shipmentController = {
                 });
             }
 
+            // Customers can only cancel their own shipments.
+            if (req.user.role !== 'admin' && String(shipment.user_id) !== String(req.user.id)) {
+                return res.status(403).json({ success: false, message: 'You can only cancel your own shipments' });
+            }
+
             // Check if shipment can be cancelled
             const cancellableStatuses = ['pending'];
             if (!cancellableStatuses.includes(shipment.status)) {
@@ -1741,6 +1746,15 @@ const shipmentController = {
         try {
             const { user_id } = req.params;
             const { status, carrier_type, role, page = 1, limit = 20 } = req.query;
+
+            // Only admins may read someone else's shipments, and the role filter must be the caller's own role.
+            const isAdmin = req.user && req.user.role === 'admin';
+            if (!isAdmin && String(req.user && req.user.id) !== String(user_id)) {
+                return res.status(403).json({ success: false, message: 'You can only view your own shipments' });
+            }
+            if (!isAdmin && role && role !== req.user.role) {
+                return res.status(403).json({ success: false, message: 'Access denied' });
+            }
 
             let where = {};
 

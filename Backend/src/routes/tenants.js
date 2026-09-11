@@ -2,6 +2,9 @@ const {Router} = require('express');
 const tenantController = require('../controllers/tenantController')
 
 const router = Router();
+const tenantAuth = require('./auth')
+// Tenants hold integration credentials (Zoho, CRM): admin only. /register stays open until business stores replace it.
+const adminOnly = [tenantAuth.authenticateToken, tenantAuth.verifyRole(['admin'])]
 
 /**
 * @swagger
@@ -67,7 +70,7 @@ const router = Router();
 *               items:
 *                 $ref: '#/components/schemas/create_tenant'
 */
-router.post('/create', tenantController.createTenant)
+router.post('/create', adminOnly, tenantController.createTenant)
 
 /**
  * @swagger
@@ -124,7 +127,7 @@ router.post('/register', tenantController.registerTenant)
  *       '404':
  *         description: Tenant not found
  */
-router.get('/:id', tenantController.getTenant)
+router.get('/:id', adminOnly, tenantController.getTenant)
 
 /**
  * @swagger
@@ -136,7 +139,7 @@ router.get('/:id', tenantController.getTenant)
  *       '200':
  *         description: List of all tenants
  */
-router.get('', tenantController.getAllTenants)
+router.get('', adminOnly, tenantController.getAllTenants)
 
 /**
  * @swagger
@@ -156,8 +159,7 @@ router.get('', tenantController.getAllTenants)
  *       '404':
  *         description: Tenant not found
  */
-router.post('/:id/regenerate-key', tenantController.regenerateApiKey)
-router.post('/:id/regenerate-key', tenantController.regenerateApiKey)
+router.post('/:id/regenerate-key', adminOnly, tenantController.regenerateApiKey)
 
 
 /**
@@ -182,7 +184,7 @@ router.post('/:id/regenerate-key', tenantController.regenerateApiKey)
 *               items:
 *                 $ref: '#/components/schemas/create_tenant'
  */
-router.put('/update', tenantController.updateTenant)
+router.put('/update', adminOnly, tenantController.updateTenant)
 
 
 module.exports = router;
