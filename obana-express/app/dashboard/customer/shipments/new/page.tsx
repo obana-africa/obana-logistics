@@ -102,6 +102,16 @@ export default function CreateShipmentPage() {
     { value: 'Economy', label: 'Economy' },
   ];
 
+  // Weight is per unit, so multiply by quantity; a blank weight counts as 0.5 kg, as on the server.
+  const shipmentWeight = formData.items.reduce(
+    (sum, item) => sum + (parseFloat(item.weight) || 0.5) * (parseInt(item.quantity) || 1),
+    0
+  );
+
+  // The service that was actually priced: the server offers the closest one when this route doesn't run the chosen one.
+  const bookedMode = matchedRoute?.service?.transport_mode || formData.transport_mode;
+  const bookedLevel = matchedRoute?.service?.service_level || formData.service_level;
+
   const showError = (message: string) => {
     setError(message);
     setShowErrorModal(true);
@@ -174,14 +184,9 @@ export default function CreateShipmentPage() {
 
     setLoading(true);
     try {
-      const totalWeight = formData.items.reduce(
-        (sum, item) => sum + ((parseFloat(item.weight) || 1)), 
-        0
-      );
-
       const response = await apiClient.matchRoute({
         ...formData,
-        weight: totalWeight,
+        weight: shipmentWeight,
         origin_city: formData.pickup_address.city,
         destination_city: formData.delivery_address.city
       });
@@ -229,8 +234,8 @@ export default function CreateShipmentPage() {
           price: parseFloat(item.price),
           total_price: parseFloat(item.price) ,
         })),
-        transport_mode: formData.transport_mode,
-        service_level: formData.service_level,
+        transport_mode: bookedMode,
+        service_level: bookedLevel,
         vendor_name: matchedRoute.external ? matchedRoute.carrier.name : 'obana.africa',
         carrier_slug: matchedRoute.external ? (matchedRoute.carrier.slug || 'external') : 'obana',
         external_shipment_id: matchedRoute.shipment_id,
@@ -783,6 +788,12 @@ export default function CreateShipmentPage() {
 							</p>
 						</div>
 					</div>
+							{matchedRoute.service?.substituted && (
+								<div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+									We don&apos;t run <span className="capitalize">{formData.transport_mode}</span> · {formData.service_level} on this route yet, so this
+									price is for <span className="font-semibold"><span className="capitalize">{bookedMode}</span> · {bookedLevel}</span>.
+								</div>
+							)}
 							{matchedRoute.preferred_driver && !matchedRoute.external && (
 								<div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-4">
 									<div className="bg-white p-2 rounded-full shadow-sm">
@@ -803,26 +814,21 @@ export default function CreateShipmentPage() {
 										<Truck className="w-4 h-4" /> Transport Mode:
 									</span>
 									<span className="font-semibold capitalize">
-										{formData.transport_mode}
+										{bookedMode}
 									</span>
 								</div>
 								<div className="flex justify-between items-center">
 									<span className="text-gray-600 flex items-center gap-2">
 										<Clock className="w-4 h-4" /> Service Level:
 									</span>
-									<span className="font-semibold">{formData.service_level}</span>
+									<span className="font-semibold">{bookedLevel}</span>
 								</div>
 								<div className="flex justify-between items-center">
 									<span className="text-gray-600 flex items-center gap-2">
 										<Package className="w-4 h-4" /> Total Weight:
 									</span>
 									<span className="font-semibold">
-										{formData.items
-											.reduce(
-												(sum, item) => sum + (parseFloat(item.weight) || 0),
-												0
-											)
-											.toFixed(2)}{" "}
+										{shipmentWeight.toFixed(2)}{" "}
 										kg
 									</span>
 								</div>
@@ -873,11 +879,11 @@ export default function CreateShipmentPage() {
                   </div>
                   <div>
                     <p className="text-gray-600">Transport</p>
-                    <p className="font-semibold text-gray-900 capitalize">{formData.transport_mode}</p>
+                    <p className="font-semibold text-gray-900 capitalize">{bookedMode}</p>
                   </div>
                   <div>
                     <p className="text-gray-600">Service Level</p>
-                    <p className="font-semibold text-gray-900">{formData.service_level}</p>
+                    <p className="font-semibold text-gray-900">{bookedLevel}</p>
                   </div>
                   <div>
                     <p className="text-gray-600">Shipping Cost</p>
