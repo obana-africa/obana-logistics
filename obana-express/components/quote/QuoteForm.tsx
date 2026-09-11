@@ -6,7 +6,7 @@ import { LocationInput } from "@/components/LocationInput";
 import { Button, Input, Select } from "@/components/ui";
 import { CURRENCIES, MAX_KG, MIN_KG, WEIGHT_CHIPS, type Place } from "./quote";
 
-export type QuoteErrors = Partial<Record<"origin" | "destination" | "weight" | "declared", string>>;
+export type QuoteErrors = Partial<Record<"origin" | "destination" | "weight", string>>;
 
 export const QUOTE_FORM_ID = "quote-form";
 
@@ -16,7 +16,6 @@ interface QuoteFormProps {
 	origin: Place;
 	destination: Place;
 	weight: string;
-	declared: string;
 	/** "" means automatic (from the pickup country). */
 	currencyChoice: string;
 	autoCurrency: string;
@@ -26,13 +25,12 @@ interface QuoteFormProps {
 	onDestination: (p: Place) => void;
 	onSwap: () => void;
 	onWeight: (v: string) => void;
-	onDeclared: (v: string) => void;
 	onCurrency: (v: string) => void;
 	onSubmit: (e: React.FormEvent) => void;
 }
 
 export function QuoteForm(props: QuoteFormProps) {
-	const { origin, destination, weight, declared, currencyChoice, autoCurrency, errors, loading } = props;
+	const { origin, destination, weight, currencyChoice, autoCurrency, errors, loading } = props;
 	const kg = parseFloat(weight);
 
 	return (
@@ -115,20 +113,7 @@ export function QuoteForm(props: QuoteFormProps) {
 				</p>
 			</div>
 
-			<div className="mt-6 grid gap-5 sm:grid-cols-2">
-				<div data-invalid={errors.declared ? "true" : undefined}>
-					<Input
-						label="Declared value (₦)"
-						type="number"
-						inputMode="numeric"
-						min={0}
-						placeholder="Optional"
-						value={declared}
-						onChange={(e) => props.onDeclared(e.target.value)}
-						error={errors.declared}
-						helperText="What the contents are worth."
-					/>
-				</div>
+			<div className="mt-6">
 				<Select
 					label="Show prices in"
 					options={CURRENCIES}

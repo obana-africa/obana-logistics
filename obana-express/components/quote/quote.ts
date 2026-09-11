@@ -65,8 +65,8 @@ export function countryName(code: string) {
 
 export const placeLabel = (p: Place) => [p.city, p.country].filter(Boolean).join(", ");
 
-/** What the landing page (or a shared link) can pass: ?from=GB&to=NG&kg=5&currency=EUR&value=150000. Unknown params are ignored. */
-export type Prefill = { origin?: Place; destination?: Place; weight?: string; declared?: string; currency?: string };
+/** What the landing page (or a shared link) can pass: ?from=GB&to=NG&kg=5&currency=EUR. Unknown params are ignored. */
+export type Prefill = { origin?: Place; destination?: Place; weight?: string; currency?: string };
 
 export function parsePrefill(search: string): Prefill {
 	const q = new URLSearchParams(search);
@@ -79,8 +79,6 @@ export function parsePrefill(search: string): Prefill {
 	out.destination = country("to");
 	const kg = parseFloat(q.get("kg") ?? q.get("weight") ?? "");
 	if (kg >= MIN_KG && kg <= MAX_KG) out.weight = String(kg);
-	const value = parseFloat(q.get("value") ?? "");
-	if (value > 0) out.declared = String(value);
 	const currency = (q.get("currency") ?? "").toUpperCase();
 	if (CURRENCY_CODES.has(currency)) out.currency = currency;
 	return out;
@@ -88,12 +86,8 @@ export function parsePrefill(search: string): Prefill {
 
 const toApi = (p: Place) => ({ country: p.country, country_code: p.countryCode, state: p.state, state_code: p.stateCode, city: p.city.trim() });
 
-export function buildRequest(origin: Place, destination: Place, weight: string, declared: string, currency: string): PublicQuoteRequest {
-	const body: PublicQuoteRequest = { origin: toApi(origin), destination: toApi(destination), weight_kg: Number(parseFloat(weight).toFixed(2)) };
-	const value = parseFloat(declared);
-	if (value > 0) body.declared_value = value;
-	body.display_currency = currency;
-	return body;
+export function buildRequest(origin: Place, destination: Place, weight: string, currency: string): PublicQuoteRequest {
+	return { origin: toApi(origin), destination: toApi(destination), weight_kg: Number(parseFloat(weight).toFixed(2)), display_currency: currency };
 }
 
 /** New-shipment form, prefilled with the quoted route and weight. */

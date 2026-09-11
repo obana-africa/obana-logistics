@@ -498,6 +498,43 @@ const buildTemplateMatch = (routeTemplates, origin_state, origin_country, destin
     return { template, match, exact: score(template) === 3 };
 };
 
+// A template's mode/service as the shipments API accepts them (legacy "International Express" books as Express).
+const bookableService = (template) => {
+    const mode = normalizeText(template.transport_mode)
+    const level = normalizeText(template.service_level)
+    return {
+        transport_mode: ['road', 'air', 'sea'].includes(mode) ? mode : 'road',
+        service_level: ['Express', 'Standard', 'Economy'].find((l) => normalizeText(l) === level) || (level.includes('express') ? 'Express' : 'Standard')
+    }
+}
+
+const driverSummary = (driver) => driver
+    ? { id: driver.id, driver_code: driver.driver_code, vehicle_type: driver.vehicle_type, email: driver.user?.email }
+    : null
+
+/** Every service on a lane priced for this weight: one per mode/service (best-fitting route wins), cheapest first. */
+const laneOptions = (routeTemplates, origin_state, origin_country, destination_state, destination_country, weight) => {
+    const seen = new Set()
+    const options = []
+    for (const { template } of laneTemplates(routeTemplates, origin_state, origin_country, destination_state, destination_country)) {
+        const service = bookableService(template)
+        const key = `${service.transport_mode}|${service.service_level}`
+        if (seen.has(key)) continue
+        const match = priceTemplate(template, weight)
+        if (!match || !(Number(match.price) > 0)) continue
+        seen.add(key)
+        options.push({
+            id: `obana-${service.transport_mode}-${service.service_level.toLowerCase()}`,
+            ...service,
+            price: Math.ceil(Number(match.price)),
+            eta: match.eta || null,
+            estimated_delivery: deliveryTimeRange(match.eta),
+            preferred_driver: driverSummary(template.preferred_driver)
+        })
+    }
+    return options.sort((a, b) => a.price - b.price)
+}
+
 const normalizeItem = (item) => ({
     ...item,
     quantity: parseInt(item.quantity, 10) || 1,
@@ -651,9 +688,6 @@ const matchTemplate = async (req, res) => {
                 match.is_fulfilment_centre_handling_fee = true;
             }
             match.estimated_delivery = deliveryTimeRange(match.eta)
-            // What will actually be booked: differs from the request when this lane doesn't run that service.
-            const bookedMode = ['road', 'air', 'sea'].find((m) => m === normalizeText(template.transport_mode)) || transport_mode
-            const bookedLevel = ['Express', 'Standard', 'Economy'].find((l) => normalizeText(l) === normalizeText(template.service_level)) || service_level
             shipmentResults.push({
                 external: false,
                 pickup_address: group.pickup_address,
@@ -661,13 +695,14 @@ const matchTemplate = async (req, res) => {
                 items: group.items,
                 template,
                 match,
-                service: { transport_mode: bookedMode, service_level: bookedLevel, substituted: !exact },
-                preferred_driver: template.preferred_driver ? {
-                    id: template.preferred_driver.id,
-                    driver_code: template.preferred_driver.driver_code,
-                    vehicle_type: template.preferred_driver.vehicle_type,
-                    email: template.preferred_driver.user?.email
-                } : null
+                // What will actually be booked: differs from the request when this lane doesn't run that service.
+                service: { ...bookableService(template), substituted: !exact },
+                preferred_driver: driverSummary(template.preferred_driver),
+                // Every service on this lane, cheapest first, for the customer to pick from
+                // (the Fulfilment Centre flat fee has just the one price).
+                options: match.is_fulfilment_centre_handling_fee
+                    ? []
+                    : laneOptions(routeTemplates, originState, originCountry, destinationState, destinationCountry, groupWeight)
             })
         } else {
             // If no internal match (exact or fallback), then it's an external or unmatchable route
@@ -907,26 +942,17 @@ const buildQuoteOptions = async ({ origin, destination, originCode, destCode, we
 
     // 1. Obana fleet: one option per mode/service on this lane, from its best-fitting template (no Lagos fallback for quotes).
     const templates = await RouteTemplates.findAll()
-    const services = new Map()
-    for (const { template: t } of laneTemplates(templates, origin.state, originCode, destination.state, destCode)) {
-        const key = `${normalizeText(t.transport_mode)}|${normalizeText(t.service_level)}`
-        if (!services.has(key)) services.set(key, t)
-    }
-    for (const t of services.values()) {
-        const match = priceTemplate(t, weight)
-        const found = match && { match }
-        if (found && Number(found.match.price) > 0) {
-            options.push({
-                id: `obana-${normalizeText(t.transport_mode)}-${normalizeText(t.service_level)}`.replace(/\s+/g, '-'),
-                provider: 'obana',
-                carrier_name: 'Obana Logistics',
-                logo_url: null,
-                transport_mode: normalizeText(t.transport_mode) || null,
-                service_level: t.service_level || null,
-                eta: found.match.eta || null,
-                price: Math.ceil(Number(found.match.price))
-            })
-        }
+    for (const o of laneOptions(templates, origin.state, originCode, destination.state, destCode, weight)) {
+        options.push({
+            id: o.id,
+            provider: 'obana',
+            carrier_name: 'Obana Logistics',
+            logo_url: null,
+            transport_mode: o.transport_mode,
+            service_level: o.service_level,
+            eta: o.eta,
+            price: o.price
+        })
     }
 
     // 2. Partner carriers for international lanes, or when our fleet doesn't cover the route.
@@ -1040,6 +1066,7 @@ const quoteForAddresses = async ({ pickup, delivery, weight, declared = 0 }) => 
 module.exports = {
     buildTemplateMatch,
     laneTemplates,
+    laneOptions,
     quoteForAddresses,
     publicQuote,
     partnerQuotesForShipment,

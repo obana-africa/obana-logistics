@@ -18,18 +18,17 @@ const subscribeNothing = () => () => {};
 const readSearch = () => window.location.search;
 
 /** What the visitor has changed; everything else comes from the link (?from=GB&to=NG&kg=5) or the defaults. */
-type Edits = { origin?: Place; destination?: Place; weight?: string; declared?: string; currency?: string };
+type Edits = { origin?: Place; destination?: Place; weight?: string; currency?: string };
 
 const NETWORK_ERROR = "We couldn't reach our pricing service. Check your connection and try again.";
 
-function validate(origin: Place, destination: Place, weight: string, declared: string): QuoteErrors {
+function validate(origin: Place, destination: Place, weight: string): QuoteErrors {
 	const e: QuoteErrors = {};
 	if (!origin.city.trim()) e.origin = origin.state ? "Choose or type the pickup city." : "Choose the pickup state and city.";
 	if (!destination.city.trim()) e.destination = destination.state ? "Choose or type the delivery city." : "Choose the delivery state and city.";
 	const kg = parseFloat(weight);
 	if (!weight.trim()) e.weight = "Enter the weight in kg.";
 	else if (!(kg >= MIN_KG && kg <= MAX_KG)) e.weight = `Enter a weight between ${MIN_KG} and ${MAX_KG.toLocaleString()} kg.`;
-	if (declared.trim() && !(parseFloat(declared) >= 0)) e.declared = "Enter an amount in naira, or leave it empty.";
 	return e;
 }
 
@@ -53,14 +52,13 @@ export default function QuotePage() {
 	});
 	const { origin, destination } = places(edits);
 	const weight = edits.weight ?? prefill.weight ?? "";
-	const declared = edits.declared ?? prefill.declared ?? "";
 	const currencyChoice = edits.currency ?? prefill.currency ?? "";
 	const autoCurrency = currencyFor(origin.countryCode);
 	const displayCurrency = currencyChoice || autoCurrency;
 
-	const errors = validate(origin, destination, weight, declared);
+	const errors = validate(origin, destination, weight);
 	const valid = Object.keys(errors).length === 0;
-	const requestKey = valid ? JSON.stringify(buildRequest(origin, destination, weight, declared, displayCurrency)) : "";
+	const requestKey = valid ? JSON.stringify(buildRequest(origin, destination, weight, displayCurrency)) : "";
 	const stale = (result.status === "success" || result.status === "empty") && requestKey !== JSON.stringify(result.body);
 	const loading = result.status === "loading";
 
@@ -102,7 +100,7 @@ export default function QuotePage() {
 			});
 			return;
 		}
-		run(buildRequest(origin, destination, weight, declared, displayCurrency));
+		run(buildRequest(origin, destination, weight, displayCurrency));
 	};
 
 	const retry = () => {
@@ -135,7 +133,6 @@ export default function QuotePage() {
 							origin={origin}
 							destination={destination}
 							weight={weight}
-							declared={declared}
 							currencyChoice={currencyChoice}
 							autoCurrency={autoCurrency}
 							errors={showErrors ? errors : {}}
@@ -149,7 +146,6 @@ export default function QuotePage() {
 								})
 							}
 							onWeight={(v) => setEdits((prev) => ({ ...prev, weight: v }))}
-							onDeclared={(v) => setEdits((prev) => ({ ...prev, declared: v }))}
 							onCurrency={(v) => setEdits((prev) => ({ ...prev, currency: v }))}
 							onSubmit={onSubmit}
 						/>
