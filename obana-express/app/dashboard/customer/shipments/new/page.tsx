@@ -3,8 +3,9 @@
 
 import React, { useState, useSyncExternalStore } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Alert, Card, Button, Input, Select } from '@/components/ui';
+import { Alert, Card, Button, Input } from '@/components/ui';
 import { apiClient } from '@/lib/api';
+import { formatMoney } from '@/lib/shipments';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Check, Package, MapPin, Truck, Clock, AlertCircle, X } from 'lucide-react';
@@ -37,6 +38,34 @@ function withQuotePrefill<T extends { pickup_address: object; delivery_address: 
 	};
 }
 
+// Only what the courier needs: where, who to call and what's in the box. Service and price are picked on step 2.
+const emptyItem = () => ({ name: '', quantity: '1', weight: '', price: '' });
+const emptyForm = () => ({
+  pickup_address: { line1: '', city: '', state: '', country: '', countryCode: '', stateCode: '', phone: '', contact_name: '' },
+  delivery_address: { line1: '', city: '', state: '', country: '', countryCode: '', stateCode: '', phone: '', name: '', email: '' },
+  items: [emptyItem()],
+});
+
+type Form = ReturnType<typeof emptyForm>;
+type Item = ReturnType<typeof emptyItem>;
+
+/** One price the customer can book: a service on our own route, or a partner carrier's rate. */
+type PriceOption = {
+  id: string;
+  transport_mode: string;
+  service_level: string;
+  price: number;
+  eta?: string | null;
+  estimated_delivery?: string | null;
+  preferred_driver?: { id: number | string; driver_code?: string; vehicle_type?: string } | null;
+  carrier?: string;
+};
+
+const splitName = (full: string) => {
+  const [first_name = '', ...rest] = full.trim().split(/\s+/);
+  return { first_name, last_name: rest.join(' ') };
+};
+
 export default function CreateShipmentPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -45,42 +74,12 @@ export default function CreateShipmentPage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [newShipmentInfo, setNewShipmentInfo] = useState<any>(null);
   const [matchedRoute, setMatchedRoute] = useState<any>(null);
+  // The price picked on step 2; null means the first (cheapest) one.
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [step, setStep] = useState<'details' | 'match' | 'confirm'>('details');
   // After the first "Continue", show field errors live so users fix them before moving on.
   const [showFieldErrors, setShowFieldErrors] = useState(false);
-  const [formData, setFormData] = useState({
-    transport_mode: '',
-    service_level: '',
-    pickup_address: {
-      line1: '',
-      line2: '',
-      city: '',
-      state: '',
-      country: '',
-      countryCode: '',
-      stateCode: '',
-      phone: '',
-      contact_name: '',
-      email: '',
-      zip_code: ''
-    },
-    delivery_address: {
-      line1: '',
-      line2: '',
-      city: '',
-      state: '',
-      country: '',
-      countryCode: '',
-      stateCode: '',
-      phone: '',
-      first_name: '',
-      last_name: '',
-      email: '',
-      zip_code: ''
-    },
-    carrier_slug: 'obana',
-    items: [{ name: '', description: '', quantity: '1', weight: '0', price: '' }],
-  });
+  const [formData, setFormData] = useState<Form>(emptyForm);
 	// Apply a quote-page prefill once per incoming link. The URL is read after navigation settles
 	// (window.location lags behind a client-side route change), and state is adjusted during render — no effect.
 	const search = useSyncExternalStore(subscribeNothing, readSearch, () => "");
@@ -90,27 +89,49 @@ export default function CreateShipmentPage() {
 		setFormData((prev) => withQuotePrefill(prev, search));
 	}
 
-  const transportModes = [
-    { value: 'road', label: 'Road Transport' },
-    { value: 'air', label: 'Air Transport' },
-    { value: 'sea', label: 'Sea Transport' },
-  ];
+  const setPickup = (patch: Partial<Form['pickup_address']>) =>
+    setFormData((prev) => ({ ...prev, pickup_address: { ...prev.pickup_address, ...patch } }));
+  const setDelivery = (patch: Partial<Form['delivery_address']>) =>
+    setFormData((prev) => ({ ...prev, delivery_address: { ...prev.delivery_address, ...patch } }));
+  const setItem = (index: number, patch: Partial<Item>) =>
+    setFormData((prev) => ({ ...prev, items: prev.items.map((item, i) => (i === index ? { ...item, ...patch } : item)) }));
 
-  const serviceLevels = [
-    { value: 'Standard', label: 'Standard' },
-    { value: 'Express', label: 'Express' },
-    { value: 'Economy', label: 'Economy' },
-  ];
-
-  // Weight is per unit, so multiply by quantity; a blank weight counts as 0.5 kg, as on the server.
+  // Weight is per unit, so multiply by quantity.
   const shipmentWeight = formData.items.reduce(
     (sum, item) => sum + (parseFloat(item.weight) || 0.5) * (parseInt(item.quantity) || 1),
     0
   );
 
-  // The service that was actually priced: the server offers the closest one when this route doesn't run the chosen one.
-  const bookedMode = matchedRoute?.service?.transport_mode || formData.transport_mode;
-  const bookedLevel = matchedRoute?.service?.service_level || formData.service_level;
+  // Every service the server priced for this route, cheapest first. A partner rate (or a lone route price) is one option.
+  const crossBorder = formData.pickup_address.countryCode !== formData.delivery_address.countryCode;
+  const priceOptions: PriceOption[] = !matchedRoute
+    ? []
+    : matchedRoute.options?.length
+      ? matchedRoute.options
+      : [{
+          id: 'only',
+          transport_mode: matchedRoute.service?.transport_mode || (crossBorder ? 'air' : 'road'),
+          service_level: matchedRoute.service?.service_level || 'Standard',
+          price: Number(matchedRoute.match?.price),
+          eta: matchedRoute.match?.eta,
+          estimated_delivery: matchedRoute.match?.estimated_delivery,
+          preferred_driver: matchedRoute.external ? null : matchedRoute.preferred_driver,
+          carrier: matchedRoute.external ? matchedRoute.carrier?.name : undefined,
+        }];
+  const selected = priceOptions.find((o) => o.id === selectedOptionId) ?? priceOptions[0];
+
+  const deliveryAddress = () => {
+    const { name, ...rest } = formData.delivery_address;
+    return { ...rest, ...splitName(name) };
+  };
+  const itemsPayload = () =>
+    formData.items.map((item) => ({
+      name: item.name.trim(),
+      quantity: parseInt(item.quantity) || 1,
+      weight: parseFloat(item.weight) || 0.5,
+      price: parseFloat(item.price),
+      total_price: parseFloat(item.price),
+    }));
 
   const showError = (message: string) => {
     setError(message);
@@ -123,23 +144,12 @@ export default function CreateShipmentPage() {
   };
 
   const resetForm = () => {
-    setFormData({
-      transport_mode: '',
-      service_level: '',
-      pickup_address: {
-        line1: '', line2: '', city: '', state: '', country: '', countryCode: '', stateCode: '',
-        phone: '', contact_name: '', email: '', zip_code: ''
-      },
-      delivery_address: {
-        line1: '', line2: '', city: '', state: '', country: '', countryCode: '', stateCode: '',
-        phone: '', first_name: '', last_name: '', email: '', zip_code: ''
-      },
-      carrier_slug: 'obana',
-      items: [{ name: '', description: '', quantity: '1', weight: '0', price: '' }],
-    });
+    setFormData(emptyForm());
     setError('');
     setMatchedRoute(null);
+    setSelectedOptionId(null);
     setStep('details');
+    setShowFieldErrors(false);
     setShowSuccessModal(false);
     setNewShipmentInfo(null);
   };
@@ -154,18 +164,17 @@ export default function CreateShipmentPage() {
     if (!p.country || !p.state || !p.city) e['pickup.location'] = 'Choose the pickup country, state and city.';
     if (!p.line1.trim()) e['pickup.line1'] = 'Enter the pickup street address.';
     if (!phoneOk(p.phone)) e['pickup.phone'] = 'Enter a phone number for the pickup contact.';
-    if (!emailOk(p.email)) e['pickup.email'] = 'Enter a valid email address.';
     if (!d.country || !d.state || !d.city) e['delivery.location'] = 'Choose the delivery country, state and city.';
     if (!d.line1.trim()) e['delivery.line1'] = 'Enter the delivery street address.';
+    if (!d.name.trim()) e['delivery.name'] = "Enter the recipient's name.";
     if (!phoneOk(d.phone)) e['delivery.phone'] = "Enter the recipient's phone number.";
     if (!emailOk(d.email)) e['delivery.email'] = 'Enter a valid email address.';
     formData.items.forEach((item, i) => {
       if (!item.name.trim()) e[`item.${i}.name`] = 'Enter what this item is.';
       if (!(parseInt(item.quantity) >= 1)) e[`item.${i}.quantity`] = 'At least 1.';
       if (!(parseFloat(item.price) > 0)) e[`item.${i}.price`] = 'Enter the item value.';
+      if (!(parseFloat(item.weight) > 0)) e[`item.${i}.weight`] = 'Enter the weight in kg.';
     });
-    if (!formData.transport_mode) e.transport_mode = 'Choose how to ship.';
-    if (!formData.service_level) e.service_level = 'Choose a service level.';
     return e;
   };
   const fieldErrors: Record<string, string> = showFieldErrors ? validateDetails() : {};
@@ -185,64 +194,45 @@ export default function CreateShipmentPage() {
     setLoading(true);
     try {
       const response = await apiClient.matchRoute({
-        ...formData,
+        pickup_address: formData.pickup_address,
+        delivery_address: deliveryAddress(),
+        items: itemsPayload(),
         weight: shipmentWeight,
-        origin_city: formData.pickup_address.city,
-        destination_city: formData.delivery_address.city
       });
-      console.log(response.data)
       const matched = Array.isArray(response.data) ? response.data[0] : response.data;
       if (matched) {
         setMatchedRoute(matched);
+        setSelectedOptionId(null);
         setStep('match');
         setError('');
       } else {
-        showError('No matching routes found. Please try different parameters or contact support.');
+        showError("We don't deliver on this route yet. Contact us and we'll look for a way to move it.");
       }
     } catch (err: any) {
-      showError(err.response?.data?.message || 'Error matching routes. Please try again.');
+      showError(err.response?.data?.message || 'Error getting prices. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleCreateShipment = async () => {
-  if (!matchedRoute) return;
-
-    if (!formData.pickup_address.line1 || !formData.pickup_address.phone) {
-      showError('Please fill in required pickup address fields: Street Address and Phone Number');
-      setStep('details'); 
-      return;
-    }
-
-    if (!formData.delivery_address.line1 || !formData.delivery_address.phone) {
-      showError('Please fill in required delivery address fields: Street Address and Phone Number');
-      setStep('details'); 
-      return;
-    }
+    if (!matchedRoute || !selected) return;
 
     setLoading(true);
     try {
       const response = await apiClient.createShipment({
         pickup_address: formData.pickup_address,
-        delivery_address: formData.delivery_address,
-        items: formData.items.map(item => ({
-          name: item.name,
-          description: item.description,
-          quantity: parseInt(item.quantity),
-          weight: parseFloat(item.weight || '0'),
-          price: parseFloat(item.price),
-          total_price: parseFloat(item.price) ,
-        })),
-        transport_mode: bookedMode,
-        service_level: bookedLevel,
+        delivery_address: deliveryAddress(),
+        items: itemsPayload(),
+        transport_mode: selected.transport_mode,
+        service_level: selected.service_level,
         vendor_name: matchedRoute.external ? matchedRoute.carrier.name : 'obana.africa',
         carrier_slug: matchedRoute.external ? (matchedRoute.carrier.slug || 'external') : 'obana',
         external_shipment_id: matchedRoute.shipment_id,
         rate_id: matchedRoute.rate_id,
-        shipping_fee: matchedRoute.match.price,
-        estimated_delivery: matchedRoute.match.estimated_delivery,
-        preferred_driver_id: matchedRoute.preferred_driver?.id
+        shipping_fee: selected.price,
+        estimated_delivery: selected.estimated_delivery,
+        preferred_driver_id: selected.preferred_driver?.id
       });
 
       if (response.success && response.data) {
@@ -258,6 +248,8 @@ export default function CreateShipmentPage() {
       setLoading(false);
     }
   };
+
+  const serviceLabel = (o: PriceOption) => o.carrier || `${o.transport_mode.charAt(0).toUpperCase()}${o.transport_mode.slice(1)} · ${o.service_level}`;
 
   return (
     <DashboardLayout role="customer">
@@ -342,12 +334,12 @@ export default function CreateShipmentPage() {
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900">Shipment Created!</h2>
                 <p className="text-gray-600 mt-2 mb-6">Your shipment has been created successfully.</p>
-                
+
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-left space-y-2 text-sm mb-6">
                   <p><span className="font-semibold">Tracking #:</span> {newShipmentInfo.shipment_reference}</p>
                   <p><span className="font-semibold">Carrier:</span> {newShipmentInfo.carrier}</p>
                   <p>
-                    <span className="font-semibold">Status:</span> 
+                    <span className="font-semibold">Status:</span>
                     <span className="capitalize ml-1">{newShipmentInfo.status}</span>
                   </p>
                 </div>
@@ -377,7 +369,7 @@ export default function CreateShipmentPage() {
               <div className="border-2 border-blue-100 rounded-xl p-6 bg-linear-to-br from-blue-50 to-white">
                 <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
                   <MapPin className="h-5 w-5 text-blue-600" />
-                  Pickup Location
+                  Pickup
                 </h3>
                 <p className="text-sm text-gray-600 mb-5">Where should we collect the package?</p>
 
@@ -391,7 +383,7 @@ export default function CreateShipmentPage() {
                       countryCode: formData.pickup_address.countryCode,
                       stateCode: formData.pickup_address.stateCode,
                     }}
-                    onChange={(location) => setFormData((prev) => ({ ...prev, pickup_address: { ...prev.pickup_address, ...location } }))}
+                    onChange={(location) => setPickup(location)}
                     required
                     placeholder="Search for pickup city..."
                   />
@@ -400,34 +392,18 @@ export default function CreateShipmentPage() {
                   <Input
                     label="Street address"
                     error={fieldErrors['pickup.line1']}
-                    placeholder="e.g., 123 Main Street, Building A"
+                    placeholder="e.g., 12 Allen Avenue, Ikeja"
                     value={formData.pickup_address.line1}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      pickup_address: { ...formData.pickup_address, line1: e.target.value }
-                    })}
+                    onChange={(e) => setPickup({ line1: e.target.value })}
                     required
-                  />
-
-                  <Input
-                    label="Apartment, Suite, etc. (Optional)"
-                    placeholder="e.g., Apt 4B, Floor 2"
-                    value={formData.pickup_address.line2}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      pickup_address: { ...formData.pickup_address, line2: e.target.value }
-                    })}
                   />
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Input
-                      label="ZIP/Postal Code"
-                      placeholder="Optional"
-                      value={formData.pickup_address.zip_code || ''}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        pickup_address: { ...formData.pickup_address, zip_code: e.target.value }
-                      })}
+                      label="Contact name (optional)"
+                      placeholder="Who we ask for"
+                      value={formData.pickup_address.contact_name}
+                      onChange={(e) => setPickup({ contact_name: e.target.value })}
                     />
                     <PhoneInput
                       key={`pickup-phone-${formData.pickup_address.countryCode || "NG"}`}
@@ -435,34 +411,8 @@ export default function CreateShipmentPage() {
                       label="Phone number"
                       error={fieldErrors['pickup.phone']}
                       value={formData.pickup_address.phone}
-                      onChange={(phone) => setFormData({
-                        ...formData,
-                        pickup_address: { ...formData.pickup_address, phone }
-                      })}
+                      onChange={(phone) => setPickup({ phone })}
                       required
-                    />
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Input
-                      label="Contact Name"
-                      placeholder="Pickup contact person"
-                      value={formData.pickup_address.contact_name}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        pickup_address: { ...formData.pickup_address, contact_name: e.target.value }
-                      })}
-                    />
-                    <Input
-                      label="Email address"
-                      error={fieldErrors['pickup.email']}
-                      type="email"
-                      placeholder="contact@example.com"
-                      value={formData.pickup_address.email}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        pickup_address: { ...formData.pickup_address, email: e.target.value }
-                      })}
                     />
                   </div>
                 </div>
@@ -472,7 +422,7 @@ export default function CreateShipmentPage() {
               <div className="border-2 border-green-100 rounded-xl p-6 bg-linear-to-br from-green-50 to-white">
                 <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
                   <MapPin className="h-5 w-5 text-green-600" />
-                  Delivery Location
+                  Delivery
                 </h3>
                 <p className="text-sm text-gray-600 mb-5">Where should we deliver the package?</p>
 
@@ -486,7 +436,7 @@ export default function CreateShipmentPage() {
                       countryCode: formData.delivery_address.countryCode,
                       stateCode: formData.delivery_address.stateCode,
                     }}
-                    onChange={(location) => setFormData((prev) => ({ ...prev, delivery_address: { ...prev.delivery_address, ...location } }))}
+                    onChange={(location) => setDelivery(location)}
                     required
                     placeholder="Search for delivery city..."
                   />
@@ -495,34 +445,20 @@ export default function CreateShipmentPage() {
                   <Input
                     label="Street address"
                     error={fieldErrors['delivery.line1']}
-                    placeholder="e.g., 456 Elm Avenue"
+                    placeholder="e.g., 5 Adeola Odeku Street, Victoria Island"
                     value={formData.delivery_address.line1}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      delivery_address: { ...formData.delivery_address, line1: e.target.value }
-                    })}
+                    onChange={(e) => setDelivery({ line1: e.target.value })}
                     required
-                  />
-
-                  <Input
-                    label="Apartment, Suite, etc. (Optional)"
-                    placeholder="e.g., Unit 12, Gate 3"
-                    value={formData.delivery_address.line2}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      delivery_address: { ...formData.delivery_address, line2: e.target.value }
-                    })}
                   />
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Input
-                      label="ZIP/Postal Code"
-                      placeholder="Optional"
-                      value={formData.delivery_address.zip_code || ''}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        delivery_address: { ...formData.delivery_address, zip_code: e.target.value }
-                      })}
+                      label="Recipient name"
+                      error={fieldErrors['delivery.name']}
+                      placeholder="e.g., Ada Obi"
+                      value={formData.delivery_address.name}
+                      onChange={(e) => setDelivery({ name: e.target.value })}
+                      required
                     />
                     <PhoneInput
                       key={`delivery-phone-${formData.delivery_address.countryCode || "NG"}`}
@@ -530,45 +466,18 @@ export default function CreateShipmentPage() {
                       label="Recipient phone"
                       error={fieldErrors['delivery.phone']}
                       value={formData.delivery_address.phone}
-                      onChange={(phone) => setFormData({
-                        ...formData,
-                        delivery_address: { ...formData.delivery_address, phone }
-                      })}
+                      onChange={(phone) => setDelivery({ phone })}
                       required
                     />
                   </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Input
-                      label="Recipient First Name"
-                      placeholder="John"
-                      value={formData.delivery_address.first_name}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        delivery_address: { ...formData.delivery_address, first_name: e.target.value }
-                      })}
-                    />
-                    <Input
-                      label="Recipient Last Name"
-                      placeholder="Doe"
-                      value={formData.delivery_address.last_name}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        delivery_address: { ...formData.delivery_address, last_name: e.target.value }
-                      })}
-                    />
-                  </div>
-
                   <Input
-                    label="Recipient email"
+                    label="Recipient email (optional)"
                     error={fieldErrors['delivery.email']}
                     type="email"
-                    placeholder="recipient@example.com"
+                    placeholder="For delivery updates"
                     value={formData.delivery_address.email}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      delivery_address: { ...formData.delivery_address, email: e.target.value }
-                    })}
+                    onChange={(e) => setDelivery({ email: e.target.value })}
                   />
                 </div>
               </div>
@@ -577,9 +486,9 @@ export default function CreateShipmentPage() {
               <div className="border-2 border-purple-100 rounded-xl p-6 bg-linear-to-br from-purple-50 to-white">
                 <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
                   <Package className="h-5 w-5 text-purple-600" />
-                  Package Description
+                  What you&apos;re sending
                 </h3>
-                <p className="text-sm text-gray-600 mb-5">What are you shipping?</p>
+                <p className="text-sm text-gray-600 mb-5">Weight sets the price, so weigh the packed item if you can.</p>
 
                 <div className="space-y-4">
                   {formData.items.map((item, index) => (
@@ -588,10 +497,7 @@ export default function CreateShipmentPage() {
                         <span className="text-sm font-semibold text-purple-900">Item {index + 1}</span>
                         {formData.items.length > 1 && (
                           <Button
-                            onClick={() => {
-                              const newItems = formData.items.filter((_, i) => i !== index);
-                              setFormData({ ...formData, items: newItems });
-                            }}
+                            onClick={() => setFormData((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== index) }))}
                             variant="secondary"
                             className="py-1! px-3! text-sm bg-red-50 text-red-600 hover:bg-red-100"
                           >
@@ -606,11 +512,7 @@ export default function CreateShipmentPage() {
                           error={fieldErrors[`item.${index}.name`]}
                           placeholder="e.g., Laptop"
                           value={item.name}
-                          onChange={(e) => {
-                            const newItems = [...formData.items];
-                            newItems[index].name = e.target.value;
-                            setFormData({ ...formData, items: newItems });
-                          }}
+                          onChange={(e) => setItem(index, { name: e.target.value })}
                           required
                         />
                         <Input
@@ -620,52 +522,32 @@ export default function CreateShipmentPage() {
                           min="1"
                           placeholder="1"
                           value={item.quantity}
-                          onChange={(e) => {
-                            const newItems = [...formData.items];
-                            newItems[index].quantity = e.target.value;
-                            setFormData({ ...formData, items: newItems });
-                          }}
+                          onChange={(e) => setItem(index, { quantity: e.target.value })}
                           required
                         />
                       </div>
 
-                      <Input
-                        label="Description"
-                        placeholder="Additional details (optional)"
-                        value={item.description}
-                        onChange={(e) => {
-                          const newItems = [...formData.items];
-                          newItems[index].description = e.target.value;
-                          setFormData({ ...formData, items: newItems });
-                        }}
-                      />
-
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Input
-                          label="Item value (₦)"
+                          label="Weight per item (kg)"
+                          error={fieldErrors[`item.${index}.weight`]}
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          placeholder="e.g., 2.5"
+                          value={item.weight}
+                          onChange={(e) => setItem(index, { weight: e.target.value })}
+                          required
+                        />
+                        <Input
+                          label="Value per item (₦)"
                           error={fieldErrors[`item.${index}.price`]}
                           type="number"
                           step="0.01"
                           placeholder="0.00"
                           value={item.price}
-                          onChange={(e) => {
-                            const newItems = [...formData.items];
-                            newItems[index].price = e.target.value;
-                            setFormData({ ...formData, items: newItems });
-                          }}
+                          onChange={(e) => setItem(index, { price: e.target.value })}
                           required
-                        />
-                        <Input
-                          label="Weight (kg)"
-                          type="number"
-                          step="0.1"
-                          placeholder="0.0"
-                          value={item.weight}
-                          onChange={(e) => {
-                            const newItems = [...formData.items];
-                            newItems[index].weight = e.target.value;
-                            setFormData({ ...formData, items: newItems });
-                          }}
                         />
                       </div>
                     </div>
@@ -673,48 +555,13 @@ export default function CreateShipmentPage() {
                 </div>
 
                 <Button
-                  onClick={() => {
-                    setFormData({
-                      ...formData,
-                      items: [...formData.items, { name: '', description: '', quantity: '1', weight: '0', price: '' }]
-                    });
-                  }}
+                  onClick={() => setFormData((prev) => ({ ...prev, items: [...prev.items, emptyItem()] }))}
                   variant="secondary"
                   fullWidth
                   className="mt-4 border-2 border-purple-300 hover:bg-purple-50"
                 >
                   + Add Another Item
                 </Button>
-              </div>
-
-              {/* Shipping Method */}
-              <div className="border-2 border-orange-100 rounded-xl p-6 bg-linear-to-br from-orange-50 to-white">
-                <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-orange-600" />
-                  Shipping Method
-                </h3>
-                <p className="text-sm text-gray-600 mb-5">How would you like to ship?</p>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Select
-                    label="Transport mode"
-                    error={fieldErrors.transport_mode}
-                    placeholder="Choose"
-                    options={transportModes}
-                    value={formData.transport_mode}
-                    onChange={(e) => setFormData({ ...formData, transport_mode: e.target.value })}
-                    required
-                  />
-                  <Select
-                    label="Service level"
-                    error={fieldErrors.service_level}
-                    placeholder="Choose"
-                    options={serviceLevels}
-                    value={formData.service_level}
-                    onChange={(e) => setFormData({ ...formData, service_level: e.target.value })}
-                    required
-                  />
-                </div>
               </div>
 
               {errorCount > 0 && (
@@ -729,134 +576,88 @@ export default function CreateShipmentPage() {
                 variant="primary"
                 className="py-4! text-lg font-semibold"
               >
-                Continue to Pricing →
+                See prices →
               </Button>
             </div>
           </Card>
         )}
 
-        {/* Step 2: Route Match */}
-        {step === 'match' && matchedRoute && (
-					<Card>
-						<div className="text-center mb-6">
-							<h2 className="text-2xl font-bold text-gray-900">
-								Your Shipping Quote
-							</h2>
-							<p className="text-gray-600 mt-1">
-								Based on your selected route and service
-							</p>
-						</div>
+        {/* Step 2: Pick a price */}
+        {step === 'match' && selected && (
+          <Card>
+            <div className="text-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">Choose a price</h2>
+              <p className="text-gray-600 mt-1">
+                {formData.pickup_address.city}, {formData.pickup_address.state} → {formData.delivery_address.city}, {formData.delivery_address.state} · {shipmentWeight.toFixed(2)} kg
+              </p>
+            </div>
 
-						<div className="bg-linear-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-4 sm:p-6 md:p-8 space-y-6">
-							<div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-6 pb-4 border-b border-blue-200">
-								<div className="flex items-center gap-3 text-center md:text-left">
-									<MapPin className="h-6 w-6 text-blue-600 shrink-0" />
-									<div>
-										<p className="text-sm text-gray-600">From</p>
-										<p className="font-semibold text-gray-900">
-											{formData.pickup_address.city},{" "}
-											{formData.pickup_address.state}
-										</p>
-									</div>
-								</div>
-								<div className="w-full md:w-auto h-px md:h-16 border-t-2 md:border-t-0 md:border-l-2 border-dashed border-blue-300" />
-								<div className="flex items-center gap-3 text-center md:text-left">
-									<MapPin className="h-6 w-6 text-green-600 shrink-0" />
-									<div>
-										<p className="text-sm text-gray-600">To</p>
-										<p className="font-semibold text-gray-900">
-											{formData.delivery_address.city},{" "}
-											{formData.delivery_address.state}
-										</p>
-									</div>
-								</div>
-							</div>
+            <div className="space-y-6">
+              <fieldset className="space-y-3">
+                <legend className="sr-only">Delivery options</legend>
+                {priceOptions.map((o, i) => {
+                  const active = o.id === selected.id;
+                  return (
+                    <label
+                      key={o.id}
+                      className={`flex cursor-pointer items-center justify-between gap-4 rounded-xl border-2 bg-white p-4 transition ${active ? 'border-[#1B3B5F] shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}
+                    >
+                      <span className="flex min-w-0 items-center gap-3">
+                        <input
+                          type="radio"
+                          name="price-option"
+                          className="h-4 w-4 shrink-0 accent-[#1B3B5F]"
+                          checked={active}
+                          onChange={() => setSelectedOptionId(o.id)}
+                        />
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-2 font-semibold text-gray-900">
+                            {serviceLabel(o)}
+                            {i === 0 && priceOptions.length > 1 && (
+                              <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">Cheapest</span>
+                            )}
+                          </span>
+                          <span className="mt-0.5 flex items-center gap-1.5 text-sm text-gray-600">
+                            <Clock className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+                            {o.estimated_delivery || o.eta || 'Delivery date confirmed after booking'}
+                          </span>
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-lg font-bold tabular-nums text-gray-900">{formatMoney(o.price, 'NGN')}</span>
+                    </label>
+                  );
+                })}
+              </fieldset>
 
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
-								<div className="bg-white rounded-lg p-4 sm:p-5 shadow-sm text-center">
-									<p className="text-sm text-gray-600 mb-1">Shipping Cost</p>
-									<p className="text-2xl sm:text-3xl font-bold text-green-600">
-								₦{matchedRoute?.match?.price != null ? matchedRoute.match.price.toLocaleString() : "N/A"}
-							</p>
-						</div>
-						<div className="bg-white rounded-lg p-4 sm:p-5 shadow-sm text-center">
-							<p className="text-sm text-gray-600 mb-1">
-								Estimated Delivery
-							</p>
-							<p className="text-2xl sm:text-3xl font-bold text-blue-600">
-								{matchedRoute?.match?.eta ?? "N/A"}
-							</p>
-						</div>
-					</div>
-							{matchedRoute.service?.substituted && (
-								<div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-									We don&apos;t run <span className="capitalize">{formData.transport_mode}</span> · {formData.service_level} on this route yet, so this
-									price is for <span className="font-semibold"><span className="capitalize">{bookedMode}</span> · {bookedLevel}</span>.
-								</div>
-							)}
-							{matchedRoute.preferred_driver && !matchedRoute.external && (
-								<div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-4">
-									<div className="bg-white p-2 rounded-full shadow-sm">
-										<Truck className="h-6 w-6 text-green-600" />
-									</div>
-									<div>
-										<p className="text-xs text-green-700 font-semibold uppercase tracking-wider">Fast-Track Assignment</p>
-										<p className="text-sm text-gray-900">
-											<span className="font-bold">{matchedRoute.preferred_driver.driver_code}</span> is ready for this route 
-											<span className="text-gray-500 ml-1">({matchedRoute.preferred_driver.vehicle_type})</span>
-										</p>
-									</div>
-								</div>
-							)}
-							<div className="bg-white/80 rounded-lg p-4 space-y-3 text-sm">
-								<div className="flex justify-between items-center">
-									<span className="text-gray-600 flex items-center gap-2">
-										<Truck className="w-4 h-4" /> Transport Mode:
-									</span>
-									<span className="font-semibold capitalize">
-										{bookedMode}
-									</span>
-								</div>
-								<div className="flex justify-between items-center">
-									<span className="text-gray-600 flex items-center gap-2">
-										<Clock className="w-4 h-4" /> Service Level:
-									</span>
-									<span className="font-semibold">{bookedLevel}</span>
-								</div>
-								<div className="flex justify-between items-center">
-									<span className="text-gray-600 flex items-center gap-2">
-										<Package className="w-4 h-4" /> Total Weight:
-									</span>
-									<span className="font-semibold">
-										{shipmentWeight.toFixed(2)}{" "}
-										kg
-									</span>
-								</div>
-							</div>
+              {selected.preferred_driver && !matchedRoute.external && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-4">
+                  <div className="bg-white p-2 rounded-full shadow-sm">
+                    <Truck className="h-6 w-6 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-green-700 font-semibold uppercase tracking-wider">Fast-Track Assignment</p>
+                    <p className="text-sm text-gray-900">
+                      <span className="font-bold">{selected.preferred_driver.driver_code}</span> is ready for this route
+                      <span className="text-gray-500 ml-1">({selected.preferred_driver.vehicle_type})</span>
+                    </p>
+                  </div>
+                </div>
+              )}
 
-							<div className="space-y-3 pt-4">
-								<Button
-									onClick={() => setStep("confirm")}
-									fullWidth
-									variant="primary"
-									className="py-3!"
-								>
-									Continue to Confirmation
-								</Button>
-								<Button
-									onClick={() => setStep("details")}
-									fullWidth
-									variant="secondary"
-								>
-									← Back to Details
-								</Button>
-							</div>
-						</div>
-					</Card>
+              <div className="space-y-3">
+                <Button onClick={() => setStep('confirm')} fullWidth variant="primary" className="py-3!">
+                  Continue with {formatMoney(selected.price, 'NGN')}
+                </Button>
+                <Button onClick={() => setStep('details')} fullWidth variant="secondary">
+                  ← Back to Details
+                </Button>
+              </div>
+            </div>
+          </Card>
         )}
 
         {/* Step 3: Confirmation */}
-        {step === 'confirm' && (
+        {step === 'confirm' && selected && (
           <Card>
             <div className="text-center mb-6">
               <h2 className="text-2xl font-bold text-gray-900">Review & Confirm</h2>
@@ -878,18 +679,16 @@ export default function CreateShipmentPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-gray-600">Transport</p>
-                    <p className="font-semibold text-gray-900 capitalize">{bookedMode}</p>
+                    <p className="text-gray-600">Service</p>
+                    <p className="font-semibold text-gray-900">{serviceLabel(selected)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-600">Service Level</p>
-                    <p className="font-semibold text-gray-900">{bookedLevel}</p>
+                    <p className="text-gray-600">Total weight</p>
+                    <p className="font-semibold text-gray-900">{shipmentWeight.toFixed(2)} kg</p>
                   </div>
                   <div>
                     <p className="text-gray-600">Shipping Cost</p>
-                    <p className="font-bold text-green-600 text-lg">
-                      ₦{matchedRoute?.match?.price != null ? matchedRoute.match.price.toLocaleString() : 'N/A'}
-                    </p>
+                    <p className="font-bold text-green-600 text-lg">{formatMoney(selected.price, 'NGN')}</p>
                   </div>
                 </div>
               </div>
@@ -904,9 +703,8 @@ export default function CreateShipmentPage() {
                   <div className="text-sm space-y-1 text-gray-700">
                     {formData.pickup_address.contact_name && <p className="font-medium">{formData.pickup_address.contact_name}</p>}
                     <p>{formData.pickup_address.line1}</p>
-                    {formData.pickup_address.line2 && <p>{formData.pickup_address.line2}</p>}
                     <p>{formData.pickup_address.city}, {formData.pickup_address.state}</p>
-                    <p>{formData.pickup_address.country} {formData.pickup_address.zip_code}</p>
+                    <p>{formData.pickup_address.country}</p>
                     <p className="pt-1 font-medium">{formData.pickup_address.phone}</p>
                   </div>
                 </div>
@@ -917,15 +715,10 @@ export default function CreateShipmentPage() {
                     Delivery Address
                   </h3>
                   <div className="text-sm space-y-1 text-gray-700">
-                    {formData.delivery_address.first_name && (
-                      <p className="font-medium">
-                        {formData.delivery_address.first_name} {formData.delivery_address.last_name}
-                      </p>
-                    )}
+                    <p className="font-medium">{formData.delivery_address.name}</p>
                     <p>{formData.delivery_address.line1}</p>
-                    {formData.delivery_address.line2 && <p>{formData.delivery_address.line2}</p>}
                     <p>{formData.delivery_address.city}, {formData.delivery_address.state}</p>
-                    <p>{formData.delivery_address.country} {formData.delivery_address.zip_code}</p>
+                    <p>{formData.delivery_address.country}</p>
                     <p className="pt-1 font-medium">{formData.delivery_address.phone}</p>
                   </div>
                 </div>
@@ -942,17 +735,11 @@ export default function CreateShipmentPage() {
                     <div key={index} className="flex justify-between items-start py-3 border-b last:border-0">
                       <div className="flex-1">
                         <p className="font-semibold text-gray-900">{item.name}</p>
-                        {item.description && <p className="text-sm text-gray-600 mt-1">{item.description}</p>}
-                        <p className="text-sm text-gray-500 mt-1">Weight: {item.weight || 0} kg</p>
+                        <p className="text-sm text-gray-500 mt-1">{item.weight} kg each</p>
                       </div>
                       <div className="text-right text-sm ml-4">
                         <p className="font-semibold text-gray-900">Qty: {item.quantity}</p>
-                        <p className="text-gray-600 mt-1">
-                          ₦{parseFloat(item.price || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })} each
-                        </p>
-                        <p className="font-bold text-gray-900 mt-1">
-                          ₦{(parseFloat(item.price || '0'))}
-                        </p>
+                        <p className="text-gray-600 mt-1">{formatMoney(parseFloat(item.price || '0'), 'NGN')} each</p>
                       </div>
                     </div>
                   ))}
@@ -969,8 +756,8 @@ export default function CreateShipmentPage() {
                 >
                   ✓ Confirm & Create Shipment
                 </Button>
-                <Button onClick={() => setStep('details')} fullWidth variant="secondary">
-                  ← Back to Details
+                <Button onClick={() => setStep('match')} fullWidth variant="secondary">
+                  ← Back to Prices
                 </Button>
               </div>
             </div>
