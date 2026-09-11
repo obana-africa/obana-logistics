@@ -352,6 +352,8 @@ const updateTemplate = async (req, res) => {
     const t = await RouteTemplates.findByPk(id)
     if (!t) return res.status(404).send(utils.responseError('Not found'))
 
+    // The admin form sends only location metadata; keep the rest (bidirectional, seed marker, provider).
+    if (body && body.metadata && typeof body.metadata === 'object') body.metadata = { ...(t.metadata || {}), ...body.metadata }
     const updatedTemplate = await t.update(body)
 
     try {
@@ -400,41 +402,61 @@ const getGroupingKey = (pickupAddress = {}) => JSON.stringify({
     country: normalizeText(pickupAddress.country)
 })
 
-const buildTemplateMatch = (routeTemplates, origin_state, origin_country, destination_state, destination_country, transport_mode, service_level, weight) => {
-    if (!origin_state || !origin_country || !destination_state || !destination_country || !transport_mode || !service_level || typeof weight === 'undefined') return null
+// State names arrive in several spellings ("Lagos State", "FCT", "Abuja Federal Capital Territory", "Akwa-Ibom").
+const STATE_ALIASES = {
+    'fct': 'federal capital territory',
+    'abuja': 'federal capital territory',
+    'abuja fct': 'federal capital territory',
+    'abuja federal capital territory': 'federal capital territory',
+    'nassarawa': 'nasarawa'
+}
 
-    const nOriginState = normalizeText(origin_state);
-    // const nOriginCountry = normalizeText(origin_country);
-    const nOriginCountry = normalizeText(formatCountryCode(origin_country));
-    const nDestState = normalizeText(destination_state);
-    // const nDestCountry = normalizeText(destination_country);
-    const nDestCountry = normalizeText(formatCountryCode(destination_country));
-    const nMode = normalizeText(transport_mode);
-    const nLevel = normalizeText(service_level);
+const normalizeState = (value) => {
+    const s = normalizeText(value).replace(/[-_]/g, ' ').replace(/\s+/g, ' ').replace(/ state$/, '').trim()
+    return STATE_ALIASES[s] || s
+}
 
-    // 1. Find the first matching template based on country, state, and service parameters
-    const template = routeTemplates.find(t =>
-        normalizeText(t.metadata?.origin_state) === nOriginState &&
-        // normalizeText(t.metadata?.origin_country) === nOriginCountry &&
-        // normalizeText(t.metadata?.destination_state) === nDestState &&
-        // normalizeText(t.metadata?.destination_country) === nDestCountry &&
-        normalizeText(formatCountryCode(t.metadata?.origin_country)) === nOriginCountry &&
-        normalizeText(t.metadata?.destination_state) === nDestState &&
-        normalizeText(formatCountryCode(t.metadata?.destination_country)) === nDestCountry &&
-        normalizeText(t.transport_mode) === nMode &&
-        normalizeText(t.service_level) === nLevel
-    );
+// How well one end of a template fits a place: 2 = same state; 1 = same country, when that end is outside
+// Nigeria (we price abroad per country) or the template covers the whole country (metadata.<side>_any_state).
+const endFit = (meta, side, state, countryCode) => {
+    const tCountry = normalizeText(formatCountryCode(meta[`${side}_country_code`] || meta[`${side}_country`]))
+    if (!meta[`${side}_country_code`] && !meta[`${side}_country`]) return 0
+    if (tCountry !== countryCode) return 0
+    if (normalizeState(meta[`${side}_state`]) === state) return 2
+    return countryCode !== 'ng' || meta[`${side}_any_state`] ? 1 : 0
+}
 
-    if (!template) return null;
+/**
+ * Every template that serves this lane, best-fitting first. Templates flagged metadata.bidirectional
+ * also serve the reverse direction (e.g. Lagos → Kano prices Kano → Lagos too).
+ */
+const laneTemplates = (routeTemplates, origin_state, origin_country, destination_state, destination_country) => {
+    const oState = normalizeState(origin_state)
+    const dState = normalizeState(destination_state)
+    const oCountry = normalizeText(formatCountryCode(origin_country))
+    const dCountry = normalizeText(formatCountryCode(destination_country))
+    const lane = []
+    for (const t of routeTemplates) {
+        const meta = t.metadata || {}
+        const forward = Math.min(endFit(meta, 'origin', oState, oCountry), endFit(meta, 'destination', dState, dCountry))
+        const reverse = meta.bidirectional ? Math.min(endFit(meta, 'origin', dState, dCountry), endFit(meta, 'destination', oState, oCountry)) : 0
+        const fit = Math.max(forward, reverse)
+        if (fit > 0) lane.push({ template: t, fit })
+    }
+    return lane.sort((a, b) => b.fit - a.fit)
+}
 
+/**
+ * Price a template for a weight. Brackets are keyed on their MAX weight:
+ *   totalWeight <= max  ->  price = the route price set on the bracket
+ *   totalWeight >  max  ->  price = route price + (totalWeight - max) * route price / max
+ * With multiple brackets, use the lowest-max bracket that still covers the weight;
+ * if the weight exceeds every bracket, use the highest-max bracket (overweight case).
+ */
+const priceTemplate = (template, weight) => {
     const brackets = template.weight_brackets || [];
     if (brackets.length === 0) return null;
 
-    // Price by weight, keyed on the bracket's MAX weight:
-    //   totalWeight <= max  ->  price = the route price set on the bracket
-    //   totalWeight >  max  ->  price = route price + (totalWeight - max) * route price / max
-    // With multiple brackets, use the lowest-max bracket that still covers the weight;
-    // if the weight exceeds every bracket, use the highest-max bracket (overweight case).
     const sortedByMax = [...brackets].sort((a, b) => Number(a.max || 0) - Number(b.max || 0));
     let bracket = sortedByMax.find((b) => weight <= Number(b.max || Number.POSITIVE_INFINITY));
     const isOverweight = !bracket;
@@ -450,8 +472,30 @@ const buildTemplateMatch = (routeTemplates, origin_state, origin_country, destin
     } else {
         match.price = basePrice;
     }
+    return match;
+};
 
-    return { template, match };
+/**
+ * The best template for a lane and its price. The requested mode/service are preferences, not filters:
+ * when the lane has no exact match we fall back to the closest service on it (same mode first), and
+ * say so via `exact: false` so the customer sees what they're actually booking.
+ */
+const buildTemplateMatch = (routeTemplates, origin_state, origin_country, destination_state, destination_country, transport_mode, service_level, weight) => {
+    if (!origin_state || !origin_country || !destination_state || !destination_country || typeof weight === 'undefined') return null
+
+    const nMode = normalizeText(transport_mode);
+    const nLevel = normalizeText(service_level);
+    const score = (t) => (normalizeText(t.transport_mode) === nMode ? 2 : 0) + (normalizeText(t.service_level) === nLevel ? 1 : 0)
+
+    const candidates = laneTemplates(routeTemplates, origin_state, origin_country, destination_state, destination_country)
+        .filter(({ template }) => (template.weight_brackets || []).length > 0)
+        .sort((a, b) => b.fit - a.fit || score(b.template) - score(a.template))
+    if (!candidates.length) return null;
+
+    const template = candidates[0].template;
+    const match = priceTemplate(template, weight);
+    if (!match) return null;
+    return { template, match, exact: score(template) === 3 };
 };
 
 const normalizeItem = (item) => ({
@@ -591,67 +635,40 @@ const matchTemplate = async (req, res) => {
             groupWeight
         )
 
-        let selectedTemplateMatch = templateMatch;
-
-        // If no exact template match, try the default Lagos-Lagos fallback for this individual group
+        // Only deliveries to the Fulfilment Centre fall back to the Lagos → Lagos route; any other lane without
+        // a route goes to partner carriers (the old fallback charged intra-Lagos prices for e.g. Kano).
         const isDeliveryToFulfilmentCentre = delivery_address?.last_name === 'Fulfilment Centre';
-        if (!selectedTemplateMatch) {
-            const individualFallbackTemplateMatch = buildTemplateMatch(
-                routeTemplates,
-                'Lagos', 
-            'Nigeria',
-                'Lagos',
-            'Nigeria',
-            'Road',
-            'standard',
-            groupWeight
-            );
-            if (individualFallbackTemplateMatch) {
-                selectedTemplateMatch = individualFallbackTemplateMatch;
-            }
-        }
+        const selectedTemplateMatch = templateMatch || (isDeliveryToFulfilmentCentre
+            ? buildTemplateMatch(routeTemplates, 'Lagos', 'Nigeria', 'Lagos', 'Nigeria', 'road', 'Standard', groupWeight)
+            : null);
 
         if (selectedTemplateMatch) {
+            const { template, match, exact } = selectedTemplateMatch
+            match.price = Math.ceil(Number(match.price))
             // Apply N2000 flat rate if it's a domestic Nigerian shipment AND delivery is to Fulfilment Centre
             if (isDomesticNigeria && isDeliveryToFulfilmentCentre) {
-                selectedTemplateMatch.match.price = 2000;
-                selectedTemplateMatch.match.is_fulfilment_centre_handling_fee = true;
+                match.price = 2000;
+                match.is_fulfilment_centre_handling_fee = true;
             }
-            if (templateMatch) {
-                // Exact match
-                selectedTemplateMatch.match.estimated_delivery = deliveryTimeRange(selectedTemplateMatch.match.eta)
-                shipmentResults.push({
-                    external: false,
-                    pickup_address: group.pickup_address,
-                    delivery_address,
-                    items: group.items,
-                    template: selectedTemplateMatch.template,
-                    match: selectedTemplateMatch.match,
-                    preferred_driver: selectedTemplateMatch.template.preferred_driver ? {
-                        id: selectedTemplateMatch.template.preferred_driver.id,
-                        driver_code: selectedTemplateMatch.template.preferred_driver.driver_code,
-                        vehicle_type: selectedTemplateMatch.template.preferred_driver.vehicle_type,
-                        email: selectedTemplateMatch.template.preferred_driver.user?.email
-                    } : null
-                })
-            } else {
-                // This is an individual fallback match (Lagos-Lagos default)
-                selectedTemplateMatch.match.estimated_delivery = deliveryTimeRange(selectedTemplateMatch.match.eta)
-                shipmentResults.push({
-                    external: false,
-                    pickup_address: group.pickup_address,
-                    delivery_address,
-                    items: group.items,
-                    template: selectedTemplateMatch.template,
-                    match: selectedTemplateMatch.match,
-                    preferred_driver: selectedTemplateMatch.template.preferred_driver ? {
-                        id: selectedTemplateMatch.template.preferred_driver.id,
-                        driver_code: selectedTemplateMatch.template.preferred_driver.driver_code,
-                        vehicle_type: selectedTemplateMatch.template.preferred_driver.vehicle_type,
-                        email: selectedTemplateMatch.template.preferred_driver.user?.email
-                    } : null
-                })
-            }
+            match.estimated_delivery = deliveryTimeRange(match.eta)
+            // What will actually be booked: differs from the request when this lane doesn't run that service.
+            const bookedMode = ['road', 'air', 'sea'].find((m) => m === normalizeText(template.transport_mode)) || transport_mode
+            const bookedLevel = ['Express', 'Standard', 'Economy'].find((l) => normalizeText(l) === normalizeText(template.service_level)) || service_level
+            shipmentResults.push({
+                external: false,
+                pickup_address: group.pickup_address,
+                delivery_address,
+                items: group.items,
+                template,
+                match,
+                service: { transport_mode: bookedMode, service_level: bookedLevel, substituted: !exact },
+                preferred_driver: template.preferred_driver ? {
+                    id: template.preferred_driver.id,
+                    driver_code: template.preferred_driver.driver_code,
+                    vehicle_type: template.preferred_driver.vehicle_type,
+                    email: template.preferred_driver.user?.email
+                } : null
+            })
         } else {
             // If no internal match (exact or fallback), then it's an external or unmatchable route
             externalGroups.push({
@@ -715,7 +732,7 @@ const matchTemplate = async (req, res) => {
         return res.status(404).send(utils.responseError('No routes available for this shipment'))
     } catch (error) {
         console.error('External route match failed:', error?.response?.data || error.message)
-        return res.status(404).send(utils.responseError(`No routes available for this shipment ${JSON.stringify(error?.response?.data || error.message)}`))
+        return res.status(404).send(utils.responseError('No routes available for this shipment'))
     }
 }
 
@@ -888,12 +905,16 @@ const quoteAddress = (place, countryCode) => ({
 const buildQuoteOptions = async ({ origin, destination, originCode, destCode, weight, declared }) => {
     const options = []
 
-    // 1. Obana fleet: every mode/service that has a template on this lane (no Lagos fallback for quotes).
+    // 1. Obana fleet: one option per mode/service on this lane, from its best-fitting template (no Lagos fallback for quotes).
     const templates = await RouteTemplates.findAll()
-    const combos = new Map()
-    for (const t of templates) combos.set(`${normalizeText(t.transport_mode)}|${normalizeText(t.service_level)}`, t)
-    for (const t of combos.values()) {
-        const found = buildTemplateMatch(templates, origin.state, originCode, destination.state, destCode, t.transport_mode, t.service_level, weight)
+    const services = new Map()
+    for (const { template: t } of laneTemplates(templates, origin.state, originCode, destination.state, destCode)) {
+        const key = `${normalizeText(t.transport_mode)}|${normalizeText(t.service_level)}`
+        if (!services.has(key)) services.set(key, t)
+    }
+    for (const t of services.values()) {
+        const match = priceTemplate(t, weight)
+        const found = match && { match }
         if (found && Number(found.match.price) > 0) {
             options.push({
                 id: `obana-${normalizeText(t.transport_mode)}-${normalizeText(t.service_level)}`.replace(/\s+/g, '-'),
@@ -1017,6 +1038,8 @@ const quoteForAddresses = async ({ pickup, delivery, weight, declared = 0 }) => 
 }
 
 module.exports = {
+    buildTemplateMatch,
+    laneTemplates,
     quoteForAddresses,
     publicQuote,
     partnerQuotesForShipment,
