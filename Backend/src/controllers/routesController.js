@@ -1,6 +1,7 @@
 const db = require('../models/db')
 const utils = require('../../utils')
 const { loadPricing, priceRates, recordSeenPartners } = require('../helpers/partnerPricing')
+const { currencyForCountry, ngnRate } = require('../helpers/fx')
 const axios = require('axios')
 const { getCode } = require('country-list')
 const lookup = require('country-code-lookup')
@@ -860,7 +861,149 @@ const partnerQuotesForShipment = async (req, res) => {
     }
 }
 
+// ---------- Public quotes (no login) ----------
+const QUOTE_TTL_MS = 30 * 60 * 1000
+const quoteCache = new Map()
+
+const etaDays = (eta) => {
+    const m = String(eta || '').match(/(\d+)/)
+    return m ? Number(m[1]) : Number.POSITIVE_INFINITY
+}
+
+// A guest only tells us the area. Keep the real city/state/country so the partner prices the right
+// lane; street and phone are placeholders (a quote needs no doorstep). Built directly instead of via
+// validateAndFallbackAddress, which would swap an incomplete address for the Ikeja office.
+const quoteAddress = (place, countryCode) => ({
+    first_name: 'Obana',
+    last_name: 'Quote',
+    email: 'obana.africa@gmail.com',
+    phone: DEFAULT_ADDRESS.phone,
+    line1: `${place.city.trim()} city centre`,
+    city: place.city.trim(),
+    state: place.state.trim(),
+    country: countryCode,
+    zip: '100001'
+})
+
+const buildQuoteOptions = async ({ origin, destination, originCode, destCode, weight, declared }) => {
+    const options = []
+
+    // 1. Obana fleet: every mode/service that has a template on this lane (no Lagos fallback for quotes).
+    const templates = await RouteTemplates.findAll()
+    const combos = new Map()
+    for (const t of templates) combos.set(`${normalizeText(t.transport_mode)}|${normalizeText(t.service_level)}`, t)
+    for (const t of combos.values()) {
+        const found = buildTemplateMatch(templates, origin.state, originCode, destination.state, destCode, t.transport_mode, t.service_level, weight)
+        if (found && Number(found.match.price) > 0) {
+            options.push({
+                id: `obana-${normalizeText(t.transport_mode)}-${normalizeText(t.service_level)}`.replace(/\s+/g, '-'),
+                provider: 'obana',
+                carrier_name: 'Obana Logistics',
+                logo_url: null,
+                transport_mode: normalizeText(t.transport_mode) || null,
+                service_level: t.service_level || null,
+                eta: found.match.eta || null,
+                price: Math.ceil(Number(found.match.price))
+            })
+        }
+    }
+
+    // 2. Partner carriers for international lanes, or when our fleet doesn't cover the route.
+    if (originCode !== 'NG' || destCode !== 'NG' || !options.length) {
+        try {
+            const payload = {
+                pickup_address: quoteAddress(origin, originCode),
+                delivery_address: quoteAddress(destination, destCode),
+                parcel: {
+                    description: 'Quote',
+                    items: [{ name: 'Parcel', description: 'Parcel', currency: 'NGN', value: declared, weight, quantity: 1 }],
+                    weight_unit: 'kg',
+                    metadata: {}
+                },
+                shipment_purpose: 'commercial'
+            }
+            const quick = await taClient.post('/shipments/quick', payload)
+            const shipmentId = quick.data && quick.data.data && quick.data.data.shipment_id
+            if (shipmentId) {
+                const ratesResponse = await taClient.get(`/rates/shipment?shipment_id=${shipmentId}&currency=NGN`)
+                const rates = (ratesResponse.data && ratesResponse.data.data) || []
+                const pricing = await loadPricing(db)
+                recordSeenPartners(db, rates, pricing.partners) // fire-and-forget
+                priceRates(rates, pricing.partners, pricing.defaultPercent).slice(0, 6).forEach((p, i) => {
+                    options.push({
+                        id: `partner-${p.slug}-${i}`,
+                        provider: 'partner',
+                        carrier_name: p.rate.carrier_name,
+                        logo_url: p.rate.carrier_logo || null,
+                        transport_mode: null,
+                        service_level: null,
+                        eta: p.rate.delivery_time || null,
+                        price: p.price
+                    })
+                })
+            }
+        } catch (error) {
+            console.error('Partner quote failed:', error?.response?.data || error.message)
+        }
+    }
+
+    return options.sort((a, b) => a.price - b.price)
+}
+
+/**
+ * POST /routes/quote — public price check (no login, rate limited, cached 30 min).
+ * Prices are in NGN (what Obana charges today) plus a conversion to the customer's currency.
+ */
+const publicQuote = async (req, res) => {
+    const body = req.body || {}
+    const origin = body.origin || {}
+    const destination = body.destination || {}
+    const hasPlace = (p) => typeof p.city === 'string' && p.city.trim() && typeof p.state === 'string' && p.state.trim() && (p.country_code || p.country)
+    if (!hasPlace(origin) || !hasPlace(destination)) {
+        return res.status(400).send(utils.responseError('Choose the country, state and city for both pickup and delivery'))
+    }
+    const weight = Number(body.weight_kg)
+    if (!Number.isFinite(weight) || weight < 0.1 || weight > 1000) {
+        return res.status(400).send(utils.responseError('Weight must be between 0.1 and 1000 kg'))
+    }
+    const declared = Math.max(0, Number(body.declared_value) || 0)
+    const originCode = String(formatCountryCode(origin.country_code || origin.country)).toUpperCase()
+    const destCode = String(formatCountryCode(destination.country_code || destination.country)).toUpperCase()
+    const wanted = /^[A-Za-z]{3}$/.test(String(body.display_currency || '')) ? String(body.display_currency).toUpperCase() : currencyForCountry(originCode)
+
+    const key = JSON.stringify([originCode, normalizeText(origin.state), normalizeText(origin.city), destCode, normalizeText(destination.state), normalizeText(destination.city), Math.ceil(weight * 2) / 2, declared])
+    try {
+        let cached = quoteCache.get(key)
+        if (!cached || Date.now() - cached.at > QUOTE_TTL_MS) {
+            cached = { at: Date.now(), options: await buildQuoteOptions({ origin, destination, originCode, destCode, weight, declared }) }
+            quoteCache.set(key, cached)
+            if (quoteCache.size > 500) quoteCache.delete(quoteCache.keys().next().value)
+        }
+        if (!cached.options.length) {
+            return res.status(404).send(utils.responseError('No routes available for this shipment'))
+        }
+
+        const fx = await ngnRate(wanted)
+        const options = cached.options.map((o) => ({ ...o, display_price: fx ? Math.round(o.price * fx.rate * 100) / 100 : null }))
+        const cheapest = options.reduce((a, b) => (b.price < a.price ? b : a))
+        const fastest = options.reduce((a, b) => (etaDays(b.eta) < etaDays(a.eta) ? b : a))
+        return res.status(200).send(utils.responseSuccess({
+            currency: 'NGN',
+            display_currency: fx ? wanted : 'NGN',
+            fx: fx ? { rate: fx.rate, as_of: fx.as_of, source: fx.source } : null,
+            options,
+            cheapest_id: cheapest.id,
+            fastest_id: Number.isFinite(etaDays(fastest.eta)) ? fastest.id : null,
+            expires_at: new Date(cached.at + QUOTE_TTL_MS).toISOString()
+        }))
+    } catch (error) {
+        console.error('Public quote failed:', error?.response?.data || error.message)
+        return res.status(502).send(utils.responseError('We could not get prices right now. Please try again in a moment.'))
+    }
+}
+
 module.exports = {
+    publicQuote,
     partnerQuotesForShipment,
     listTemplates,
     getTemplate,

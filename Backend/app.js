@@ -11,6 +11,8 @@ const locations = require("./src/routes/locations")
 
 const PORT = process.env.PORT;
 const app = express();
+// Render sits behind a proxy; needed for the real client IP (rate limits).
+app.set("trust proxy", 1);
 
 app.use(express.json());
 const http = require("http");
