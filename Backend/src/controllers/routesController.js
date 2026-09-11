@@ -1,5 +1,6 @@
 const db = require('../models/db')
 const utils = require('../../utils')
+const { loadPricing, priceRates, recordSeenPartners } = require('../helpers/partnerPricing')
 const axios = require('axios')
 const { getCode } = require('country-list')
 const lookup = require('country-code-lookup')
@@ -681,15 +682,23 @@ const matchTemplate = async (req, res) => {
                 continue
             }
 
-            const bestRate = rates[0]
+            // Partner pricing: skip partners switched off in admin, add markup, offer the cheapest.
+            const pricing = await loadPricing(db)
+            recordSeenPartners(db, rates, pricing.partners) // fire-and-forget
+            const priced = priceRates(rates, pricing.partners, pricing.defaultPercent)
+            if (!priced.length) {
+                continue
+            }
+            const best = priced[0]
+            const bestRate = best.rate
             shipmentResults.push({
                 external: true,
                 shipment_id: shipmentId,
                 rate_id: bestRate.rate_id,
-                carrier: { name: bestRate.carrier_name, logo: bestRate.carrier_logo },
+                carrier: { name: bestRate.carrier_name, logo: bestRate.carrier_logo, partner: best.slug },
                 items: group.items,
                 match: {
-                    price: bestRate.amount + (10 / 100),
+                    price: best.price,
                     eta: deliveryTimeRange(bestRate.delivery_time),
                     min: 0,
                     max: group.weight,
@@ -791,7 +800,68 @@ const createTemplateFromZoho = async (req, res) => {
 };
 
 
+// Admin: live partner options for an Obana-fleet shipment we want to hand to a partner carrier.
+const partnerQuotesForShipment = async (req, res) => {
+    try {
+        const shipment = await db.shippings.findByPk(req.params.shipment_id, {
+            include: [
+                { model: db.addresses, as: 'pickup_address' },
+                { model: db.addresses, as: 'delivery_address' },
+                { model: db.shipment_items, as: 'items' }
+            ]
+        })
+        if (!shipment) return res.status(404).send(utils.responseError('Shipment not found'))
+        if (shipment.carrier_type === 'external' || shipment.external_carrier_reference) {
+            return res.status(400).send(utils.responseError('This shipment is already with a partner carrier'))
+        }
+        if (['delivered', 'failed', 'cancelled', 'returned'].includes(shipment.status)) {
+            return res.status(400).send(utils.responseError(`Shipment is ${shipment.status}`))
+        }
+
+        const pickup = shipment.pickup_address ? shipment.pickup_address.get({ plain: true }) : {}
+        const delivery = shipment.delivery_address ? shipment.delivery_address.get({ plain: true }) : {}
+        const items = (shipment.items || []).map((item) => {
+            const i = item.get({ plain: true })
+            const value = Number(i.total_price ?? i.price ?? 0) || 0
+            return { name: i.name, description: i.description, quantity: Number(i.quantity) || 1, weight: Number(i.weight) || 0.5, price: value, value, currency: i.currency || shipment.currency || 'NGN' }
+        })
+        const payload = buildTerminalPayload(pickup, delivery, items.length ? items : [{ name: 'Parcel', quantity: 1, weight: Number(shipment.total_weight) || 0.5 }])
+
+        const quick = await taClient.post('/shipments/quick', payload)
+        const terminalShipmentId = quick.data && quick.data.data && quick.data.data.shipment_id
+        if (!terminalShipmentId) return res.status(502).send(utils.responseError('Partner rates are unavailable right now'))
+
+        const ratesResponse = await taClient.get(`/rates/shipment?shipment_id=${terminalShipmentId}&currency=NGN`)
+        const rates = (ratesResponse.data && ratesResponse.data.data) || []
+        const pricing = await loadPricing(db)
+        recordSeenPartners(db, rates, pricing.partners) // fire-and-forget
+        const priced = priceRates(rates, pricing.partners, pricing.defaultPercent)
+
+        return res.status(200).send(utils.responseSuccess({
+            terminal_shipment_id: terminalShipmentId,
+            // Obana is the buyer here (the customer has already paid), so cheapest partner cost first.
+            options: priced
+                .sort((a, b) => a.cost - b.cost)
+                .slice(0, 8)
+                .map((p) => ({
+                    rate_id: p.rate.rate_id,
+                    carrier_name: p.rate.carrier_name,
+                    carrier_logo: p.rate.carrier_logo || null,
+                    partner: p.slug,
+                    cost: p.cost,
+                    price: p.price,
+                    markup_percent: p.markup_percent,
+                    eta: deliveryTimeRange(p.rate.delivery_time) || null
+                }))
+        }))
+    } catch (error) {
+        console.error('Partner quotes failed:', error?.response?.data || error.message)
+        return res.status(502).send(utils.responseError('Could not get partner rates. Check the addresses and try again.'))
+    }
+}
+
 module.exports = {
+    partnerQuotesForShipment,
     listTemplates,
     getTemplate,
     createTemplate,

@@ -1013,6 +1013,72 @@ const shipmentController = {
     },
 
     /**
+     * Admin: hand an Obana-fleet shipment to a partner carrier and book the pickup (Terminal Africa).
+     * Books first, then updates the shipment, so a failed booking changes nothing.
+     */
+    pushToPartner: async (req, res) => {
+        try {
+            const { shipment_id } = req.params;
+            const { rate_id, terminal_shipment_id, carrier_name } = req.body || {};
+            if (!rate_id || !terminal_shipment_id) {
+                return res.status(400).json({ success: false, message: 'rate_id and terminal_shipment_id are required' });
+            }
+
+            const shipment = await db.shippings.findByPk(shipment_id);
+            if (!shipment) {
+                return res.status(404).json({ success: false, message: 'Shipment not found' });
+            }
+            if (shipment.carrier_type === 'external' || shipment.external_carrier_reference) {
+                return res.status(400).json({ success: false, message: 'This shipment is already with a partner carrier' });
+            }
+            if (['delivered', 'failed', 'cancelled', 'returned'].includes(shipment.status)) {
+                return res.status(400).json({ success: false, message: `Shipment is ${shipment.status}` });
+            }
+
+            const pickupResponse = await taClient.post('/shipments/pickup', {
+                rate_id,
+                shipment_id: terminal_shipment_id,
+                purchase_insurance: shipment.is_insured || false
+            });
+            if (!pickupResponse.data || !pickupResponse.data.status) {
+                throw new Error((pickupResponse.data && pickupResponse.data.message) || 'Terminal Africa API Error');
+            }
+
+            const taData = pickupResponse.data.data || {};
+            const tracking = taData.extras?.tracking_number || null;
+            const partnerName = carrier_name || taData.carrier?.name || 'Partner carrier';
+
+            await shipment.update({
+                carrier_type: 'external',
+                carrier_slug: 'external',
+                carrier_name: partnerName,
+                external_rate_id: rate_id,
+                external_shipment_id: terminal_shipment_id,
+                external_carrier_reference: tracking,
+                driver_id: null,
+                metadata: {
+                    ...shipment.metadata,
+                    terminal_africa: taData,
+                    handed_to_partner: { by: `admin_${req.user.id}`, at: new Date().toISOString(), previous_driver_id: shipment.driver_id }
+                }
+            });
+
+            await db.shipment_tracking.create({
+                shipment_id: shipment.id,
+                status: 'confirmed',
+                description: `Handed to ${partnerName} for delivery.${tracking ? ` Partner tracking: ${tracking}` : ''}`,
+                source: 'admin',
+                performed_by: `admin_${req.user.id}`
+            });
+
+            return res.status(200).json({ success: true, message: 'Pickup booked with partner', data: { carrier_name: partnerName, tracking_number: tracking } });
+        } catch (error) {
+            console.error('Push to partner failed:', error?.response?.data || error.message);
+            return res.status(502).json({ success: false, message: error?.response?.data?.message || error.message || 'Could not book the partner' });
+        }
+    },
+
+    /**
   * Get all shipments for admin overview/monitoring
   */
     getAllShipments: async (req, res) => {

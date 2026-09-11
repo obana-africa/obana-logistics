@@ -59,6 +59,7 @@ db.shipment_tracking = require('./shipmentTrackingModel.js')(sequelize, DataType
 db.shipment_items = require('./shipmentItemsModel.js')(sequelize, DataTypes)
 db.shippings = require('./shipmentsModel.js')(sequelize, DataTypes)
 db.route_templates = require('./routeTemplateModel.js')(sequelize, DataTypes)
+db.partners = require('./partnerModel.js')(sequelize, DataTypes)
 // Sync database with force: false and alter: false to avoid enum conflicts
 const syncDatabase = async () => {
     try {
