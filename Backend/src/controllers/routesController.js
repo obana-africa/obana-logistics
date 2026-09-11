@@ -472,7 +472,17 @@ const priceTemplate = (template, weight) => {
     } else {
         match.price = basePrice;
     }
+    // Obana's margin on its own routes, applied once to the total (partner rates have their own markup).
+    // Round to kobo first so float noise (11000 × 1.1 = 12100.000000000002) doesn't add a naira.
+    match.price = Math.ceil(Math.round(match.price * (1 + routeMarkupPercent() / 100) * 100) / 100);
     return match;
+};
+
+/** ROUTE_MARKUP_PERCENT on the server (default 10). Set it to 0 to charge route prices as entered. */
+const routeMarkupPercent = () => {
+    const raw = process.env.ROUTE_MARKUP_PERCENT;
+    const n = raw === undefined || raw === '' ? NaN : Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : 10;
 };
 
 /**
