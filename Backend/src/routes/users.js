@@ -2,6 +2,10 @@ const { Router } = require('express');
 const userController = require('../controllers/userController');
 const auth = require('../routes/auth');
 const router = Router();
+const { rateLimit } = require('../helpers/rateLimit')
+const limitLogin = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: 'Too many sign-in attempts. Please wait 15 minutes and try again.' })
+const limitSignup = rateLimit({ windowMs: 60 * 60 * 1000, max: 10 })
+const limitReset = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, message: 'Too many reset requests. Please try again in an hour.' })
 
 /**
 * @swagger
@@ -134,7 +138,7 @@ const router = Router();
 *               items:
 *                 $ref: '#/components/schemas/signup_details'
 */
-router.post('/signup', userController.signup)
+router.post('/signup', limitSignup, userController.signup)
 
 
 /**
@@ -160,8 +164,8 @@ router.post('/signup', userController.signup)
 *                 $ref: '#/components/schemas/reset_password_details'
  */
 // Password reset endpoints removed in simplified auth. Keep minimal endpoints below.
-router.post('/reset-password', userController.resetPasswordRequest)
-router.post('/reset-password-confirm', userController.resetPasswordConfirm)
+router.post('/reset-password', limitReset, userController.resetPasswordRequest)
+router.post('/reset-password-confirm', limitReset, userController.resetPasswordConfirm)
 
 /**
  * @swagger
@@ -187,7 +191,7 @@ router.post('/reset-password-confirm', userController.resetPasswordConfirm)
  *       401:
  *          description: Login failed
 */
-router.post('/login', userController.signin)
+router.post('/login', limitLogin, userController.signin)
 
 /**
  * @swagger

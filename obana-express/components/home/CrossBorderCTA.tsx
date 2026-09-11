@@ -211,7 +211,7 @@ export default function CrossBorderCTA() {
 							Get Started
 						</a>
 						<a
-							href="/auth/signup"
+							href="/route-match?from=GB&to=NG"
 							className="inline-flex items-center gap-2 px-7 py-3.5 rounded-xl font-semibold text-sm transition-all duration-200 hover:bg-white/10 active:scale-[0.98]"
 							style={{
 								color: "#ffffff",
@@ -219,7 +219,7 @@ export default function CrossBorderCTA() {
 								background: "transparent",
 							}}
 						>
-							Create Shipment
+							Get a quote
 							<ArrowUpRight className="w-4 h-4" />
 						</a>
 					</div>

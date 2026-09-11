@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useSyncExternalStore } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Alert, Card, Button, Input, Select } from '@/components/ui';
 import { apiClient } from '@/lib/api';
@@ -10,6 +10,32 @@ import Link from 'next/link';
 import { Check, Package, MapPin, Truck, Clock, AlertCircle, X } from 'lucide-react';
 import { LocationInput } from '@/components/LocationInput';
 import PhoneInput from '@/components/PhoneInput';
+
+// Arriving from the public quote page (?pickup_city=…&delivery_city=…&weight=4.5): start with that route and weight.
+const subscribeNothing = () => () => {};
+const readSearch = () => window.location.search;
+
+function withQuotePrefill<T extends { pickup_address: object; delivery_address: object; items: { weight: string }[] }>(form: T, search: string): T {
+	const q = new URLSearchParams(search);
+	const place = (side: "pickup" | "delivery") => {
+		const city = q.get(`${side}_city`)?.trim();
+		if (!city) return {};
+		return {
+			city,
+			state: q.get(`${side}_state`) ?? "",
+			stateCode: q.get(`${side}_state_code`) ?? "",
+			country: q.get(`${side}_country`) ?? "",
+			countryCode: (q.get(`${side}_country_code`) ?? "").toUpperCase(),
+		};
+	};
+	const kg = parseFloat(q.get("weight") ?? "");
+	return {
+		...form,
+		pickup_address: { ...form.pickup_address, ...place("pickup") },
+		delivery_address: { ...form.delivery_address, ...place("delivery") },
+		items: kg > 0 && kg <= 1000 ? form.items.map((item, i) => (i === 0 ? { ...item, weight: String(kg) } : item)) : form.items,
+	};
+}
 
 export default function CreateShipmentPage() {
   const router = useRouter();
@@ -55,6 +81,14 @@ export default function CreateShipmentPage() {
     carrier_slug: 'obana',
     items: [{ name: '', description: '', quantity: '1', weight: '0', price: '' }],
   });
+	// Apply a quote-page prefill once per incoming link. The URL is read after navigation settles
+	// (window.location lags behind a client-side route change), and state is adjusted during render — no effect.
+	const search = useSyncExternalStore(subscribeNothing, readSearch, () => "");
+	const [prefilledFor, setPrefilledFor] = useState("");
+	if (search !== prefilledFor) {
+		setPrefilledFor(search);
+		setFormData((prev) => withQuotePrefill(prev, search));
+	}
 
   const transportModes = [
     { value: 'road', label: 'Road Transport' },
@@ -391,6 +425,8 @@ export default function CreateShipmentPage() {
                       })}
                     />
                     <PhoneInput
+                      key={`pickup-phone-${formData.pickup_address.countryCode || "NG"}`}
+                      defaultCountry={(formData.pickup_address.countryCode || "NG").toLowerCase()}
                       label="Phone number"
                       error={fieldErrors['pickup.phone']}
                       value={formData.pickup_address.phone}
@@ -484,6 +520,8 @@ export default function CreateShipmentPage() {
                       })}
                     />
                     <PhoneInput
+                      key={`delivery-phone-${formData.delivery_address.countryCode || "NG"}`}
+                      defaultCountry={(formData.delivery_address.countryCode || "NG").toLowerCase()}
                       label="Recipient phone"
                       error={fieldErrors['delivery.phone']}
                       value={formData.delivery_address.phone}

@@ -13,6 +13,7 @@ import {
 	PackagePlus,
 	Route,
 	ShieldCheck,
+	Store,
 	Truck,
 	UserRound,
 	Users,
@@ -37,6 +38,7 @@ const NAV: Record<Role, NavItem[]> = {
 		{ name: "Overview", href: "/dashboard/customer", icon: LayoutDashboard },
 		{ name: "New shipment", href: "/dashboard/customer/shipments/new", icon: PackagePlus },
 		{ name: "Shipments", href: "/dashboard/customer/shipments", icon: Package },
+		{ name: "Stores & API", href: "/dashboard/customer/stores", icon: Store },
 		{ name: "Account", href: "/dashboard/customer/profile", icon: UserRound },
 	],
 	driver: [
@@ -53,6 +55,7 @@ const NAV: Record<Role, NavItem[]> = {
 		{ name: "Shipments", href: "/dashboard/admin/shipments", icon: Package },
 		{ name: "Routes & pricing", href: "/dashboard/admin/routes", icon: Route },
 		{ name: "Partners", href: "/dashboard/admin/partners", icon: Handshake },
+		{ name: "Stores", href: "/dashboard/admin/stores", icon: Store },
 		{ name: "Drivers", href: "/dashboard/admin/drivers", icon: Truck },
 		{ name: "Agents", href: "/dashboard/admin/agents", icon: ShieldCheck },
 		{ name: "Users", href: "/dashboard/admin/users", icon: Users },

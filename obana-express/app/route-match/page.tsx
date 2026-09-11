@@ -1,220 +1,174 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import Navigation from '@/components/home/Navigation';
-import Footer from '@/components/home/Footer';
-import { Card, Button, Input, Select, Alert } from '@/components/ui';
-import { LocationInput } from '@/components/LocationInput';
-import { apiClient } from '@/lib/api';
-import { Calendar, Truck, Package, DollarSign } from 'lucide-react';
-import { useAuth } from '@/lib/authContext';
+import React, { useMemo, useRef, useState, useSyncExternalStore } from "react";
+import axios from "axios";
+import { Globe2 } from "lucide-react";
+import Footer from "@/components/home/Footer";
+import Navigation from "@/components/home/Navigation";
+import { QUOTE_FORM_ID, QuoteForm, type QuoteErrors } from "@/components/quote/QuoteForm";
+import { QuoteResults, TrustStrip, type QuoteState } from "@/components/quote/QuoteResults";
+import { DEFAULT_DESTINATION, DEFAULT_ORIGIN, MAX_KG, MIN_KG, buildRequest, currencyFor, parsePrefill, type Place } from "@/components/quote/quote";
+import { Button } from "@/components/ui";
+import { apiClient, type PublicQuoteRequest } from "@/lib/api";
+import { useAuth } from "@/lib/authContext";
 
-export default function RouteMatchPage() {
-  const { isAuthenticated, user, logout } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
-  const [error, setError] = useState('');
-  
-  const [formData, setFormData] = useState({
-    origin: { city: '', state: '', country: '', countryCode: '' },
-    destination: { city: '', state: '', country: '', countryCode: '' },
-    weight: '',
-    transport_mode: 'road',
-    service_level: 'Standard'
-  });
+// Public quote page: anyone can price a shipment, signed in or not.
 
-  const transportModes = [
-    { value: 'road', label: ' Road Transport' },
-    { value: 'air', label: ' Air Transport' },
-    { value: 'sea', label: ' Sea Transport' },
-  ];
+const subscribeNothing = () => () => {};
+const readSearch = () => window.location.search;
 
-  const serviceLevels = [
-    { value: 'Standard', label: ' Standard' },
-    { value: 'Express', label: ' Express' },
-    { value: 'Economy', label: ' Economy' },
-  ];
+/** What the visitor has changed; everything else comes from the link (?from=GB&to=NG&kg=5) or the defaults. */
+type Edits = { origin?: Place; destination?: Place; weight?: string; declared?: string; currency?: string };
 
-  const handleMatch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setResult(null);
+const NETWORK_ERROR = "We couldn't reach our pricing service. Check your connection and try again.";
 
-    if (!formData.origin.city || !formData.destination.city) {
-      setError('Please select valid origin and destination cities');
-      return;
-    }
-    
-    if (!formData.weight || parseFloat(formData.weight) <= 0) {
-        setError('Please enter a valid weight');
-        return;
-    }
+function validate(origin: Place, destination: Place, weight: string, declared: string): QuoteErrors {
+	const e: QuoteErrors = {};
+	if (!origin.city.trim()) e.origin = origin.state ? "Choose or type the pickup city." : "Choose the pickup state and city.";
+	if (!destination.city.trim()) e.destination = destination.state ? "Choose or type the delivery city." : "Choose the delivery state and city.";
+	const kg = parseFloat(weight);
+	if (!weight.trim()) e.weight = "Enter the weight in kg.";
+	else if (!(kg >= MIN_KG && kg <= MAX_KG)) e.weight = `Enter a weight between ${MIN_KG} and ${MAX_KG.toLocaleString()} kg.`;
+	if (declared.trim() && !(parseFloat(declared) >= 0)) e.declared = "Enter an amount in naira, or leave it empty.";
+	return e;
+}
 
-    setLoading(true);
-    try {
-      const res = await apiClient.matchRoute(
-        parseFloat(formData.weight),
-        formData.origin.city,
-        formData.destination.city,
-        formData.transport_mode,
-        formData.service_level
-      );
+export default function QuotePage() {
+	const { isAuthenticated } = useAuth();
+	// Sign-in state and the link's params live in the browser: read them after hydration.
+	const mounted = useSyncExternalStore(subscribeNothing, () => true, () => false);
+	const signedIn = mounted && isAuthenticated;
+	const search = useSyncExternalStore(subscribeNothing, readSearch, () => "");
+	const prefill = useMemo(() => parsePrefill(search), [search]);
 
-      if (res.status && res.data) {
-        setResult(res.data);
-      } else {
-        setError(res.message || 'No route found for these parameters');
-      }
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Error calculating quote');
-    } finally {
-      setLoading(false);
-    }
-  };
+	const [edits, setEdits] = useState<Edits>({});
+	const [showErrors, setShowErrors] = useState(false);
+	const [result, setResult] = useState<QuoteState>({ status: "idle" });
+	const headingRef = useRef<HTMLHeadingElement>(null);
+	const latest = useRef(0);
 
-  const getDashboardLink = () => {
-		if (!user) return "/";
-		const dashboards: Record<string, string> = {
-			customer: "/dashboard/customer",
-			driver: "/dashboard/driver",
-			admin: "/dashboard/admin",
-			agent: "/dashboard/agent",
-		};
-		return dashboards[user.role] || "/dashboard/customer";
+	const places = (e: Edits) => ({
+		origin: e.origin ?? prefill.origin ?? DEFAULT_ORIGIN,
+		destination: e.destination ?? prefill.destination ?? DEFAULT_DESTINATION,
+	});
+	const { origin, destination } = places(edits);
+	const weight = edits.weight ?? prefill.weight ?? "";
+	const declared = edits.declared ?? prefill.declared ?? "";
+	const currencyChoice = edits.currency ?? prefill.currency ?? "";
+	const autoCurrency = currencyFor(origin.countryCode);
+	const displayCurrency = currencyChoice || autoCurrency;
+
+	const errors = validate(origin, destination, weight, declared);
+	const valid = Object.keys(errors).length === 0;
+	const requestKey = valid ? JSON.stringify(buildRequest(origin, destination, weight, declared, displayCurrency)) : "";
+	const stale = (result.status === "success" || result.status === "empty") && requestKey !== JSON.stringify(result.body);
+	const loading = result.status === "loading";
+
+	const run = async (body: PublicQuoteRequest) => {
+		const id = ++latest.current;
+		setResult({ status: "loading", body });
+		// On one-column layouts the results sit below the form — bring them into view.
+		if (window.matchMedia("(max-width: 1023px)").matches) headingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+		let next: QuoteState;
+		try {
+			// Backend envelope: { status: "success", data: {...quote} } or { status: "error", code, message }.
+			const res = await apiClient.getPublicQuote(body);
+			if (res?.status === "error") next = { status: "error", body, message: res.message || NETWORK_ERROR };
+			else if (res?.data?.options?.length) next = { status: "success", body, quote: res.data };
+			else next = { status: "empty", body };
+		} catch (err) {
+			const code = axios.isAxiosError(err) ? err.response?.status : undefined;
+			const message = axios.isAxiosError(err) ? (err.response?.data as { message?: string } | undefined)?.message : undefined;
+			if (code === 404) next = { status: "empty", body };
+			else if (code === 429) next = { status: "limited", body };
+			else if (code === 400) next = { status: "error", body, message: message || "Some details don't look right. Check them and try again." };
+			else next = { status: "error", body, message: NETWORK_ERROR };
+		}
+		if (id !== latest.current) return; // a newer quote was asked for meanwhile
+		setResult(next);
+		requestAnimationFrame(() => headingRef.current?.focus());
 	};
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Navigation isAuthenticated={isAuthenticated} getDashboardLink={getDashboardLink} logout={logout} />
-      
-      <main className="flex-grow pt-32 pb-12 px-4 sm:px-6">
-        <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-10">
-                <h1 className="text-3xl font-bold text-gray-900">Get a Shipping Quote</h1>
-                <p className="text-gray-600 mt-2">Check rates and delivery times instantly</p>
-            </div>
+	const onSubmit = (e: React.FormEvent) => {
+		e.preventDefault();
+		if (!valid) {
+			setShowErrors(true);
+			requestAnimationFrame(() => {
+				const box = document.querySelector<HTMLElement>(`#${QUOTE_FORM_ID} [data-invalid="true"]`);
+				box?.scrollIntoView({ behavior: "smooth", block: "center" });
+				box?.querySelector<HTMLElement>("input:not(:disabled), select:not(:disabled)")?.focus({ preventScroll: true });
+			});
+			return;
+		}
+		run(buildRequest(origin, destination, weight, declared, displayCurrency));
+	};
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="md:col-span-2">
-                    <Card className="p-6">
-                        <form onSubmit={handleMatch} className="space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <LocationInput
-                                    label="Origin City"
-                                    value={formData.origin}
-                                    onChange={(val) => setFormData({...formData, origin: val})}
-                                    required
-                                />
-                                <LocationInput
-                                    label="Destination City"
-                                    value={formData.destination}
-                                    onChange={(val) => setFormData({...formData, destination: val})}
-                                    required
-                                />
-                            </div>
+	const retry = () => {
+		if (result.status !== "idle") run(result.body);
+	};
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <Input
-                                    label="Weight (kg)"
-                                    type="number"
-                                    step="0.1"
-                                    min="0.1"
-                                    value={formData.weight}
-                                    onChange={(e) => setFormData({...formData, weight: e.target.value})}
-                                    required
-                                    placeholder="e.g. 5.5"
-                                />
-                                <Select
-                                    label="Transport Mode"
-                                    options={transportModes}
-                                    value={formData.transport_mode}
-                                    onChange={(e) => setFormData({...formData, transport_mode: e.target.value})}
-                                />
-                                <Select
-                                    label="Service Level"
-                                    options={serviceLevels}
-                                    value={formData.service_level}
-                                    onChange={(e) => setFormData({...formData, service_level: e.target.value})}
-                                />
-                            </div>
+	return (
+		<div className="flex min-h-screen flex-col bg-[#f7f8fb] pb-24 md:pb-0">
+			<Navigation />
 
-                            <Button 
-                                type="submit" 
-                                variant="primary" 
-                                fullWidth 
-                                loading={loading}
-                                className="h-12 text-lg"
-                            >
-                                Calculate Rate
-                            </Button>
-                        </form>
-                    </Card>
-                </div>
+			<main className="flex-1 pt-20">
+				<section className="border-b border-slate-200/70 bg-white bg-[radial-gradient(circle_at_12%_30%,rgba(220,251,249,0.8),transparent_60%)]">
+					<div className="mx-auto max-w-7xl px-4 pb-8 pt-8 sm:px-6 lg:px-10 lg:pb-10 lg:pt-12">
+						<p className="inline-flex items-center gap-2 rounded-full bg-[#dcfbf9] px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-[#1B3B5F]">
+							<Globe2 className="h-3.5 w-3.5" aria-hidden />
+							Instant quote · No account needed
+						</p>
+						<h1 className="mt-4 text-3xl font-black tracking-tight text-[#1B3B5F] sm:text-4xl lg:text-5xl" style={{ fontFamily: "var(--font-display)" }}>
+							Get a shipping quote
+						</h1>
+						<p className="mt-3 max-w-2xl text-base text-slate-600 lg:text-lg">
+							From Europe to Africa, and door to door across Nigeria. Compare our own fleet with partner carriers and see prices in your currency.
+						</p>
+					</div>
+				</section>
 
-                <div className="md:col-span-1">
-                    {error && (
-                        <Alert type="error" className="mb-6">{error}</Alert>
-                    )}
+				<div className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start lg:gap-10 lg:px-10 lg:py-10">
+					<div className="lg:sticky lg:top-24">
+						<QuoteForm
+							origin={origin}
+							destination={destination}
+							weight={weight}
+							declared={declared}
+							currencyChoice={currencyChoice}
+							autoCurrency={autoCurrency}
+							errors={showErrors ? errors : {}}
+							loading={loading}
+							onOrigin={(p) => setEdits((prev) => ({ ...prev, origin: p }))}
+							onDestination={(p) => setEdits((prev) => ({ ...prev, destination: p }))}
+							onSwap={() =>
+								setEdits((prev) => {
+									const now = places(prev);
+									return { ...prev, origin: now.destination, destination: now.origin };
+								})
+							}
+							onWeight={(v) => setEdits((prev) => ({ ...prev, weight: v }))}
+							onDeclared={(v) => setEdits((prev) => ({ ...prev, declared: v }))}
+							onCurrency={(v) => setEdits((prev) => ({ ...prev, currency: v }))}
+							onSubmit={onSubmit}
+						/>
+					</div>
 
-                    {result ? (
-                        <Card className="bg-blue-50 border-blue-200">
-                            <div className="p-4 space-y-6">
-                                <div className="text-center border-b border-blue-200 pb-4">
-                                    <p className="text-sm text-gray-600 uppercase tracking-wide">Estimated Cost</p>
-                                    <h2 className="text-4xl font-bold text-blue-700 mt-2">
-                                        ₦{result.match?.price?.toLocaleString()}
-                                    </h2>
-                                </div>
+					<div className="min-w-0">
+						<QuoteResults state={result} signedIn={signedIn} stale={stale} onRetry={retry} headingRef={headingRef} />
+						<TrustStrip />
+					</div>
+				</div>
+			</main>
 
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2 text-gray-700">
-                                            <Calendar className="w-5 h-5 text-blue-500" />
-                                            <span>Est. Delivery</span>
-                                        </div>
-                                        <span className="font-semibold">{result.match?.eta} days</span>
-                                    </div>
-                                    
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2 text-gray-700">
-                                            <Truck className="w-5 h-5 text-blue-500" />
-                                            <span>Distance</span>
-                                        </div>
-                                        <span className="font-semibold">{result.match?.distance_km} km</span>
-                                    </div>
+			<Footer />
 
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2 text-gray-700">
-                                            <Package className="w-5 h-5 text-blue-500" />
-                                            <span>Weight</span>
-                                        </div>
-                                        <span className="font-semibold">{formData.weight} kg</span>
-                                    </div>
-                                </div>
-
-                                <Button 
-                                    fullWidth 
-                                    variant="primary"
-                                    onClick={() => window.location.href = '/auth/signup'}
-                                >
-                                    Ship Now
-                                </Button>
-                            </div>
-                        </Card>
-                    ) : (
-                        <Card className="h-full flex items-center justify-center p-8 text-center text-gray-500">
-                            <div>
-                                <DollarSign className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                                <p>Fill the form to see shipping rates and delivery estimates</p>
-                            </div>
-                        </Card>
-                    )}
-                </div>
-            </div>
-        </div>
-      </main>
-
-      <Footer />
-    </div>
-  );
+			{/* Phones: the main action stays in reach while scrolling the form. */}
+			<div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur md:hidden">
+				<Button type="submit" form={QUOTE_FORM_ID} size="lg" fullWidth loading={loading}>
+					{loading ? "Getting prices…" : "Get quote"}
+				</Button>
+			</div>
+		</div>
+	);
 }

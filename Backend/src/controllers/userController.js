@@ -37,7 +37,8 @@ const createUserRequest = async (req, res) => {
         return res.status(400).send(utils.responseError('Phone number too long. Maximum 50 characters.'))
     }
     // Validate role
-    const validRoles = ['admin', 'driver', 'customer', 'agent'];
+    // Public signup can never create admins; only an authenticated admin can.
+    const validRoles = req.user && req.user.role === 'admin' ? ['admin', 'driver', 'customer', 'agent'] : ['driver', 'customer', 'agent'];
     if (!req.body.role || !validRoles.includes(req.body.role)) {
         return res.status(400).send(
             utils.responseError(`Role is required and must be one of: ${validRoles.join(', ')}`)
@@ -280,6 +281,13 @@ const resetPassword = async (req, res) => {
     let user = req.user
     try {
         
+        // Changing a password needs the current one, and never works with an API key.
+        if (req.authMethod === 'api_key' || req.authMethod === 'store_key') {
+            return res.status(403).send(utils.responseError('Sign in with your password to change it'));
+        }
+        if (!req.body.old_password) {
+            return res.status(400).send(utils.responseError('Enter your current password'));
+        }
         if (req.body.old_password) {
             const dbUser = await User.findByPk(user.id);
             const isMatch = await bcrypt.compare(req.body.old_password, dbUser.password);
@@ -391,7 +399,11 @@ const getProfile = async (req, res) => {
  */
 const updateProfile = async (req, res) => {
     
-    const attributes = req.body
+    // Fields users can never set on themselves (role escalation, key and permission tampering).
+    
+    const PROTECTED = ['role', 'role_id', 'api_key', 'account_type', 'account_types', 'permission', 'scope', 'scopes', 'password', 'status', 'verification_status', 'id', 'user_id']
+    
+    const attributes = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => !PROTECTED.includes(key)))
     // phone length validation
     if (attributes.phone && attributes.phone.length > 50) {
         return res.status(400).send(utils.responseError('Phone number too long. Maximum 50 characters.'))
@@ -748,10 +760,13 @@ const generateAgentId = (id) => {
  * @returns 
  */
 const createAuthDetail = async (user, rememberMe = false) => {
-    const access_token = generateToken(user)
+    // Never put secrets (API keys) inside tokens.
+    const tokenUser = JSON.parse(JSON.stringify(user))
+    if (tokenUser.attributes) delete tokenUser.attributes.api_key
+    const access_token = generateToken(tokenUser)
     const expiresIn = rememberMe ? process.env.REFRESH_TOKEN_SECRET_REMEMBER_ME
         : process.env.REFRESH_TOKEN_SECRET_EXPIRES_IN
-    const refresh_token = generateToken(user, true, expiresIn)
+    const refresh_token = generateToken(tokenUser, true, expiresIn)
     Tokens.create({ refresh_token })
     
     return { user, access_token, refresh_token, role: user.role}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
@@ -8,6 +8,11 @@ import { AuthShell } from "@/components/AuthShell";
 import { Alert, Button, Checkbox, Input } from "@/components/ui";
 import { useAuth } from "@/lib/authContext";
 import { dashboardFor } from "@/lib/site";
+import { safeNextPath, withNext } from "@/components/quote/quote";
+
+const subscribeNothing = () => () => {};
+// ?next=/… returns people to where they were (e.g. booking a quote); anything unsafe is ignored.
+const readNext = () => safeNextPath(new URLSearchParams(window.location.search).get("next"));
 
 export default function LoginPage() {
 	const router = useRouter();
@@ -15,6 +20,7 @@ export default function LoginPage() {
 	const [loading, setLoading] = useState(false);
 	const [showPassword, setShowPassword] = useState(false);
 	const [form, setForm] = useState({ userIdentification: "", password: "", rememberMe: false });
+	const next = useSyncExternalStore(subscribeNothing, readNext, () => null);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -22,7 +28,7 @@ export default function LoginPage() {
 		setLoading(true);
 		try {
 			const response = await login(form.userIdentification.trim(), form.password, form.rememberMe);
-			router.replace(dashboardFor(response?.data?.user));
+			router.replace(next ?? dashboardFor(response?.data?.user));
 		} catch {
 			// The error message is shown from the auth context.
 		} finally {
@@ -91,7 +97,7 @@ export default function LoginPage() {
 
 			<p className="mt-8 border-t border-slate-100 pt-6 text-center text-sm text-slate-600">
 				New to Obana?{" "}
-				<Link href="/auth/signup" className="font-semibold text-[#1B3B5F] hover:underline">
+				<Link href={next ? withNext("/auth/signup", next) : "/auth/signup"} className="font-semibold text-[#1B3B5F] hover:underline">
 					Create an account
 				</Link>
 			</p>

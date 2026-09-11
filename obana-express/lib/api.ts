@@ -16,6 +16,143 @@ interface AuthTokens {
   user?: any;
 }
 
+// Public quote (POST /routes/quote) — no account needed.
+interface QuotePlace {
+  country: string;
+  country_code: string;
+  state: string;
+  state_code: string;
+  city: string;
+}
+
+interface PublicQuoteRequest {
+  origin: QuotePlace;
+  destination: QuotePlace;
+  weight_kg: number;
+  declared_value?: number;
+  display_currency?: string;
+}
+
+interface PublicQuoteOption {
+  id: string;
+  provider: 'obana' | 'partner';
+  carrier_name: string;
+  logo_url: string | null;
+  transport_mode: 'road' | 'air' | 'sea' | null;
+  service_level: string | null;
+  eta: string | null;
+  price: number;
+  display_price: number | null;
+}
+
+interface PublicQuote {
+  currency: string;
+  display_currency: string;
+  fx: { rate: number; as_of: string; source: string } | null;
+  options: PublicQuoteOption[];
+  cheapest_id: string;
+  fastest_id: string | null;
+  expires_at: string;
+}
+
+// Stores & API: a business account connects stores (website, Shopify, app), each with its own API key.
+type StoreStatus = 'active' | 'paused';
+
+interface Store {
+  id: number | string;
+  name: string;
+  website_url: string | null;
+  status: StoreStatus;
+  /** e.g. "obk_live_…Ab3x" — the full key is only returned by createStore and rotateStoreKey. */
+  api_key_hint: string;
+  api_key_created_at: string;
+  last_used_at: string | null;
+  webhook_url: string | null;
+  /** Owner calls only; not included in the admin list. */
+  webhook_secret?: string;
+  created_at: string;
+  shipments_count?: number;
+  /** Admin list (GET /stores?all=1) only. */
+  owner?: { id: number | string; email: string | null; phone: string | null } | null;
+}
+
+interface StoreDetail extends Store {
+  stats: { total: number; by_status: Partial<Record<string, number>> };
+}
+
+interface StoreWithKey {
+  store: Store;
+  api_key: string;
+}
+
+interface StoreInput {
+  name?: string;
+  website_url?: string | null;
+  webhook_url?: string | null;
+  status?: StoreStatus;
+}
+
+interface StoreWebhookTest {
+  ok: boolean;
+  code: number | null;
+  delivery_id: number | string | null;
+}
+
+interface StoreWebhookDelivery {
+  id: number | string;
+  event: string;
+  shipment_id: number | string | null;
+  status: 'pending' | 'delivered' | 'failed';
+  attempts: number;
+  response_code: number | null;
+  next_attempt_at: string | null;
+  delivered_at: string | null;
+  created_at: string;
+}
+
+interface StoreShipment {
+  id: number | string;
+  reference: string;
+  order_id: string | null;
+  status: string;
+  customer: { id: number | string | null; name: string | null; email: string | null; phone: string | null } | null;
+  carrier: { type: 'obana' | 'partner'; name: string | null; tracking_number?: string | null } | null;
+  shipping_fee: number | string | null;
+  currency: string | null;
+  tracking_url: string | null;
+  destination: { name: string | null; city: string | null; state: string | null; country: string | null } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface StoreShipmentPage {
+  shipments: StoreShipment[];
+  pagination: { total: number; page: number; pages: number; limit: number };
+}
+
+interface StoreShipmentQuery {
+  status?: string;
+  order_id?: string;
+  customer_id?: string;
+  q?: string;
+  page?: number;
+  limit?: number;
+}
+
+interface StoreCustomer {
+  customer_id: number | string | null;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  city: string | null;
+  country: string | null;
+  shipments: number;
+  delivered: number;
+  in_progress: number;
+  total_fees: number | string;
+  last_shipment_at: string | null;
+}
+
 interface RegisterTenantResponse {
   id: number;
   name: string;
@@ -212,6 +349,15 @@ class ApiClient {
     return response.data;
   }
 
+  // Public, rate-limited price check for anyone (signed in or not). Sent with plain axios rather than
+  // this.client, so it carries no Authorization header and a 401 can never trigger the refresh/logout flow.
+  async getPublicQuote(body: PublicQuoteRequest) {
+    const response = await axios.post<ApiResponse<PublicQuote>>(`${API_BASE_URL}/routes/quote`, body, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return response.data;
+  }
+
   // Tenant/Business endpoints
   async registerTenant(name: string, slug: string, base_url: string, description: string) {
     const response = await this.client.post<ApiResponse<RegisterTenantResponse>>('/tenants/register', {
@@ -223,7 +369,60 @@ class ApiClient {
     return response.data;
   }
 
-  
+  // Stores & API (signed-in owner; admins can list every store with all=true).
+  async listStores(all = false) {
+    const response = await this.client.get<ApiResponse<Store[]>>('/stores', { params: all ? { all: 1 } : undefined });
+    return response.data;
+  }
+
+  async createStore(data: { name: string; website_url?: string; webhook_url?: string }) {
+    const response = await this.client.post<ApiResponse<StoreWithKey>>('/stores', data);
+    return response.data;
+  }
+
+  async getStore(id: string | number) {
+    const response = await this.client.get<ApiResponse<StoreDetail>>(`/stores/${encodeURIComponent(String(id))}`);
+    return response.data;
+  }
+
+  async updateStore(id: string | number, data: StoreInput) {
+    const response = await this.client.put<ApiResponse<Store>>(`/stores/${encodeURIComponent(String(id))}`, data);
+    return response.data;
+  }
+
+  async rotateStoreKey(id: string | number) {
+    const response = await this.client.post<ApiResponse<StoreWithKey>>(`/stores/${encodeURIComponent(String(id))}/rotate-key`);
+    return response.data;
+  }
+
+  async rotateWebhookSecret(id: string | number) {
+    const response = await this.client.post<ApiResponse<Store>>(`/stores/${encodeURIComponent(String(id))}/webhook-secret`);
+    return response.data;
+  }
+
+  async testStoreWebhook(id: string | number) {
+    const response = await this.client.post<ApiResponse<StoreWebhookTest>>(`/stores/${encodeURIComponent(String(id))}/test-webhook`);
+    return response.data;
+  }
+
+  async listStoreWebhooks(id: string | number) {
+    const response = await this.client.get<ApiResponse<StoreWebhookDelivery[]>>(`/stores/${encodeURIComponent(String(id))}/webhooks`);
+    return response.data;
+  }
+
+  async listStoreShipments(id: string | number, params: StoreShipmentQuery = {}) {
+    // Leave out empty filters so the backend only sees the ones in use.
+    const query = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== ''));
+    const response = await this.client.get<ApiResponse<StoreShipmentPage>>(`/stores/${encodeURIComponent(String(id))}/shipments`, { params: query });
+    return response.data;
+  }
+
+  async listStoreCustomers(id: string | number) {
+    const response = await this.client.get<ApiResponse<StoreCustomer[]>>(`/stores/${encodeURIComponent(String(id))}/customers`);
+    return response.data;
+  }
+
+
   async createShipment(data: any) {
     const response = await this.client.post<ApiResponse>('/shipments', data);
     return response.data;
@@ -400,4 +599,21 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient();
-export type { ApiResponse, AuthTokens };
+export type {
+  ApiResponse,
+  AuthTokens,
+  PublicQuote,
+  PublicQuoteOption,
+  PublicQuoteRequest,
+  Store,
+  StoreCustomer,
+  StoreDetail,
+  StoreInput,
+  StoreShipment,
+  StoreShipmentPage,
+  StoreShipmentQuery,
+  StoreStatus,
+  StoreWebhookDelivery,
+  StoreWebhookTest,
+  StoreWithKey,
+};
