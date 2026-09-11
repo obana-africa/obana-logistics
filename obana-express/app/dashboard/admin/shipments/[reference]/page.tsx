@@ -1,420 +1,485 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import DashboardLayout from '@/components/DashboardLayout';
-import { Card, Button, Badge, Loader, SelectP, Input, Alert, Label, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui';
-import { apiClient } from '@/lib/api';
-import { ArrowLeft, MapPin, Package, Calendar, Truck, User, X, Trash2 } from 'lucide-react';
-import Link from 'next/link';
+import React, { useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { ArrowLeft, Handshake, MapPin, Package, Send, Truck, UserRound, X } from "lucide-react";
+import DashboardLayout from "@/components/DashboardLayout";
+import { ErrorState, ListSkeleton, Panel, StatusBadge, ToneBadge } from "@/components/dashboard/kit";
+import { Alert, Button, Input, Select, Textarea } from "@/components/ui";
+import { apiClient } from "@/lib/api";
+import { CLOSED_STATUSES, STATUS_OPTIONS, formatDate, formatMoney, statusMeta, type ShipmentStatus } from "@/lib/shipments";
+import { errorMessage, useRemote } from "@/lib/useRemote";
 
-export default function ShipmentDetailsPage() {
-  const params = useParams();
-  const router = useRouter();
-  const reference = params.reference as string;
+type Address = { name?: string; first_name?: string; last_name?: string; contact_name?: string; line1?: string; line2?: string; city?: string; state?: string; country?: string; phone?: string; email?: string; contact_email?: string } | null;
+interface Shipment {
+	id: number;
+	shipment_reference: string;
+	order_reference?: string;
+	vendor_name?: string;
+	carrier_name?: string;
+	carrier_type?: "internal" | "external";
+	external_carrier_reference?: string | null;
+	status: ShipmentStatus;
+	createdAt: string;
+	currency?: string;
+	shipping_fee?: number | string;
+	product_value?: number | string;
+	pickup_address?: Address;
+	delivery_address?: Address;
+	items?: { id: number; name: string; quantity: number; weight?: number | string; total_price?: number | string; currency?: string }[];
+	tracking_events?: { id: number; status: string; description?: string; location?: string; createdAt: string }[];
+	driver?: { id?: number; driver_code?: string; vehicle_type?: string; vehicle_registration?: string } | null;
+	agent?: { agent_code?: string; status?: string; user?: { email?: string; attributes?: { first_name?: string; last_name?: string } } } | null;
+}
+interface Driver {
+	id: number;
+	driver_code: string;
+	vehicle_type?: string;
+	status?: string;
+	metadata?: { first_name?: string; last_name?: string };
+	user?: { email?: string };
+}
 
-  const [shipment, setShipment] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  
-  // Update Status State
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [updateForm, setUpdateForm] = useState({ status: '', location: '', notes: '' });
-  const [updating, setUpdating] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+interface PartnerQuotes {
+	terminal_shipment_id: string;
+	options: { rate_id: string; carrier_name: string; carrier_logo?: string | null; partner?: string; cost: number; price: number; markup_percent: number; eta?: string | null }[];
+}
 
-  useEffect(() => {
-    loadShipment();
-  }, [reference]);
+type Sheet = "status" | "driver" | "partner" | "push" | null;
 
-  const loadShipment = async () => {
-    try {
-      setLoading(true);
-      const response = await apiClient.getShipment(reference);
-      if (response.success) {
-        setShipment(response.data);
-      } else {
-        setError('Shipment not found');
-      }
-    } catch (err) {
-      setError('Error loading shipment details');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+function AddressBlock({ label, a, tone }: { label: string; a?: Address; tone: "pickup" | "delivery" }) {
+	const name = a?.name || a?.contact_name || [a?.first_name, a?.last_name].filter(Boolean).join(" ");
+	return (
+		<div className="flex gap-3">
+			<span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${tone === "pickup" ? "bg-[#1B3B5F]" : "bg-emerald-500"}`} aria-hidden />
+			<div className="min-w-0 text-sm">
+				<p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+				{name && <p className="font-semibold text-slate-900">{name}</p>}
+				<p className="text-slate-700">{[a?.line1, a?.line2].filter(Boolean).join(", ") || "—"}</p>
+				<p className="text-slate-700">{[a?.city, a?.state, a?.country].filter(Boolean).join(", ")}</p>
+				{a?.phone && (
+					<a href={`tel:${a.phone}`} className="text-[#1B3B5F] hover:underline">
+						{a.phone}
+					</a>
+				)}
+				{(a?.email || a?.contact_email) && <p className="truncate text-slate-500">{a?.email || a?.contact_email}</p>}
+			</div>
+		</div>
+	);
+}
 
-  const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this shipment? This action cannot be undone.')) return;
-    
-    try {
-      await apiClient.deleteShipment(shipment.id);
-      router.push('/dashboard/admin/shipments');
-    } catch (err) {
-      alert('Failed to delete shipment');
-      console.error(err);
-    }
-  };
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+	return (
+		<div className="flex items-start justify-between gap-4 py-2 text-sm">
+			<dt className="text-slate-500">{label}</dt>
+			<dd className="text-right font-medium text-slate-900">{children}</dd>
+		</div>
+	);
+}
 
-  const handleUpdateClick = () => {
-    setUpdateForm({ 
-      status: shipment.status, 
-      location: '', 
-      notes: '' 
-    });
-    setShowUpdateModal(true);
-  };
+function SheetFrame({ title, subtitle, onClose, children }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode }) {
+	return (
+		<div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+			<button type="button" aria-label="Close" className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
+			<div className="relative max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl">
+				<div className="mb-4 flex items-start justify-between gap-3">
+					<div>
+						<h2 id="sheet-title" className="text-lg font-semibold text-slate-900">
+							{title}
+						</h2>
+						{subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
+					</div>
+					<button type="button" onClick={onClose} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100">
+						<X className="h-5 w-5" />
+					</button>
+				</div>
+				{children}
+			</div>
+		</div>
+	);
+}
 
-  const handleUpdateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!shipment) return;
-    
-    try {
-      setUpdating(true);
-      await apiClient.updateShipmentStatus(shipment.id.toString(), updateForm.status, updateForm.notes, updateForm.location);
-      setShowUpdateModal(false);
-      loadShipment(); // Reload to see changes
-    } catch (err) {
-      console.error(err);
-      alert('Failed to update status');
-    } finally {
-      setUpdating(false);
-    }
-  };
+export default function AdminShipmentDetailPage() {
+	const reference = String(useParams().reference ?? "");
+	const { data: shipment, loading, error, retry } = useRemote<Shipment>(reference ? `admin-shipment:${reference}` : null, async () => {
+		const res = await apiClient.getShipment(reference);
+		if (!res?.success || !res.data) throw new Error(res?.message || "Shipment not found");
+		return res.data;
+	});
 
-  const handleConfirmExternal = async () => {
-    if (!shipment) return;
-    if (!confirm('This will arrange pickup with Terminal Africa. Are you sure?')) return;
+	const [sheet, setSheet] = useState<Sheet>(null);
+	const [busy, setBusy] = useState(false);
+	const [sheetError, setSheetError] = useState("");
+	const [notice, setNotice] = useState("");
+	const [statusForm, setStatusForm] = useState({ status: "", location: "", notes: "" });
+	const [driverId, setDriverId] = useState("");
+	const [pick, setPick] = useState("");
+	const [quoteRound, setQuoteRound] = useState(0);
 
-    try {
-      setConfirming(true);
-      await apiClient.confirmExternalShipment(shipment.id.toString());
-      loadShipment();
-    } catch (err) {
-      console.error(err);
-      alert('Failed to arrange external pickup');
-    } finally {
-      setConfirming(false);
-    }
-  };
+	const drivers = useRemote<Driver[]>(sheet === "driver" ? "admin-drivers" : null, async () => (await apiClient.listDrivers()).data ?? []);
+	// Fresh partner rates every time the sheet opens (rates expire).
+	const quotes = useRemote<PartnerQuotes>(sheet === "push" && shipment ? `partner-quotes:${shipment.id}:${quoteRound}` : null, async () => (await apiClient.getPartnerQuotes(String(shipment?.id))).data);
 
-  if (loading) {
-    return (
-      <DashboardLayout role="admin">
-        <div className="flex justify-center py-12">
-          <Loader />
-        </div>
-      </DashboardLayout>
-    );
-  }
+	const open = (s: Sheet) => {
+		setSheetError("");
+		if (s === "status" && shipment) setStatusForm({ status: shipment.status, location: "", notes: "" });
+		if (s === "driver") setDriverId(shipment?.driver?.id ? String(shipment.driver.id) : "");
+		if (s === "push") {
+			setPick("");
+			setQuoteRound((n) => n + 1);
+		}
+		setSheet(s);
+	};
 
-  if (error || !shipment) {
-    return (
-      <DashboardLayout role="admin">
-        <Alert type="error">{error || 'Shipment not found'}</Alert>
-        <div className="mt-4">
-          <Link href="/dashboard/admin/shipments">
-            <Button variant="secondary">Back to Shipments</Button>
-          </Link>
-        </div>
-      </DashboardLayout>
-    );
-  }
+	const run = async (action: () => Promise<unknown>, done: string) => {
+		setBusy(true);
+		setSheetError("");
+		try {
+			await action();
+			setSheet(null);
+			setNotice(done);
+			retry();
+		} catch (err) {
+			setSheetError(errorMessage(err));
+		} finally {
+			setBusy(false);
+		}
+	};
 
-  return (
-    <DashboardLayout role="admin">
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Link href="/dashboard/admin/shipments">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{shipment.shipment_reference}</h1>
-              <p className="text-gray-600 text-sm">Created on {new Date(shipment.createdAt).toLocaleDateString()}</p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            {shipment.carrier_type === 'external' && !shipment.external_carrier_reference && (
-              <Button variant="secondary" className="bg-orange-500 text-white hover:bg-orange-600" onClick={handleConfirmExternal} loading={confirming}>
-                <Truck className="w-4 h-4 mr-2" />
-                Arrange External Pickup
-              </Button>
-            )}
-            <Button variant="primary" onClick={handleUpdateClick}>
-              Update Status
-            </Button>
-            {/* <Button variant="danger" onClick={handleDelete}>
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete
-            </Button> */}
-          </div>
-        </div>
+	if (loading && !shipment) {
+		return (
+			<DashboardLayout role="admin">
+				<div className="space-y-4" aria-label="Loading">
+					<div className="h-8 w-56 animate-pulse rounded-lg bg-slate-200" />
+					<div className="grid gap-4 lg:grid-cols-3">
+						<div className="h-72 animate-pulse rounded-2xl bg-slate-100 lg:col-span-2" />
+						<div className="h-72 animate-pulse rounded-2xl bg-slate-100" />
+					</div>
+				</div>
+			</DashboardLayout>
+		);
+	}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Info */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Status Card */}
-            <Card>
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold">Current Status</h3>
-                <Badge
-                  variant={
-                    shipment.status === 'delivered' ? 'success' :
-                    shipment.status === 'in_transit' ? 'info' :
-                    shipment.status === 'cancelled' || shipment.status === 'failed' ? 'error' :
-                    'warning'
-                  }
-                  className="text-sm px-3 py-1 capitalize"
-                >
-                  {shipment.status.replace('_', ' ')}
-                </Badge>
-              </div>
-              
-              {/* Tracking Timeline */}
-              <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-linear-to-b before:from-transparent before:via-slate-300 before:to-transparent">
-                {shipment.tracking_events?.map((event: any, index: number) => (
-                  <div key={event.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-full border border-white bg-slate-300 group-[.is-active]:bg-blue-500 text-slate-500 group-[.is-active]:text-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2">
-                      <MapPin className="w-5 h-5" />
-                    </div>
-                    <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded border border-slate-200 shadow">
-                      <div className="flex items-center justify-between space-x-2 mb-1">
-                        <div className="font-bold text-slate-900 capitalize">{event.status.replace('_', ' ')}</div>
-                        <time className="font-caveat font-medium text-indigo-500 text-xs">
-                          {new Date(event.createdAt).toLocaleString()}
-                        </time>
-                      </div>
-                      <div className="text-slate-500 text-sm">
-                        {event.description}
-                        {event.location && <div className="mt-1 text-xs text-gray-400 flex items-center gap-1"><MapPin className="w-3 h-3"/> {event.location}</div>}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
+	if (error || !shipment) {
+		return (
+			<DashboardLayout role="admin">
+				<Panel>
+					<ErrorState text={error || "Shipment not found."} onRetry={retry} />
+					<div className="text-center">
+						<Link href="/dashboard/admin/shipments" className="text-sm font-semibold text-[#1B3B5F] hover:underline">
+							Back to shipments
+						</Link>
+					</div>
+				</Panel>
+			</DashboardLayout>
+		);
+	}
 
-            {/* Items */}
-            <Card title="Shipment Items">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="text-xs text-gray-700 uppercase bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-2">Item</th>
-                      <th className="px-4 py-2">Qty</th>
-                      <th className="px-4 py-2">Weight</th>
-                      <th className="px-4 py-2">Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shipment.items?.map((item: any) => (
-                      <tr key={item.id} className="border-b">
-                        <td className="px-4 py-2 font-medium">{item.name}</td>
-                        <td className="px-4 py-2">{item.quantity}</td>
-                        <td className="px-4 py-2">{item.weight} kg</td>
-                        <td className="px-4 py-2">
-                          {new Intl.NumberFormat('en-NG', { style: 'currency', currency: item.currency }).format(item.total_price)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          </div>
+	const s = shipment;
+	const closed = CLOSED_STATUSES.includes(s.status);
+	const isPartner = s.carrier_type === "external";
+	const needsBooking = isPartner && !s.external_carrier_reference;
+	const events = [...(s.tracking_events ?? [])].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+	const agentName = [s.agent?.user?.attributes?.first_name, s.agent?.user?.attributes?.last_name].filter(Boolean).join(" ");
+	const deliveryPlace = [s.delivery_address?.city, s.delivery_address?.state].filter(Boolean).join(", ");
+	const total = Number(s.shipping_fee || 0) + Number(s.product_value || 0);
 
-          {/* Sidebar Info */}
-          <div className="space-y-6">
-            {/* Route Info */}
-            <Card title="Route Details">
-              <div className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="mt-1"><div className="w-2 h-2 rounded-full bg-blue-500" /></div>
-                  <div>
-                    <p className="text-xs text-gray-500">Pickup</p>
-                    <p className="font-medium text-gray-900">{"Obana.Africa / " + shipment.pickup_address?.name}</p>
-                    <p className="text-sm text-gray-600">{shipment.pickup_address?.line1}</p>
-                    <p className="text-sm text-gray-600">{shipment.pickup_address?.city}, {shipment.pickup_address?.state},  {shipment.pickup_address.country}</p>
-                    <p className="text-sm text-gray-600">{shipment.pickup_address?.phone}</p>
-                    <p className="text-gray-600">{shipment.pickup_address.contact_email}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="mt-1"><div className="w-2 h-2 rounded-full bg-green-500" /></div>
-                  <div>
-                    <p className="text-xs text-gray-500">Delivery</p>
-                    <p className="font-medium text-gray-900">{shipment.delivery_address?.name}</p>
-                    <p className="text-sm text-gray-600">{shipment.delivery_address?.line1}</p>
-                    <p className="text-sm text-gray-600">{shipment.delivery_address?.city}, {shipment.delivery_address?.state} {shipment.delivery_address.country}</p>
-                    <p className="text-sm text-gray-600">{shipment.delivery_address?.phone}</p>
-                    <p className="text-gray-600">{shipment.delivery_address.contact_email}</p>
-                  </div>
-                </div>
-              </div>
-            </Card>
+	return (
+		<DashboardLayout role="admin">
+			<div className="space-y-6">
+				<Link href="/dashboard/admin/shipments" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-[#1B3B5F]">
+					<ArrowLeft className="h-4 w-4" aria-hidden /> Shipments
+				</Link>
 
-            {/* Driver Info */}
-            <Card title="Driver Details">
-              {shipment.driver ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
-                      <User className="w-5 h-5 text-gray-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{shipment.driver.driver_code}</p>
-                      <Badge variant="success" className="text-xs">Active</Badge>
-                    </div>
-                  </div>
-                  <div className="pt-2 border-t border-gray-100">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Vehicle</span>
-                      <span className="font-medium capitalize">{shipment.driver.vehicle_type}</span>
-                    </div>
-                    <div className="flex justify-between text-sm mt-1">
-                      <span className="text-gray-500">Plate</span>
-                      <span className="font-medium">{shipment.driver.vehicle_registration}</span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-4 text-gray-500 text-sm">
-                  No driver assigned
-                </div>
-              )}
-            </Card>
+				<div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+					<div className="min-w-0">
+						<div className="flex flex-wrap items-center gap-2">
+							<h1 className="font-mono text-2xl font-bold text-slate-900 sm:text-3xl">{s.shipment_reference}</h1>
+							<StatusBadge status={s.status} />
+							{needsBooking && <ToneBadge tone="warning">Needs booking</ToneBadge>}
+						</div>
+						<p className="mt-1 text-sm text-slate-600">
+							Created {formatDate(s.createdAt)}
+							{s.order_reference ? ` · Order ${s.order_reference}` : ""}
+							{s.vendor_name ? ` · ${s.vendor_name}` : ""}
+						</p>
+					</div>
+					<div className="flex flex-wrap gap-2">
+						{needsBooking && (
+							<Button onClick={() => open("partner")}>
+								<Handshake className="h-4 w-4" aria-hidden /> Book with partner
+							</Button>
+						)}
+						{!isPartner && !closed && (
+							<Button variant="secondary" onClick={() => open("push")}>
+								<Send className="h-4 w-4" aria-hidden /> Send to partner
+							</Button>
+						)}
+						{!isPartner && !closed && (
+							<Button variant="secondary" onClick={() => open("driver")}>
+								<Truck className="h-4 w-4" aria-hidden /> {s.driver ? "Change driver" : "Assign driver"}
+							</Button>
+						)}
+						<Button variant={needsBooking ? "secondary" : "primary"} onClick={() => open("status")}>
+							Update status
+						</Button>
+					</div>
+				</div>
 
-            {/* Agent Info */}
-            <Card title="Agent Details">
-              {shipment.agent ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
-                      <User className="w-5 h-5 text-gray-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">
-                        {(shipment.agent.user?.attributes?.first_name || '') + ' ' + (shipment.agent.user?.attributes?.last_name || '')}
-                      </p>
-                      <p className="text-sm text-gray-500">{shipment.agent.agent_code}</p>
-                    </div>
-                  </div>
-                  <div className="pt-2 border-t border-gray-100">
-                    <div className="flex justify-between text-sm mt-1">
-                      <span className="text-gray-500">Email</span>
-                      <span className="font-medium">{shipment.agent.user?.email}</span>
-                    </div>
-                    <div className="flex justify-between text-sm mt-1">
-                      <span className="text-gray-500">Status</span>
-                      <span className="font-medium capitalize">{shipment.agent.status?.replace('_', ' ')}</span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-4 text-gray-500 text-sm">
-                  No agent assigned
-                </div>
-              )}
-            </Card>
+				{notice && (
+					<Alert type="success" role="status">
+						{notice}
+					</Alert>
+				)}
 
-            {/* Payment Info */}
-            <Card title="Payment Details">
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Shipping Fee</span>
-                  <span className="font-medium">
-                    {new Intl.NumberFormat('en-NG', { style: 'currency', currency: shipment.currency }).format(shipment.shipping_fee)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Product Value</span>
-                  <span className="font-medium">
-                    {new Intl.NumberFormat('en-NG', { style: 'currency', currency: shipment.currency }).format(shipment.product_value)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm pt-2 border-t border-gray-100">
-                  <span className="font-bold text-gray-900">Total</span>
-                  <span className="font-bold text-gray-900">
-                    {new Intl.NumberFormat('en-NG', { style: 'currency', currency: shipment.currency }).format(Number(shipment.shipping_fee) + Number(shipment.product_value))}
-                  </span>
-                </div>
-              </div>
-            </Card>
-          </div>
-        </div>
+				<div className="grid gap-6 lg:grid-cols-3">
+					<div className="space-y-6 lg:col-span-2">
+						<Panel title="Tracking history" flush>
+							{events.length ? (
+								<ol className="px-4 py-2 sm:px-5">
+									{events.map((ev, i) => (
+										<li key={ev.id ?? i} className="relative flex gap-4 pb-5 last:pb-2">
+											{i < events.length - 1 && <span className="absolute left-[7px] top-5 h-full w-px bg-slate-200" aria-hidden />}
+											<span className={`relative mt-1.5 h-3.5 w-3.5 shrink-0 rounded-full ring-4 ring-white ${i === 0 ? "bg-[#1B3B5F]" : "bg-slate-300"}`} aria-hidden />
+											<div className="min-w-0 flex-1">
+												<div className="flex flex-wrap items-baseline justify-between gap-x-3">
+													<p className="font-semibold text-slate-900">{statusMeta(ev.status).label}</p>
+													<time className="text-xs text-slate-500" dateTime={ev.createdAt}>
+														{new Date(ev.createdAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+													</time>
+												</div>
+												{ev.description && <p className="text-sm text-slate-600">{ev.description}</p>}
+												{ev.location && (
+													<p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+														<MapPin className="h-3 w-3" aria-hidden /> {ev.location}
+													</p>
+												)}
+											</div>
+										</li>
+									))}
+								</ol>
+							) : (
+								<p className="px-5 py-8 text-center text-sm text-slate-500">No tracking updates yet.</p>
+							)}
+						</Panel>
 
-        {/* Update Status Modal */}
-        {showUpdateModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <Card className="w-full max-w-md">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Update Shipment Status</h2>
-                <button onClick={() => setShowUpdateModal(false)} className="text-gray-500 hover:text-gray-700">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              
-              <form onSubmit={handleUpdateSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label>New Status</Label>
-                  <SelectP value={updateForm.status} onValueChange={(value) => {
-                    const isDelivered = value === 'delivered';
-                    const newLocation = isDelivered 
-                      ? `${shipment.delivery_address?.city || ''}, ${shipment.delivery_address?.state || ''}`.trim().replace(/^, /, '')
-                      : updateForm.location;
-                    setUpdateForm({ ...updateForm, status: value, location: newLocation });
-                  }}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="picked_up">Picked Up</SelectItem> */}
-                      {/* <SelectItem value="dispatched">Dispatched</SelectItem> */}
-                      {/* <SelectItem value="in_transit">In Transit</SelectItem> */}
-                      <SelectItem value="confirmed">Confirmed</SelectItem>
-                      <SelectItem value="in_transit">In Transit</SelectItem>
-                      <SelectItem value="delivered">Delivered</SelectItem>
-                      {/* <SelectItem value="cancelled">Cancelled</SelectItem>
-                      <SelectItem value="returned">Returned</SelectItem> */}
-                    </SelectContent>
-                  </SelectP>
-                </div>
+						<Panel title={`Items (${s.items?.length ?? 0})`} flush>
+							{s.items?.length ? (
+								<ul className="divide-y divide-slate-100">
+									{s.items.map((it) => (
+										<li key={it.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+											<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+												<Package className="h-4 w-4" aria-hidden />
+											</span>
+											<div className="min-w-0 flex-1">
+												<p className="truncate font-medium text-slate-900">{it.name}</p>
+												<p className="text-sm text-slate-500">
+													Qty {it.quantity}
+													{it.weight ? ` · ${it.weight} kg` : ""}
+												</p>
+											</div>
+											<span className="text-sm font-semibold tabular-nums text-slate-900">{formatMoney(it.total_price, it.currency || s.currency)}</span>
+										</li>
+									))}
+								</ul>
+							) : (
+								<p className="px-5 py-8 text-center text-sm text-slate-500">No items recorded.</p>
+							)}
+						</Panel>
+					</div>
 
-                <Input
-                  label="Current Location"
-                  placeholder="e.g. Ikeja, Lagos"
-                  value={updateForm.location}
-                  onChange={(e) => setUpdateForm({ ...updateForm, location: e.target.value })}
-                  disabled={updateForm.status === 'delivered'}
-                />
+					<div className="space-y-6">
+						<Panel title="Route">
+							<div className="space-y-5">
+								<AddressBlock label="Pickup" a={s.pickup_address} tone="pickup" />
+								<AddressBlock label="Delivery" a={s.delivery_address} tone="delivery" />
+							</div>
+						</Panel>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                  <textarea
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    rows={3}
-                    placeholder="Optional notes about the update..."
-                    value={updateForm.notes}
-                    onChange={(e) => setUpdateForm({ ...updateForm, notes: e.target.value })}
-                  />
-                </div>
+						<Panel title="Handled by">
+							<dl className="divide-y divide-slate-100">
+								<Row label="Carrier">{isPartner ? s.carrier_name || "Partner carrier" : "Obana fleet"}</Row>
+								{isPartner && <Row label="Partner tracking">{s.external_carrier_reference || <ToneBadge tone="warning">Not booked</ToneBadge>}</Row>}
+								{!isPartner && (
+									<Row label="Driver">
+										{s.driver ? (
+											<span>
+												{s.driver.driver_code}
+												{s.driver.vehicle_type ? <span className="block text-xs font-normal capitalize text-slate-500">{s.driver.vehicle_type} {s.driver.vehicle_registration || ""}</span> : null}
+											</span>
+										) : (
+											<ToneBadge tone="neutral">Not assigned</ToneBadge>
+										)}
+									</Row>
+								)}
+								<Row label="Agent">
+									{s.agent ? (
+										<span>
+											{agentName || s.agent.agent_code}
+											<span className="block text-xs font-normal text-slate-500">{s.agent.user?.email}</span>
+										</span>
+									) : (
+										"—"
+									)}
+								</Row>
+							</dl>
+						</Panel>
 
-                <div className="pt-2">
-                  <Button type="submit" fullWidth variant="primary" loading={updating}>
-                    Update Status
-                  </Button>
-                </div>
-              </form>
-            </Card>
-          </div>
-        )}
-      </div>
-    </DashboardLayout>
-  );
+						<Panel title="Payment">
+							<dl className="divide-y divide-slate-100">
+								<Row label="Shipping fee">{formatMoney(s.shipping_fee, s.currency)}</Row>
+								<Row label="Goods value">{formatMoney(s.product_value, s.currency)}</Row>
+								<Row label="Total">{formatMoney(total, s.currency)}</Row>
+							</dl>
+						</Panel>
+					</div>
+				</div>
+			</div>
+
+			{sheet === "status" && (
+				<SheetFrame title="Update status" subtitle={s.shipment_reference} onClose={() => setSheet(null)}>
+					<form
+						className="space-y-4"
+						onSubmit={(e) => {
+							e.preventDefault();
+							const location = statusForm.status === "delivered" ? statusForm.location || deliveryPlace : statusForm.location;
+							run(() => apiClient.updateShipmentStatus(String(s.id), statusForm.status, statusForm.notes || undefined, location), `Status changed to ${statusMeta(statusForm.status).label}.`);
+						}}
+					>
+						{sheetError && <Alert type="error">{sheetError}</Alert>}
+						<Select label="Status" required value={statusForm.status} onChange={(e) => setStatusForm({ ...statusForm, status: e.target.value })} options={STATUS_OPTIONS} />
+						<Input
+							label="Current location"
+							placeholder={statusForm.status === "delivered" ? deliveryPlace || "Delivery address" : "e.g. Ikeja, Lagos"}
+							value={statusForm.location}
+							onChange={(e) => setStatusForm({ ...statusForm, location: e.target.value })}
+							helperText={statusForm.status === "delivered" ? "Leave empty to use the delivery address." : undefined}
+						/>
+						<Textarea label="Note for the customer (optional)" rows={2} value={statusForm.notes} onChange={(e) => setStatusForm({ ...statusForm, notes: e.target.value })} />
+						<Button type="submit" size="lg" fullWidth loading={busy} disabled={statusForm.status === s.status && !statusForm.notes && !statusForm.location}>
+							{busy ? "Saving…" : "Save update"}
+						</Button>
+					</form>
+				</SheetFrame>
+			)}
+
+			{sheet === "driver" && (
+				<SheetFrame title={s.driver ? "Change driver" : "Assign driver"} subtitle={s.shipment_reference} onClose={() => setSheet(null)}>
+					<form
+						className="space-y-4"
+						onSubmit={(e) => {
+							e.preventDefault();
+							const d = drivers.data?.find((x) => String(x.id) === driverId);
+							run(() => apiClient.assignDriver(String(s.id), driverId), `Assigned to ${d?.driver_code ?? "driver"}.`);
+						}}
+					>
+						{sheetError && <Alert type="error">{sheetError}</Alert>}
+						{drivers.error ? (
+							<ErrorState text={drivers.error} onRetry={drivers.retry} />
+						) : (
+							<Select
+								label="Driver"
+								required
+								placeholder={drivers.loading ? "Loading drivers…" : "Choose a driver"}
+								disabled={drivers.loading}
+								value={driverId}
+								onChange={(e) => setDriverId(e.target.value)}
+								options={(drivers.data ?? [])
+									.filter((d) => !d.status || d.status === "active")
+									.map((d) => {
+										const name = [d.metadata?.first_name, d.metadata?.last_name].filter(Boolean).join(" ");
+										return { value: String(d.id), label: `${d.driver_code}${name ? ` · ${name}` : ""}${d.vehicle_type ? ` · ${d.vehicle_type}` : ""}` };
+									})}
+								helperText="Only active drivers are listed. The driver is notified and sees it in their app."
+							/>
+						)}
+						<Button type="submit" size="lg" fullWidth loading={busy} disabled={!driverId}>
+							<UserRound className="h-4 w-4" aria-hidden /> {busy ? "Assigning…" : "Assign driver"}
+						</Button>
+					</form>
+				</SheetFrame>
+			)}
+
+			{sheet === "push" && (
+				<SheetFrame title="Send to a partner" subtitle={s.shipment_reference} onClose={() => setSheet(null)}>
+					<div className="space-y-4">
+						{sheetError && <Alert type="error">{sheetError}</Alert>}
+						<p className="text-sm text-slate-600">
+							Live partner rates for this route. The customer already paid <strong className="text-slate-900">{formatMoney(s.shipping_fee, s.currency)}</strong> — booking a partner doesn&apos;t change
+							their price. The partner collects from the pickup address.
+						</p>
+						{quotes.loading ? (
+							<div className="-mx-4 sm:-mx-5">
+								<ListSkeleton rows={3} />
+							</div>
+						) : quotes.error ? (
+							<ErrorState text={quotes.error} onRetry={quotes.retry} />
+						) : !quotes.data?.options?.length ? (
+							<p className="rounded-2xl bg-slate-50 p-4 text-center text-sm text-slate-600">No partner can take this route right now. Check the addresses or try again later.</p>
+						) : (
+							<fieldset className="space-y-2">
+								<legend className="sr-only">Choose a partner</legend>
+								{quotes.data.options.map((o) => {
+									const margin = Number(s.shipping_fee || 0) - o.cost;
+									return (
+										<label key={o.rate_id} className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-3 ${pick === o.rate_id ? "border-[#1B3B5F] bg-[#1B3B5F]/5" : "border-slate-200"}`}>
+											<input type="radio" name="partner-rate" className="h-4 w-4 accent-[#1B3B5F]" checked={pick === o.rate_id} onChange={() => setPick(o.rate_id)} />
+											<span className="min-w-0 flex-1">
+												<span className="block truncate font-semibold text-slate-900">{o.carrier_name}</span>
+												<span className="text-xs text-slate-500">{o.eta || "Delivery time not given"}</span>
+											</span>
+											<span className="text-right text-sm">
+												<span className="block font-semibold tabular-nums text-slate-900">{formatMoney(o.cost)}</span>
+												<span className={`text-xs font-medium ${margin >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+													{margin >= 0 ? "Margin" : "Loss"} {formatMoney(Math.abs(margin))}
+												</span>
+											</span>
+										</label>
+									);
+								})}
+							</fieldset>
+						)}
+						<Button
+							size="lg"
+							fullWidth
+							disabled={!pick || !quotes.data}
+							loading={busy}
+							onClick={() =>
+								run(() => apiClient.pushToPartner(String(s.id), { rate_id: pick, terminal_shipment_id: quotes.data?.terminal_shipment_id ?? "", carrier_name: quotes.data?.options.find((o) => o.rate_id === pick)?.carrier_name }), "Sent to the partner — pickup booked.")
+							}
+						>
+							{busy ? "Booking…" : "Book with selected partner"}
+						</Button>
+					</div>
+				</SheetFrame>
+			)}
+
+			{sheet === "partner" && (
+				<SheetFrame title="Book with partner" subtitle={s.shipment_reference} onClose={() => setSheet(null)}>
+					<div className="space-y-4">
+						{sheetError && <Alert type="error">{sheetError}</Alert>}
+						<p className="text-sm text-slate-600">
+							This books the pickup with <strong className="text-slate-900">{s.carrier_name || "the partner carrier"}</strong> through Terminal Africa at the rate the customer was quoted. The partner will
+							collect from the pickup address and give a tracking number. This can&apos;t be undone here.
+						</p>
+						<dl className="rounded-2xl bg-slate-50 px-4">
+							<Row label="Route">
+								{s.pickup_address?.city || "—"} → {s.delivery_address?.city || "—"}
+							</Row>
+							<Row label="Customer paid">{formatMoney(s.shipping_fee, s.currency)}</Row>
+						</dl>
+						<div className="grid gap-2 sm:grid-cols-2">
+							<Button variant="secondary" size="lg" fullWidth onClick={() => setSheet(null)}>
+								Cancel
+							</Button>
+							<Button size="lg" fullWidth loading={busy} onClick={() => run(() => apiClient.confirmExternalShipment(String(s.id)), "Pickup booked with the partner.")}>
+								{busy ? "Booking…" : "Book pickup"}
+							</Button>
+						</div>
+					</div>
+				</SheetFrame>
+			)}
+		</DashboardLayout>
+	);
 }

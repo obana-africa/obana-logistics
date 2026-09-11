@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+	Handshake,
 	LayoutDashboard,
 	LogOut,
 	Menu,
@@ -51,6 +52,7 @@ const NAV: Record<Role, NavItem[]> = {
 		{ name: "Overview", href: "/dashboard/admin", icon: LayoutDashboard },
 		{ name: "Shipments", href: "/dashboard/admin/shipments", icon: Package },
 		{ name: "Routes & pricing", href: "/dashboard/admin/routes", icon: Route },
+		{ name: "Partners", href: "/dashboard/admin/partners", icon: Handshake },
 		{ name: "Drivers", href: "/dashboard/admin/drivers", icon: Truck },
 		{ name: "Agents", href: "/dashboard/admin/agents", icon: ShieldCheck },
 		{ name: "Users", href: "/dashboard/admin/users", icon: Users },
