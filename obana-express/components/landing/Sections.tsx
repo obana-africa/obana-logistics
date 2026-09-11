@@ -161,7 +161,7 @@ export function Audiences() {
 									"Bulk and recurring shipments from one dashboard",
 									"Connect your store, ERP or marketplace with our API",
 									"Your customers get tracking links, email and WhatsApp updates",
-									"Wholesale distribution and cross-border lanes",
+									"Our fleet plus partner carriers for interstate and cross-border routes",
 								].map((t) => (
 									<li key={t} className="flex gap-3">
 										<Check className="mt-0.5 h-5 w-5 shrink-0 text-amber" aria-hidden />
@@ -188,7 +188,7 @@ export function Audiences() {
 // ─── How it works ────────────────────────────────────────────────────────────
 const STEPS = [
 	{ icon: Package, title: "Book", text: "Add pickup and drop-off, what you're sending and when — online or through our API." },
-	{ icon: Route, title: "We match a driver", text: "The right driver and vehicle for your route is assigned, and you're notified." },
+	{ icon: Route, title: "We pick the best way", text: "Our own driver for local runs, or a trusted partner carrier for interstate and international routes." },
 	{ icon: Smartphone, title: "Track live", text: "Follow the shipment from pickup to door, with WhatsApp and email updates." },
 	{ icon: BadgeCheck, title: "Delivered", text: "The receiver gets their package and the delivery is confirmed in your dashboard." },
 ];
@@ -364,7 +364,12 @@ export function Partners() {
 	return (
 		<section className="border-y border-line bg-canvas py-12">
 			<div className={container}>
-				<p className="text-center text-sm font-medium text-muted">Working with leading logistics partners across Africa and beyond</p>
+				<div className="mx-auto max-w-2xl text-center">
+					<h2 className="font-sans text-base font-semibold tracking-normal text-ink">One booking. Our electric fleet plus trusted carrier partners.</h2>
+					<p className="mt-1.5 text-sm text-muted">
+						Where our own fleet doesn&apos;t reach, we hand your shipment to a partner carrier — you still pay once, track in one place and deal only with Obana.
+					</p>
+				</div>
 				<ul className="mt-6 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
 					{PARTNERS.map((p) => (
 						<li key={p.name} className="flex h-20 w-[calc(50%-0.375rem)] items-center justify-center rounded-2xl bg-white px-6 ring-1 ring-line sm:w-44 lg:w-52">
@@ -390,6 +395,10 @@ const FAQS = [
 	{
 		q: "Which areas do you cover?",
 		a: "Major cities across Nigeria today, with more routes and cross-border lanes being added. Enter your pickup and delivery addresses when you book and we'll confirm availability instantly.",
+	},
+	{
+		q: "Do you deliver beyond your own fleet?",
+		a: "Yes. Alongside our electric fleet, we work with partner carriers for longer interstate and international routes. You book and pay once with Obana, track everything in one place, and we manage the handover.",
 	},
 	{
 		q: "How do I connect Obana to my store or platform?",
