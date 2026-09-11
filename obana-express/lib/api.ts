@@ -46,6 +46,8 @@ interface PublicQuoteOption {
 }
 
 interface PublicQuote {
+  /** Saved-quote reference (Q-…) carried to booking; null if the server couldn't save it. */
+  reference: string | null;
   currency: string;
   display_currency: string;
   fx: { rate: number; as_of: string; source: string } | null;
@@ -53,6 +55,20 @@ interface PublicQuote {
   cheapest_id: string;
   fastest_id: string | null;
   expires_at: string;
+}
+
+// A saved quote (GET /routes/quote/:reference): what the booking page picks up after sign-up or sign-in.
+interface SavedQuote {
+  reference: string;
+  origin: QuotePlace;
+  destination: QuotePlace;
+  weight_kg: number;
+  currency: string;
+  display_currency: string | null;
+  options: PublicQuoteOption[];
+  status: 'quoted' | 'booked';
+  expires_at: string;
+  expired: boolean;
 }
 
 // Stores & API: a business account connects stores (website, Shopify, app), each with its own API key.
@@ -358,6 +374,11 @@ class ApiClient {
     return response.data;
   }
 
+  async getQuote(reference: string) {
+    const response = await this.client.get<ApiResponse<SavedQuote>>(`/routes/quote/${encodeURIComponent(reference)}`);
+    return response.data;
+  }
+
   // Tenant/Business endpoints
   async registerTenant(name: string, slug: string, base_url: string, description: string) {
     const response = await this.client.post<ApiResponse<RegisterTenantResponse>>('/tenants/register', {
@@ -605,6 +626,7 @@ export type {
   PublicQuote,
   PublicQuoteOption,
   PublicQuoteRequest,
+  SavedQuote,
   Store,
   StoreCustomer,
   StoreDetail,

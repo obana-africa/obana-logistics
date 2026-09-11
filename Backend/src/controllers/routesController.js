@@ -3,6 +3,7 @@ const utils = require('../../utils')
 const { loadPricing, priceRates, recordSeenPartners } = require('../helpers/partnerPricing')
 const { currencyForCountry, ngnRate } = require('../helpers/fx')
 const axios = require('axios')
+const crypto = require('crypto')
 const { getCode } = require('country-list')
 const lookup = require('country-code-lookup')
 const { parsePhoneNumber } = require('libphonenumber-js');
@@ -472,7 +473,17 @@ const priceTemplate = (template, weight) => {
     } else {
         match.price = basePrice;
     }
+    // Obana's margin on its own routes, applied once to the total (partner rates have their own markup).
+    // Round to kobo first so float noise (11000 × 1.1 = 12100.000000000002) doesn't add a naira.
+    match.price = Math.ceil(Math.round(match.price * (1 + routeMarkupPercent() / 100) * 100) / 100);
     return match;
+};
+
+/** ROUTE_MARKUP_PERCENT on the server (default 10). Set it to 0 to charge route prices as entered. */
+const routeMarkupPercent = () => {
+    const raw = process.env.ROUTE_MARKUP_PERCENT;
+    const n = raw === undefined || raw === '' ? NaN : Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : 10;
 };
 
 /**
@@ -1034,19 +1045,95 @@ const publicQuote = async (req, res) => {
         const options = cached.options.map((o) => ({ ...o, display_price: fx ? Math.round(o.price * fx.rate * 100) / 100 : null }))
         const cheapest = options.reduce((a, b) => (b.price < a.price ? b : a))
         const fastest = options.reduce((a, b) => (etaDays(b.eta) < etaDays(a.eta) ? b : a))
+        const saved = await saveQuote({ origin, destination, originCode, destCode, weight, options, displayCurrency: fx ? wanted : 'NGN' })
         return res.status(200).send(utils.responseSuccess({
+            // Carried to booking so nothing is re-entered after sign-up; null if saving failed.
+            reference: saved ? saved.reference : null,
             currency: 'NGN',
             display_currency: fx ? wanted : 'NGN',
             fx: fx ? { rate: fx.rate, as_of: fx.as_of, source: fx.source } : null,
             options,
             cheapest_id: cheapest.id,
             fastest_id: Number.isFinite(etaDays(fastest.eta)) ? fastest.id : null,
-            expires_at: new Date(cached.at + QUOTE_TTL_MS).toISOString()
+            // A saved quote holds its prices for 24 hours; an unsaved one only as long as the price cache.
+            expires_at: (saved ? new Date(saved.expires_at) : new Date(cached.at + QUOTE_TTL_MS)).toISOString()
         }))
     } catch (error) {
         console.error('Public quote failed:', error?.response?.data || error.message)
         return res.status(502).send(utils.responseError('We could not get prices right now. Please try again in a moment.'))
     }
+}
+
+// ---------- Saved quotes (quote → sign up → book, without losing anything) ----------
+const QUOTE_HOLD_MS = 24 * 60 * 60 * 1000
+
+const newQuoteReference = () => `Q-${crypto.randomBytes(5).toString('hex').toUpperCase()}`
+
+const quotePlace = (p, countryCode) => ({
+    city: String(p.city || '').trim(),
+    state: String(p.state || '').trim(),
+    state_code: String(p.state_code || ''),
+    country: String(p.country || countryCode),
+    country_code: countryCode
+})
+
+/** Save a public quote. Never throws: the visitor still gets prices if saving fails. */
+const saveQuote = async ({ origin, destination, originCode, destCode, weight, options, displayCurrency }) => {
+    try {
+        return await db.quotes.create({
+            reference: newQuoteReference(),
+            origin: quotePlace(origin, originCode),
+            destination: quotePlace(destination, destCode),
+            weight_kg: weight,
+            currency: 'NGN',
+            display_currency: displayCurrency,
+            options,
+            expires_at: new Date(Date.now() + QUOTE_HOLD_MS)
+        })
+    } catch (error) {
+        console.error('Could not save quote:', error.message)
+        return null
+    }
+}
+
+/** GET /routes/quote/:reference — a saved quote for the booking page (signed in). */
+const getQuote = async (req, res) => {
+    try {
+        const quote = await db.quotes.findOne({ where: { reference: String(req.params.reference || '').toUpperCase() } })
+        if (!quote) return res.status(404).send(utils.responseError('Quote not found'))
+        return res.status(200).send(utils.responseSuccess({
+            reference: quote.reference,
+            origin: quote.origin,
+            destination: quote.destination,
+            weight_kg: Number(quote.weight_kg),
+            currency: quote.currency,
+            display_currency: quote.display_currency,
+            options: quote.options,
+            status: quote.status,
+            expires_at: quote.expires_at,
+            expired: new Date(quote.expires_at) <= new Date()
+        }))
+    } catch (error) {
+        console.error('Get quote failed:', error.message)
+        return res.status(500).send(utils.responseError('Could not load this quote'))
+    }
+}
+
+/**
+ * The quote option a booking may take at the quoted price, or null. Holds only while the quote is unexpired
+ * and unbooked, for an Obana-fleet option (partner rates are re-checked at booking), on the same route
+ * (states and countries) and at no more than the quoted weight.
+ */
+const heldQuoteOption = (quote, { optionId, pickup, delivery, weight }) => {
+    if (!quote || quote.status !== 'quoted' || new Date(quote.expires_at) <= new Date()) return null
+    const option = (quote.options || []).find((o) => o.id === optionId && o.provider === 'obana')
+    if (!option || !pickup || !delivery) return null
+    const samePlace = (place, saved) =>
+        normalizeState(place.state) === normalizeState(saved.state) &&
+        String(formatCountryCode(place.countryCode || place.country_code || place.country)).toUpperCase() === String(saved.country_code).toUpperCase()
+    if (!samePlace(pickup, quote.origin) || !samePlace(delivery, quote.destination)) return null
+    if (!(weight > 0) || weight > Number(quote.weight_kg) + 0.01) return null
+    return option
 }
 
 /** Server-side price options for a pickup/delivery pair — used to price store shipments. */
@@ -1069,6 +1156,8 @@ module.exports = {
     laneOptions,
     quoteForAddresses,
     publicQuote,
+    getQuote,
+    heldQuoteOption,
     partnerQuotesForShipment,
     listTemplates,
     getTemplate,

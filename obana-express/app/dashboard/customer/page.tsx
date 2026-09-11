@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { ArrowRight, Calculator, CheckCircle2, ChevronRight, Package, PackagePlus, Search, Timer } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -9,6 +9,9 @@ import { apiClient } from "@/lib/api";
 import { useAuthStore } from "@/lib/authStore";
 import { formatDate, formatMoney, routeLabel } from "@/lib/shipments";
 import { useRemote } from "@/lib/useRemote";
+import { parsePendingQuote, readPendingQuoteRaw } from "@/components/quote/quote";
+
+const subscribeNothing = () => () => {};
 
 type Place = { city?: string; state?: string; country?: string };
 interface Shipment {
@@ -41,6 +44,8 @@ export default function CustomerDashboardPage() {
 
 	const s = stats.data;
 	const closed = s ? s.delivered + s.failed + s.cancelled + s.returned : 0;
+	// A quote chosen before signing up, if sign-up took a route that lost the link back to booking.
+	const pendingQuote = parsePendingQuote(useSyncExternalStore(subscribeNothing, readPendingQuoteRaw, () => null));
 
 	return (
 		<DashboardLayout role="customer">
@@ -54,6 +59,22 @@ export default function CustomerDashboardPage() {
 						</ButtonLink>
 					}
 				/>
+
+				{pendingQuote && (
+					<Link
+						href={pendingQuote.path}
+						className="group flex items-center gap-3 rounded-2xl border border-[#1B3B5F]/20 bg-[#f1fdfc] p-4 transition hover:border-[#1B3B5F]/40 hover:shadow-sm"
+					>
+						<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#1B3B5F] shadow-sm">
+							<Calculator className="h-5 w-5" aria-hidden />
+						</span>
+						<span className="min-w-0 flex-1">
+							<span className="block font-semibold text-slate-900">Continue booking your quote</span>
+							<span className="block truncate text-sm text-slate-600">{pendingQuote.label}</span>
+						</span>
+						<ArrowRight className="h-4 w-4 shrink-0 text-[#1B3B5F] transition group-hover:translate-x-0.5" aria-hidden />
+					</Link>
+				)}
 
 				{stats.error ? (
 					<Panel>
