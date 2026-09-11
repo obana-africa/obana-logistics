@@ -971,7 +971,7 @@ const publicQuote = async (req, res) => {
     const destCode = String(formatCountryCode(destination.country_code || destination.country)).toUpperCase()
     const wanted = /^[A-Za-z]{3}$/.test(String(body.display_currency || '')) ? String(body.display_currency).toUpperCase() : currencyForCountry(originCode)
 
-    const key = JSON.stringify([originCode, normalizeText(origin.state), normalizeText(origin.city), destCode, normalizeText(destination.state), normalizeText(destination.city), Math.ceil(weight * 2) / 2, declared])
+    const key = JSON.stringify([originCode, normalizeText(origin.state), normalizeText(origin.city), destCode, normalizeText(destination.state), normalizeText(destination.city), Math.round(weight * 100) / 100, declared])
     try {
         let cached = quoteCache.get(key)
         if (!cached || Date.now() - cached.at > QUOTE_TTL_MS) {

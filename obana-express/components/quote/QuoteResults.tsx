@@ -293,7 +293,7 @@ export function QuoteResults({ state, signedIn, stale, onRetry, headingRef }: Qu
 
 					{state.status === "limited" && (
 						<Notice tone="amber" icon={Hourglass}>
-							<p className="mt-4 max-w-md text-sm leading-relaxed">You&apos;ve asked for a lot of quotes in a short time. Please wait a minute, then try again.</p>
+							<p className="mt-4 max-w-md text-sm leading-relaxed">You&apos;ve asked for a lot of quotes in a short time. Please wait a few minutes, then try again.</p>
 							<button type="button" onClick={onRetry} className={retryButton}>
 								<RotateCw className="h-4 w-4" aria-hidden /> Try again
 							</button>
