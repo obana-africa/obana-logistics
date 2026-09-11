@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { ChevronDown, MapPin, Pencil, Plus, Route as RouteIcon, Search, Trash2, UserRound, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { EmptyState, ErrorState, ListSkeleton, PageHeader, Panel, StatCard, ToneBadge } from "@/components/dashboard/kit";
+import { EmptyState, ErrorState, ListSkeleton, PageHeader, Pager, Panel, StatCard, ToneBadge } from "@/components/dashboard/kit";
 import { Alert, Button } from "@/components/ui";
 import { BracketsTable } from "@/components/admin/routes/BracketsTable";
 import { RouteFormSheet } from "@/components/admin/routes/RouteFormSheet";
@@ -25,6 +25,7 @@ import {
 import { apiClient } from "@/lib/api";
 import { formatMoney } from "@/lib/shipments";
 import { errorMessage, useRemote } from "@/lib/useRemote";
+import { usePaged } from "@/lib/usePaged";
 
 const MODE_CHIPS = [{ value: "", label: "All modes" }, ...TRANSPORT_MODES];
 const SERVICE_CHIPS = [{ value: "", label: "All services" }, ...SERVICE_LEVELS];
@@ -90,6 +91,8 @@ export default function AdminRoutesPage() {
 		if (r.preferred_driver_id === null || r.preferred_driver_id === undefined) return null;
 		return drivers.find((d) => String(d.id) === String(r.preferred_driver_id))?.driver_code || `Driver #${r.preferred_driver_id}`;
 	};
+
+	const paged = usePaged(visible, 20, JSON.stringify([q, mode, service]));
 
 	const clearFilters = () => {
 		setQuery("");
@@ -262,7 +265,7 @@ export default function AdminRoutesPage() {
 						<>
 							{/* Phones and tablets: cards */}
 							<ul className="divide-y divide-slate-100 lg:hidden">
-								{visible.map((r) => {
+								{paged.items.map((r) => {
 									const id = String(r.id);
 									const open = expanded === id;
 									const title = routeTitle(r);
@@ -339,7 +342,7 @@ export default function AdminRoutesPage() {
 										</tr>
 									</thead>
 									<tbody className="divide-y divide-slate-100">
-										{visible.map((r) => {
+										{paged.items.map((r) => {
 											const id = String(r.id);
 											const open = expanded === id;
 											const title = routeTitle(r);
@@ -409,6 +412,7 @@ export default function AdminRoutesPage() {
 							</div>
 						</>
 					)}
+					<Pager page={paged.page} pages={paged.pages} total={paged.total} noun="routes" onPage={paged.setPage} />
 				</Panel>
 			</div>
 

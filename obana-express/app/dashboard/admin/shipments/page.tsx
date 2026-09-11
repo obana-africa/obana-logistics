@@ -2,9 +2,9 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Package, Search, X } from "lucide-react";
+import { Package, Search, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { EmptyState, ErrorState, ListSkeleton, PageHeader, Panel, StatusBadge, ToneBadge } from "@/components/dashboard/kit";
+import { EmptyState, ErrorState, ListSkeleton, PageHeader, Pager, Panel, StatusBadge, ToneBadge } from "@/components/dashboard/kit";
 import { apiClient } from "@/lib/api";
 import { STATUS_OPTIONS, formatDate, formatMoney, routeLabel } from "@/lib/shipments";
 import { useRemote } from "@/lib/useRemote";
@@ -228,33 +228,7 @@ export default function AdminShipmentsPage() {
 						</>
 					)}
 
-					{pg && pg.total > 0 && !error && (
-						<nav aria-label="Pages" className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 sm:px-5">
-							<p className="text-sm text-slate-600">
-								Page {pg.page} of {Math.max(pg.pages, 1)} · {pg.total.toLocaleString()} shipments
-							</p>
-							<div className="flex gap-2">
-								<button
-									type="button"
-									onClick={() => setPage((p) => p - 1)}
-									disabled={page <= 1 || loading}
-									aria-label="Previous page"
-									className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-								>
-									<ChevronLeft className="h-4 w-4" />
-								</button>
-								<button
-									type="button"
-									onClick={() => setPage((p) => p + 1)}
-									disabled={page >= pg.pages || loading}
-									aria-label="Next page"
-									className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-								>
-									<ChevronRight className="h-4 w-4" />
-								</button>
-							</div>
-						</nav>
-					)}
+					{pg && !error && <Pager page={pg.page} pages={Math.max(pg.pages, 1)} total={pg.total} noun="shipments" onPage={setPage} disabled={loading} />}
 				</Panel>
 			</div>
 		</DashboardLayout>

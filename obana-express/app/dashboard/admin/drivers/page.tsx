@@ -4,11 +4,12 @@ import React, { useState } from "react";
 import { Pencil, Plus, Search, ShieldAlert, Trash2, Truck, UserCheck, Users, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import PhoneInput from "@/components/PhoneInput";
-import { EmptyState, ErrorState, ListSkeleton, PageHeader, Panel, StatCard, ToneBadge } from "@/components/dashboard/kit";
+import { EmptyState, ErrorState, ListSkeleton, PageHeader, Pager, Panel, StatCard, ToneBadge } from "@/components/dashboard/kit";
 import { Alert, Button, Input, Select } from "@/components/ui";
 import { apiClient } from "@/lib/api";
 import type { Tone } from "@/lib/shipments";
 import { errorMessage, useRemote } from "@/lib/useRemote";
+import { usePaged } from "@/lib/usePaged";
 
 type DriverMeta = { first_name?: string; last_name?: string; phone?: string; email?: string };
 
@@ -156,6 +157,7 @@ export default function AdminDriversPage() {
 		return hay.includes(q) || (qDigits.length >= 3 && phoneOf(d).replace(/\D/g, "").includes(qDigits));
 	});
 	const filtered = Boolean(q || statusFilter);
+	const paged = usePaged(visible, 20, JSON.stringify([q, statusFilter]));
 	const count = (s: string) => (s ? drivers.filter((d) => d.status === s).length : drivers.length);
 
 	const set = (field: keyof Form, value: string) => {
@@ -343,7 +345,7 @@ export default function AdminDriversPage() {
 						<>
 							{/* Phones and tablets: cards */}
 							<ul className="divide-y divide-slate-100 lg:hidden">
-								{visible.map((d) => {
+								{paged.items.map((d) => {
 									const name = nameOf(d) || "Unnamed driver";
 									const st = statusOf(d.status);
 									return (
@@ -395,7 +397,7 @@ export default function AdminDriversPage() {
 										</tr>
 									</thead>
 									<tbody className="divide-y divide-slate-100">
-										{visible.map((d) => {
+										{paged.items.map((d) => {
 											const name = nameOf(d) || "Unnamed driver";
 											const st = statusOf(d.status);
 											return (
@@ -448,6 +450,7 @@ export default function AdminDriversPage() {
 							</div>
 						</>
 					)}
+					<Pager page={paged.page} pages={paged.pages} total={paged.total} noun="drivers" onPage={paged.setPage} />
 				</Panel>
 			</div>
 
