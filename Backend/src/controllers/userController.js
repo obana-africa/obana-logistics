@@ -282,7 +282,7 @@ const resetPassword = async (req, res) => {
     try {
         
         // Changing a password needs the current one, and never works with an API key.
-        if (req.authMethod === 'api_key') {
+        if (req.authMethod === 'api_key' || req.authMethod === 'store_key') {
             return res.status(403).send(utils.responseError('Sign in with your password to change it'));
         }
         if (!req.body.old_password) {

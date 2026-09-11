@@ -1,3 +1,4 @@
+const { isStoreKey, hashKey } = require('../helpers/storeKeys')
 const jwt = require('jsonwebtoken')
 const utils = require('../../utils.js')
 
@@ -247,6 +248,36 @@ const authenticateToken = async (req, res, next) => {
     )
   }
   if (token) {
+    if (isStoreKey(token)) {
+        // Store keys are for integrations only: quotes, shipments of their own store, tracking and cancelling.
+        const path = String(req.originalUrl || '').split('?')[0]
+        const allowed = (req.method === 'POST' && /^\/shipments\/?$/.test(path)) ||
+            /^\/shipments\/(track|cancel)\//.test(path) ||
+            /^\/routes\/(match|quote)\/?$/.test(path) ||
+            /^\/stores\/me(\/|$)/.test(path)
+        if (!allowed) {
+            return res.status(403).send(utils.responseError('Store API keys can only be used for quotes, shipments and tracking'));
+        }
+        try {
+            const store = await db.stores.findOne({ where: { api_key_hash: hashKey(token) } });
+            if (store && store.status === 'active') {
+                const user = await getUser(null, null, true, req, res, store.owner_user_id);
+                if (user) {
+                    req.user = user;
+                    req.store = store;
+                    req.authMethod = 'store_key';
+                    // Record usage at most every 5 minutes.
+                    if (!store.last_used_at || Date.now() - new Date(store.last_used_at).getTime() > 5 * 60 * 1000) {
+                        store.update({ last_used_at: new Date() }).catch(() => {});
+                    }
+                    return next();
+                }
+            }
+        } catch (error) {
+            console.error('Store key authentication error:', error);
+        }
+        return res.status(403).send(utils.responseError('Invalid or paused store API key'));
+    }
     if (token.startsWith('OBN-')) {
         try {
             const apiKeyAttribute = await db.attributes.findOne({ where: { slug: 'api_key' } });

@@ -126,6 +126,7 @@ app.use("/tenants", require("./src/routes/tenants"));
 app.use("/agents", agentRoutes);
 app.use("/locations", locations)
 app.use("/partners", require("./src/routes/partners"));
+app.use("/stores", require("./src/routes/stores"));
  
 server.listen(PORT, () => {
 	console.log(`Obana Logistics is running on port ${PORT}`);

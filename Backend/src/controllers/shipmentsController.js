@@ -753,6 +753,44 @@ const shipmentController = {
                 });
             }
 
+            // Connected stores: tag the shipment, price it on the server (never trust a sent price),
+            // and treat a repeated order_id as the same shipment.
+            let storeCustomer = null;
+            let storeQuoteOption = null;
+            if (req.store) {
+                if (payload.order_id) {
+                    const existing = await db.shippings.findOne({ where: { tenant_id: req.store.id, order_reference: String(payload.order_id) } });
+                    if (existing) {
+                        return res.status(200).json({
+                            success: true,
+                            duplicate: true,
+                            message: 'A shipment already exists for this order',
+                            data: { id: existing.id, shipment_reference: existing.shipment_reference, status: existing.status, shipping_fee: Number(existing.shipping_fee), currency: existing.currency }
+                        });
+                    }
+                }
+                const { quoteForAddresses } = require('./routesController');
+                const weight = Math.max(0.1, payload.items.reduce((sum, item) => sum + (parseFloat(item.weight) || 0.5) * (parseInt(item.quantity, 10) || 1), 0));
+                const options = await quoteForAddresses({ pickup: payload.pickup_address, delivery: payload.delivery_address, weight });
+                if (!options.length) {
+                    return res.status(400).json({ success: false, message: "We don't deliver on this route yet. Contact us to add it." });
+                }
+                const chosen = (payload.quote_option_id && options.find((o) => o.id === payload.quote_option_id)) || options[0];
+                storeQuoteOption = chosen.id;
+                payload.shipping_fee = chosen.price;
+                payload.carrier_slug = 'obana'; // Obana books the carrier (our fleet or a partner) once it's in our queue.
+                payload.dispatcher = undefined;
+                payload.vendor_name = payload.vendor_name || req.store.name;
+                const c = payload.customer && typeof payload.customer === 'object' ? payload.customer : {};
+                const clip = (v, max) => (v === undefined || v === null || v === '' ? null : String(v).slice(0, max));
+                storeCustomer = {
+                    id: clip(c.id, 100),
+                    name: clip(c.name, 120) || clip(`${payload.delivery_address.first_name || ''} ${payload.delivery_address.last_name || ''}`.trim(), 120),
+                    email: clip(c.email || payload.delivery_address.email, 160),
+                    phone: clip(c.phone || payload.delivery_address.phone, 40)
+                };
+            }
+
             const transaction = await db.sequelize.transaction();
 
             try {
@@ -806,7 +844,7 @@ const shipmentController = {
 
                 const shipment = await db.shippings.create({
                     user_id: userId,
-                    tenant_id: tenantId,
+                    tenant_id: req.store ? req.store.id : tenantId,
                     shipment_reference: shipmentReference,
                     order_reference: payload.order_id || `ORDER-${Date.now()}`,
                     vendor_name: payload.vendor_name || 'Unknown Vendor',
@@ -834,6 +872,8 @@ const shipmentController = {
                         dispatcher: payload.dispatcher,
                         // Salesperson (Zoho salesorder) — used for WhatsApp notifications
                         salesperson: payload.salesperson || null,
+                        store_customer: storeCustomer,
+                        store_quote_option: storeQuoteOption,
                         carrier_details: {
                             carrier_name: payload.dispatcher?.carrier_name,
                             carrier_logo: payload.dispatcher?.carrier_logo,
@@ -1336,6 +1376,9 @@ const shipmentController = {
                 where.user_id = user_id;
             }
 
+
+            // A store key only ever sees its own store's shipments.
+            if (req.store) where.tenant_id = req.store.id;
 
             const shipment = await db.shippings.findOne({
                 where,

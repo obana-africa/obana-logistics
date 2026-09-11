@@ -1002,7 +1002,22 @@ const publicQuote = async (req, res) => {
     }
 }
 
+/** Server-side price options for a pickup/delivery pair — used to price store shipments. */
+const quoteForAddresses = async ({ pickup, delivery, weight, declared = 0 }) => {
+    const originCode = String(formatCountryCode(pickup.country_code || pickup.country)).toUpperCase()
+    const destCode = String(formatCountryCode(delivery.country_code || delivery.country)).toUpperCase()
+    return buildQuoteOptions({
+        origin: { city: String(pickup.city || ''), state: String(pickup.state || '') },
+        destination: { city: String(delivery.city || ''), state: String(delivery.state || '') },
+        originCode,
+        destCode,
+        weight,
+        declared
+    })
+}
+
 module.exports = {
+    quoteForAddresses,
     publicQuote,
     partnerQuotesForShipment,
     listTemplates,

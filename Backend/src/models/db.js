@@ -60,6 +60,9 @@ db.shipment_items = require('./shipmentItemsModel.js')(sequelize, DataTypes)
 db.shippings = require('./shipmentsModel.js')(sequelize, DataTypes)
 db.route_templates = require('./routeTemplateModel.js')(sequelize, DataTypes)
 db.partners = require('./partnerModel.js')(sequelize, DataTypes)
+db.stores = require('./storeModel.js')(sequelize, DataTypes)
+db.store_webhook_deliveries = require('./storeWebhookDeliveryModel.js')(sequelize, DataTypes)
+require('../helpers/storeWebhooks').registerStoreWebhooks(db)
 // Sync database with force: false and alter: false to avoid enum conflicts
 const syncDatabase = async () => {
     try {
