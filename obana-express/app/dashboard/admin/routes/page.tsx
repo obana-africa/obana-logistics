@@ -1,875 +1,454 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
+import Link from "next/link";
+import { ChevronDown, MapPin, Pencil, Plus, Route as RouteIcon, Search, Trash2, UserRound, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, Button, Input, Select, Alert, Loader, Label, SelectP, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui";
-import { LocationInput } from "@/components/LocationInput";
+import { EmptyState, ErrorState, ListSkeleton, PageHeader, Panel, StatCard, ToneBadge } from "@/components/dashboard/kit";
+import { Alert, Button } from "@/components/ui";
+import { BracketsTable } from "@/components/admin/routes/BracketsTable";
+import { RouteFormSheet } from "@/components/admin/routes/RouteFormSheet";
+import { Sheet } from "@/components/admin/routes/Sheet";
+import {
+	SERVICE_LEVELS,
+	TRANSPORT_MODES,
+	lowestPrice,
+	modeLabel,
+	modeTone,
+	routeCountries,
+	routeTitle,
+	serviceTone,
+	type DriverSummary,
+	type RoutePayload,
+	type RouteTemplate,
+} from "@/components/admin/routes/model";
 import { apiClient } from "@/lib/api";
-import { Plus, Edit2, Trash2, X, MapPin, Package, CheckCircle, AlertCircle } from "lucide-react";
+import { formatMoney } from "@/lib/shipments";
+import { errorMessage, useRemote } from "@/lib/useRemote";
 
-interface RouteTemplate {
-	id: string;
-	origin_city: string;
-	destination_city: string;
-	transport_mode: string;
-	service_level: string;
-	weight_brackets: any[];
-	metadata: any;
-	preferred_driver_id?: string;
-	preferred_driver?: any;
-}
+const MODE_CHIPS = [{ value: "", label: "All modes" }, ...TRANSPORT_MODES];
+const SERVICE_CHIPS = [{ value: "", label: "All services" }, ...SERVICE_LEVELS];
 
-export default function RoutesManagement() {
-	const [routes, setRoutes] = useState<RouteTemplate[]>([]);
-	const [drivers, setDrivers] = useState<any[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState("");
-	const [showModal, setShowModal] = useState(false);
-	const [actionLoading, setActionLoading] = useState(false);
-	const [resultMessage, setResultMessage] = useState<{
-		type: "success" | "error";
-		title: string;
-		body: string;
-	} | null>(null);
-	const [showResultModal, setShowResultModal] = useState(false);
-	const [editingRoute, setEditingRoute] = useState<RouteTemplate | null>(null);
-	const [formData, setFormData] = useState<{
-		origin: {
-			city: string;
-			state: string;
-			country: string;
-			countryCode: string;
-			stateCode: string;
-		};
-		destination: {
-			city: string;
-			state: string;
-			country: string;
-			countryCode: string;
-			stateCode: string;
-		};
-		transport_mode: string;
-		service_level: string;
-		weight_brackets: { min: string; max: string; price: string; eta: string; unit_price?: string }[];
-		preferred_driver_id: string;
-	}>({
-		origin: { city: "", state: "", country: "", countryCode: "", stateCode: "" },
-		destination: { city: "", state: "", country: "", countryCode: "", stateCode: "" },
-		transport_mode: "road",
-		service_level: "Standard",
-		weight_brackets: [],
-		preferred_driver_id: "none",
+const chipClass = (active: boolean) =>
+	active
+		? "h-9 shrink-0 rounded-full bg-[#1B3B5F] px-3.5 text-sm font-medium text-white"
+		: "h-9 shrink-0 rounded-full border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 hover:bg-slate-50";
+
+const bracketCount = (r: RouteTemplate) => {
+	const n = Array.isArray(r.weight_brackets) ? r.weight_brackets.length : 0;
+	return `${n} bracket${n === 1 ? "" : "s"}`;
+};
+
+export default function AdminRoutesPage() {
+	const routesQ = useRemote<RouteTemplate[]>("admin-routes", async () => {
+		const res = await apiClient.listRoutes();
+		return Array.isArray(res?.data) ? res.data : [];
+	});
+	const driversQ = useRemote<DriverSummary[]>("admin-route-drivers", async () => {
+		const res = await apiClient.listDrivers();
+		return Array.isArray(res?.data) ? res.data : [];
 	});
 
-	useEffect(() => {
-		loadRoutes();
-		loadDrivers();
-	}, []);
+	const [query, setQuery] = useState("");
+	const [mode, setMode] = useState("");
+	const [service, setService] = useState("");
+	const [expanded, setExpanded] = useState<string | null>(null);
+	const [notice, setNotice] = useState("");
 
-	const loadRoutes = async () => {
-		try {
-			setLoading(true);
-			const response = await apiClient.listRoutes();
-			setRoutes(response.data || []);
-			setError("");
-		} catch (err: any) {
-			setError(err.response?.data?.message || "Error loading routes");
-		} finally {
-			setLoading(false);
-		}
+	const [editing, setEditing] = useState<{ route: RouteTemplate | null } | null>(null);
+	const [saving, setSaving] = useState(false);
+	const [saveError, setSaveError] = useState("");
+
+	const [deleting, setDeleting] = useState<RouteTemplate | null>(null);
+	const [deleteBusy, setDeleteBusy] = useState(false);
+	const [deleteError, setDeleteError] = useState("");
+
+	const routes = routesQ.data ?? [];
+	const drivers = driversQ.data ?? [];
+	const firstLoad = routesQ.loading && !routesQ.data;
+
+	const cities = new Set(
+		routes.flatMap((r) => [
+			`${(r.origin_city || "").trim().toLowerCase()}|${r.metadata?.origin_country_code || r.metadata?.origin_country || ""}`,
+			`${(r.destination_city || "").trim().toLowerCase()}|${r.metadata?.destination_country_code || r.metadata?.destination_country || ""}`,
+		]),
+	).size;
+	const withDriver = routes.filter((r) => (r.preferred_driver_id !== null && r.preferred_driver_id !== undefined) || r.preferred_driver).length;
+
+	const q = query.trim().toLowerCase();
+	const filtered = Boolean(q || mode || service);
+	const visible = routes.filter((r) => {
+		if (mode && (r.transport_mode || "").toLowerCase() !== mode) return false;
+		if (service && r.service_level !== service) return false;
+		if (!q) return true;
+		const m = r.metadata ?? {};
+		return [r.origin_city, r.destination_city, m.origin_state, m.origin_country, m.destination_state, m.destination_country].some((v) => v?.toLowerCase().includes(q));
+	});
+
+	const driverCode = (r: RouteTemplate) => {
+		if (r.preferred_driver?.driver_code) return r.preferred_driver.driver_code;
+		if (r.preferred_driver_id === null || r.preferred_driver_id === undefined) return null;
+		return drivers.find((d) => String(d.id) === String(r.preferred_driver_id))?.driver_code || `Driver #${r.preferred_driver_id}`;
 	};
 
-	const loadDrivers = async () => {
+	const clearFilters = () => {
+		setQuery("");
+		setMode("");
+		setService("");
+	};
+
+	const openForm = (route: RouteTemplate | null) => {
+		setSaveError("");
+		setEditing({ route });
+	};
+
+	const closeForm = () => {
+		if (!saving) setEditing(null);
+	};
+
+	const save = async (payload: RoutePayload) => {
+		const route = editing?.route ?? null;
+		setSaving(true);
+		setSaveError("");
 		try {
-			const response = await apiClient.listDrivers();
-			if (response.status && response.data) setDrivers(response.data);
+			if (route) await apiClient.updateRoute(String(route.id), payload);
+			else await apiClient.createRoute(payload);
+			setEditing(null);
+			setNotice(`${routeTitle(payload)} ${route ? "updated" : "created"}.`);
+			routesQ.retry();
+			window.scrollTo({ top: 0, behavior: "smooth" });
 		} catch (err) {
-			console.error("Error loading drivers", err);
-		}
-	};
-
-	const calculateUnitPrice = (bracket: { min: string; max: string; price: string }) => {
-		const min = parseFloat(bracket.min);
-		const max = parseFloat(bracket.max);
-		const price = parseFloat(bracket.price);
-		if (Number.isNaN(price) || price <= 0) return null;
-
-		const width = Number.isNaN(max - min) || max - min <= 0 ? (max > 0 ? max : null) : max - min;
-		if (!width || width <= 0) return null;
-
-		return Number((price / width).toFixed(2));
-	};
-
-	const handleSubmit = async (e: React.FormEvent) => {
-		e.preventDefault();
-
-		// Validate locations
-		if (!formData.origin.city || !formData.destination.city) {
-			setError("Please select both origin and destination cities");
-			return;
-		}
-
-		// Validate and format brackets
-		const formattedBrackets = formData.weight_brackets.map((b) => ({
-			min: parseFloat(b.min),
-			max: parseFloat(b.max),
-			price: parseFloat(b.price),
-			eta: b.eta,
-			unit_price: calculateUnitPrice(b),
-		}));
-
-		if (
-			formattedBrackets.some(
-				(b) => isNaN(b.min) || isNaN(b.max) || isNaN(b.price) || !b.eta
-			)
-		) {
-			setError("Please fill all fields in weight brackets correctly");
-			return;
-		}
-
-		setError("");
-		setActionLoading(true);
-		setShowResultModal(false);
-		setResultMessage(null);
-
-		try {
-			const payload = {
-				origin_city: formData.origin.city,
-				destination_city: formData.destination.city,
-				transport_mode: formData.transport_mode,
-				service_level: formData.service_level,
-				weight_brackets: formattedBrackets,
-				metadata: {
-					origin_state: formData.origin.state,
-					origin_country: formData.origin.country,
-					origin_country_code: formData.origin.countryCode,
-					origin_state_code: formData.origin.stateCode,
-					destination_state: formData.destination.state,
-					destination_country: formData.destination.country,
-					destination_country_code: formData.destination.countryCode,
-					destination_state_code: formData.destination.stateCode,
-				},
-				preferred_driver_id: (formData.preferred_driver_id && formData.preferred_driver_id !== "none") ? formData.preferred_driver_id : null,
-			};
-
-			if (editingRoute) {
-				await apiClient.updateRoute(editingRoute.id, payload);
-			} else {
-				await apiClient.createRoute(payload);
-			}
-
-			await loadRoutes();
-			setShowModal(false);
-			setEditingRoute(null);
-			resetForm();
-			setError("");
-			setResultMessage({
-				type: "success",
-				title: editingRoute ? "Route updated" : "Route created",
-				body: editingRoute
-					? "The route was updated successfully."
-					: "The new route was created successfully.",
-			});
-			setShowResultModal(true);
-		} catch (err: any) {
-			setResultMessage({
-				type: "error",
-				title: "Unable to save route",
-				body: err.response?.data?.message || "Error saving route",
-			});
-			setShowResultModal(true);
+			setSaveError(errorMessage(err, "We couldn't save this route. Please try again."));
 		} finally {
-			setActionLoading(false);
+			setSaving(false);
 		}
 	};
 
-	const handleEdit = (route: RouteTemplate) => {
-		setEditingRoute(route);
-		setFormData({
-			origin: {
-				city: route.origin_city,
-				state: route.metadata?.origin_state || "",
-				country: route.metadata?.origin_country || "",
-				countryCode: route.metadata?.origin_country_code || "",
-				stateCode: route.metadata?.origin_state_code || "",
-			},
-			destination: {
-				city: route.destination_city,
-				state: route.metadata?.destination_state || "",
-				country: route.metadata?.destination_country || "",
-				countryCode: route.metadata?.destination_country_code || "",
-				stateCode: route.metadata?.destination_state_code || "",
-			},
-			transport_mode: route.transport_mode,
-			service_level: route.service_level,
-			weight_brackets: Array.isArray(route.weight_brackets)
-				? route.weight_brackets.map((b: any) => ({
-						min: String(b.min || ""),
-						max: String(b.max || ""),
-						price: String(b.price || ""),
-						eta: b.eta || "",
-						unit_price: b.unit_price ? String(b.unit_price) : "",
-					}))
-				: [],
-			preferred_driver_id: route.preferred_driver_id ? String(route.preferred_driver_id) : "none",
-		});
-		setShowModal(true);
+	const askDelete = (route: RouteTemplate) => {
+		setDeleteError("");
+		setDeleting(route);
 	};
 
-	const handleDelete = async (id: string) => {
-		if (confirm("Are you sure you want to delete this route?")) {
-			setActionLoading(true);
-			setShowResultModal(false);
-			setResultMessage(null);
-
-			try {
-				await apiClient.deleteRoute(id);
-				await loadRoutes();
-				setError("");
-				setResultMessage({
-					type: "success",
-					title: "Route deleted",
-					body: "The route has been removed successfully.",
-				});
-				setShowResultModal(true);
-			} catch (err: any) {
-				setResultMessage({
-					type: "error",
-					title: "Delete failed",
-					body: err.response?.data?.message || "Error deleting route",
-				});
-				setShowResultModal(true);
-			} finally {
-				setActionLoading(false);
-			}
+	const confirmDelete = async () => {
+		if (!deleting) return;
+		setDeleteBusy(true);
+		setDeleteError("");
+		try {
+			await apiClient.deleteRoute(String(deleting.id));
+			setNotice(`${routeTitle(deleting)} deleted.`);
+			setDeleting(null);
+			routesQ.retry();
+			window.scrollTo({ top: 0, behavior: "smooth" });
+		} catch (err) {
+			setDeleteError(errorMessage(err, "We couldn't delete this route. Please try again."));
+		} finally {
+			setDeleteBusy(false);
 		}
 	};
 
-	const resetForm = () => {
-		setFormData({
-			origin: { city: "", state: "", country: "", countryCode: "", stateCode: "" },
-			destination: { city: "", state: "", country: "", countryCode: "", stateCode: "" },
-			transport_mode: "road",
-			service_level: "Standard",
-			weight_brackets: [],
-			preferred_driver_id: "none",
-		});
-	};
-
-	const addBracket = () => {
-		setFormData({
-			...formData,
-			weight_brackets: [
-				...formData.weight_brackets,
-				{ min: "", max: "", price: "", eta: "", unit_price: "" },
-			],
-		});
-	};
-
-	const removeBracket = (index: number) => {
-		const newBrackets = [...formData.weight_brackets];
-		newBrackets.splice(index, 1);
-		setFormData({ ...formData, weight_brackets: newBrackets });
-	};
-
-	const updateBracket = (index: number, field: string, value: string) => {
-		const newBrackets = [...formData.weight_brackets];
-		newBrackets[index] = { ...newBrackets[index], [field]: value };
-		setFormData({ ...formData, weight_brackets: newBrackets });
-	};
-
-	const handleAddNew = () => {
-		setEditingRoute(null);
-		resetForm();
-		setShowModal(true);
-	};
+	const toggle = (id: string) => setExpanded((cur) => (cur === id ? null : id));
 
 	return (
 		<DashboardLayout role="admin">
-			<div className="space-y-6">
-				{actionLoading && (
-					<div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 p-4">
-						<div className="rounded-3xl border border-gray-200 bg-white/95 px-6 py-5 shadow-2xl backdrop-blur-xl flex items-center gap-4">
-							<Loader />
-							<div>
-								<p className="font-semibold text-gray-900">
-									Processing route changes…
-								</p>
-								<p className="text-sm text-gray-500">
-									Please wait while we save your changes.
-								</p>
-							</div>
-						</div>
-					</div>
-				)}
-
-				{showResultModal && resultMessage && (
-					<div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-						<div className="bg-white rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in duration-200">
-							<div className="p-6 text-center">
-								<div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-sm mb-4">
-									{resultMessage.type === "success" ? (
-										<CheckCircle className="h-8 w-8 text-green-600" />
-									) : (
-										<AlertCircle className="h-8 w-8 text-red-600" />
-									)}
-								</div>
-								<h2 className="text-2xl font-semibold text-gray-900 mb-2">
-									{resultMessage.title}
-								</h2>
-								<p className="text-gray-600 mb-6">{resultMessage.body}</p>
-								<Button
-									variant="primary"
-									onClick={() => setShowResultModal(false)}
-									fullWidth
-								>
-									Okay
-								</Button>
-							</div>
-						</div>
-					</div>
-				)}
-
-				<div className="flex items-center justify-between">
-					<div>
-						<h1 className="text-3xl font-bold text-gray-900">
-							Route Templates
-						</h1>
-						<p className="text-gray-600 mt-1">
-							Manage shipping routes and pricing
-						</p>
-					</div>
-					<Button onClick={handleAddNew} variant="primary">
-						<Plus className="w-5 h-5 mr-2" />
-						New Route
-					</Button>
+			<div className="space-y-5">
+				<div className="space-y-2">
+					<PageHeader
+						title="Routes & pricing"
+						description="What the Obana fleet charges on each route, by weight."
+						actions={
+							<Button onClick={() => openForm(null)}>
+								<Plus className="h-4 w-4" aria-hidden /> New route
+							</Button>
+						}
+					/>
+					<p className="text-sm text-slate-500">
+						Partner-carrier prices and markup are set on the{" "}
+						<Link href="/dashboard/admin/partners" className="font-semibold text-[#1B3B5F] underline-offset-2 hover:underline">
+							Partners page
+						</Link>
+						.
+					</p>
 				</div>
 
-				{error && (
-					<Alert
-						type="error"
-						className="cursor-pointer"
-						onClick={() => setError("")}
-					>
-						{error}
+				{notice && (
+					<Alert type="success" role="status">
+						<div className="flex items-start justify-between gap-3">
+							<p>{notice}</p>
+							<button type="button" onClick={() => setNotice("")} aria-label="Dismiss" className="-my-1 -mr-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg hover:bg-emerald-100">
+								<X className="h-4 w-4" aria-hidden />
+							</button>
+						</div>
 					</Alert>
 				)}
 
-				{loading ? (
-					<div className="flex justify-center py-12">
-						<Loader />
+				<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+					<StatCard label="Routes" value={routes.length} icon={RouteIcon} tone="info" loading={firstLoad} />
+					<StatCard label="Cities covered" value={cities} icon={MapPin} tone="progress" loading={firstLoad} />
+					<div className="col-span-2 sm:col-span-1">
+						<StatCard
+							label="With preferred driver"
+							value={withDriver}
+							hint={routes.length ? `of ${routes.length} route${routes.length === 1 ? "" : "s"}` : undefined}
+							icon={UserRound}
+							tone="success"
+							loading={firstLoad}
+						/>
 					</div>
-				) : (
-					<Card className="-z-50">
-						{routes.length > 0 ? (
-							<div className="overflow-x-auto">
-								<table className="w-full">
-									<thead>
-										<tr className="border-b border-gray-200 bg-gray-50">
-											<th className="text-left py-4 px-6 font-semibold text-gray-900">
-												Route
-											</th>
-											<th className="text-left py-4 px-6 font-semibold text-gray-900">
-												Mode
-											</th>
-											<th className="text-left py-4 px-6 font-semibold text-gray-900">
-												Service
-											</th>
-											<th className="text-left py-4 px-6 font-semibold text-gray-900">
-												Driver
-											</th>
-											<th className="text-left py-4 px-6 font-semibold text-gray-900">
-												Weight Brackets
-											</th>
-											<th className="text-right py-4 px-6 font-semibold text-gray-900">
-												Actions
+				</div>
+
+				<div className="space-y-3">
+					<label className="relative block" role="search">
+						<span className="sr-only">Search routes</span>
+						<Search className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" aria-hidden />
+						<input
+							type="search"
+							value={query}
+							onChange={(e) => setQuery(e.target.value)}
+							placeholder="Search by city, state or country"
+							className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-base text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-[#1B3B5F] focus:ring-4 focus:ring-[#1B3B5F]/10"
+						/>
+					</label>
+					<div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+						<div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 lg:pb-0" role="group" aria-label="Filter by transport mode">
+							{MODE_CHIPS.map((o) => (
+								<button key={o.value || "all"} type="button" aria-pressed={mode === o.value} onClick={() => setMode(o.value)} className={chipClass(mode === o.value)}>
+									{o.label}
+								</button>
+							))}
+						</div>
+						<span className="hidden h-6 w-px bg-slate-200 lg:block" aria-hidden />
+						<div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 lg:pb-0" role="group" aria-label="Filter by service level">
+							{SERVICE_CHIPS.map((o) => (
+								<button key={o.value || "all"} type="button" aria-pressed={service === o.value} onClick={() => setService(o.value)} className={chipClass(service === o.value)}>
+									{o.label}
+								</button>
+							))}
+						</div>
+					</div>
+				</div>
+
+				<Panel
+					title="Route templates"
+					description={firstLoad || routesQ.error ? undefined : filtered ? `Showing ${visible.length} of ${routes.length}` : `${routes.length} route${routes.length === 1 ? "" : "s"}`}
+					flush
+				>
+					{firstLoad ? (
+						<ListSkeleton rows={5} />
+					) : routesQ.error ? (
+						<ErrorState text={routesQ.error} onRetry={routesQ.retry} />
+					) : !routes.length ? (
+						<EmptyState
+							icon={RouteIcon}
+							title="No routes yet"
+							text="Add the cities the Obana fleet serves, with a price and delivery time for each weight range."
+							action={
+								<Button onClick={() => openForm(null)}>
+									<Plus className="h-4 w-4" aria-hidden /> Create your first route
+								</Button>
+							}
+						/>
+					) : !visible.length ? (
+						<EmptyState
+							icon={Search}
+							title="No routes match"
+							text="Try another city, mode or service level."
+							action={
+								<button type="button" onClick={clearFilters} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50">
+									<X className="h-4 w-4" aria-hidden /> Clear filters
+								</button>
+							}
+						/>
+					) : (
+						<>
+							{/* Phones and tablets: cards */}
+							<ul className="divide-y divide-slate-100 lg:hidden">
+								{visible.map((r) => {
+									const id = String(r.id);
+									const open = expanded === id;
+									const title = routeTitle(r);
+									const from = lowestPrice(r);
+									const code = driverCode(r);
+									return (
+										<li key={id} className="px-4 py-4 sm:px-5">
+											<div className="flex items-start justify-between gap-3">
+												<div className="min-w-0">
+													<p className="truncate font-semibold text-slate-900">{title}</p>
+													{routeCountries(r) && <p className="truncate text-xs text-slate-500">{routeCountries(r)}</p>}
+												</div>
+												<p className="shrink-0 text-right">
+													<span className="block text-xs text-slate-500">from</span>
+													<span className="font-semibold tabular-nums text-slate-900">{from === null ? "—" : formatMoney(from)}</span>
+												</p>
+											</div>
+											<div className="mt-2 flex flex-wrap items-center gap-1.5">
+												<ToneBadge tone={modeTone(r.transport_mode)}>{modeLabel(r.transport_mode)}</ToneBadge>
+												<ToneBadge tone={serviceTone(r.service_level)}>{r.service_level || "—"}</ToneBadge>
+											</div>
+											<p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
+												<UserRound className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+												{code ? <span className="font-medium text-slate-800">{code}</span> : <span className="text-slate-500">No preferred driver</span>}
+											</p>
+											<div className="mt-3 flex items-center gap-2">
+												<button
+													type="button"
+													onClick={() => toggle(id)}
+													aria-expanded={open}
+													aria-controls={`brackets-card-${id}`}
+													aria-label={`${bracketCount(r)} for ${title}`}
+													className="inline-flex h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+												>
+													<span className="truncate">{bracketCount(r)}</span>
+													<ChevronDown className={open ? "h-4 w-4 shrink-0 rotate-180 text-slate-500 transition" : "h-4 w-4 shrink-0 text-slate-500 transition"} aria-hidden />
+												</button>
+												<Button variant="secondary" onClick={() => openForm(r)} aria-label={`Edit ${title}`}>
+													<Pencil className="h-4 w-4" aria-hidden /> Edit
+												</Button>
+												<button
+													type="button"
+													onClick={() => askDelete(r)}
+													aria-label={`Delete ${title}`}
+													className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-rose-600 hover:bg-rose-50"
+												>
+													<Trash2 className="h-4 w-4" aria-hidden />
+												</button>
+											</div>
+											{open && (
+												<div className="mt-3">
+													<BracketsTable route={r} id={`brackets-card-${id}`} />
+												</div>
+											)}
+										</li>
+									);
+								})}
+							</ul>
+
+							{/* Desktop: table */}
+							<div className="hidden overflow-x-auto lg:block">
+								<table className="w-full text-left text-sm">
+									<thead className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-500">
+										<tr>
+											<th scope="col" className="px-5 py-3">Route</th>
+											<th scope="col" className="px-5 py-3">Mode</th>
+											<th scope="col" className="px-5 py-3">Service</th>
+											<th scope="col" className="px-5 py-3 text-right">From</th>
+											<th scope="col" className="px-5 py-3">Brackets</th>
+											<th scope="col" className="px-5 py-3">Preferred driver</th>
+											<th scope="col" className="px-5 py-3 text-right">
+												<span className="sr-only">Actions</span>
 											</th>
 										</tr>
 									</thead>
-									<tbody>
-										{routes.map((route) => (
-											<tr
-												key={route.id}
-												className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
-											>
-												<td className="py-4 px-6">
-													<div className="flex items-center gap-2">
-														<MapPin className="h-4 w-4 text-blue-600 shrink-0" />
-														<div>
-															<p className="font-medium text-gray-900">
-																{route.origin_city} → {route.destination_city}
-															</p>
-															{route.metadata?.origin_country &&
-																route.metadata?.destination_country && (
-																	<p className="text-xs text-gray-500 mt-0.5">
-																		{route.metadata.origin_country} →{" "}
-																		{route.metadata.destination_country}
-																	</p>
-																)}
-														</div>
-													</div>
-												</td>
-												<td className="py-4 px-6">
-													<span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 capitalize">
-														{route.transport_mode}
-													</span>
-												</td>
-												<td className="py-4 px-6">
-													<span className="text-sm text-gray-700">
-														{route.service_level}
-													</span>
-												</td>
-												<td className="py-4 px-6">
-													{route.preferred_driver ? (
-														<div className="text-xs">
-															<p className="font-semibold">{route.preferred_driver.driver_code}</p>
-															<p className="text-gray-500">{route.preferred_driver.user?.email}</p>
-														</div>
-													) : (
-														<span className="text-gray-400 italic text-xs">None</span>
-													)}
-												</td>
-												<td className="py-4 px-6">
-													<div className="relative group">
-														<button className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors">
-															<Package className="h-4 w-4" />
-															{route.weight_brackets?.length || 0} bracket
-															{route.weight_brackets?.length !== 1 ? "s" : ""}
-														</button>
-
-														{/* Hover Tooltip */}
-														<div className="absolute left-0 top-full mt-2 w-80 bg-white border-2 border-gray-200 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-99 p-4">
-															<div className="space-y-2">
-																<p className="text-xs font-semibold text-gray-600 uppercase mb-3 ">
-																	Weight Brackets
-																</p>
-																{(route.weight_brackets || []).map(
-																	(bracket: any, index: number) => (
-																		<div
-																			key={index}
-																			className="bg-gray-50 rounded-lg p-3 border border-gray-200"
-																		>
-																			<div className="grid grid-cols-2 gap-2 text-sm">
-																				<div>
-																					<span className="text-gray-600">
-																						Weight:
-																					</span>
-																					<span className="font-semibold text-gray-900 ml-1">
-																						{bracket.min}-{bracket.max} kg
-																					</span>
-																				</div>
-																				<div>
-																					<span className="text-gray-600">
-																						Price:
-																					</span>
-																					<span className="font-semibold text-green-600 ml-1">
-																						₦{bracket.price?.toLocaleString()}
-																					</span>
-																				</div>
-																				<div className="col-span-2">
-																					<span className="text-gray-600">
-																						ETA:
-																					</span>
-																					<span className="font-medium text-blue-600 ml-1">
-																						{bracket.eta}
-																					</span>
-																				</div>
-																			</div>
-																		</div>
-																	)
-																)}
+									<tbody className="divide-y divide-slate-100">
+										{visible.map((r) => {
+											const id = String(r.id);
+											const open = expanded === id;
+											const title = routeTitle(r);
+											const from = lowestPrice(r);
+											const code = driverCode(r);
+											return (
+												<React.Fragment key={id}>
+													<tr className={open ? "bg-slate-50" : "hover:bg-slate-50"}>
+														<td className="px-5 py-3.5">
+															<p className="font-semibold text-slate-900">{title}</p>
+															{routeCountries(r) && <p className="text-xs text-slate-500">{routeCountries(r)}</p>}
+														</td>
+														<td className="px-5 py-3.5">
+															<ToneBadge tone={modeTone(r.transport_mode)}>{modeLabel(r.transport_mode)}</ToneBadge>
+														</td>
+														<td className="px-5 py-3.5">
+															<ToneBadge tone={serviceTone(r.service_level)}>{r.service_level || "—"}</ToneBadge>
+														</td>
+														<td className="whitespace-nowrap px-5 py-3.5 text-right font-semibold tabular-nums text-slate-900">{from === null ? "—" : formatMoney(from)}</td>
+														<td className="px-5 py-3.5">
+															<button
+																type="button"
+																onClick={() => toggle(id)}
+																aria-expanded={open}
+																aria-controls={`brackets-row-${id}`}
+																aria-label={`${bracketCount(r)} for ${title}`}
+																className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50"
+															>
+																{bracketCount(r)}
+																<ChevronDown className={open ? "h-4 w-4 rotate-180 text-slate-500 transition" : "h-4 w-4 text-slate-500 transition"} aria-hidden />
+															</button>
+														</td>
+														<td className="whitespace-nowrap px-5 py-3.5">{code ? <span className="font-medium text-slate-800">{code}</span> : <span className="text-slate-500">No preferred driver</span>}</td>
+														<td className="px-5 py-3.5">
+															<div className="flex justify-end gap-1">
+																<button
+																	type="button"
+																	onClick={() => openForm(r)}
+																	aria-label={`Edit ${title}`}
+																	className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 hover:text-[#1B3B5F]"
+																>
+																	<Pencil className="h-4 w-4" aria-hidden />
+																</button>
+																<button
+																	type="button"
+																	onClick={() => askDelete(r)}
+																	aria-label={`Delete ${title}`}
+																	className="flex h-9 w-9 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50"
+																>
+																	<Trash2 className="h-4 w-4" aria-hidden />
+																</button>
 															</div>
-														</div>
-													</div>
-												</td>
-												<td className="py-4 px-6 text-right space-x-2">
-													<Button
-														onClick={() => handleEdit(route)}
-														variant="ghost"
-														size="sm"
-														className="hover:bg-blue-50 hover:text-blue-700"
-													>
-														<Edit2 className="w-4 h-4" />
-													</Button>
-													<Button
-														onClick={() => handleDelete(route.id)}
-														variant="ghost"
-														size="sm"
-														className="text-red-600 hover:bg-red-50 hover:text-red-700"
-													>
-														<Trash2 className="w-4 h-4" />
-													</Button>
-												</td>
-											</tr>
-										))}
+														</td>
+													</tr>
+													{open && (
+														<tr className="bg-slate-50">
+															<td colSpan={7} className="px-5 pb-4 pt-1">
+																<BracketsTable route={r} id={`brackets-row-${id}`} />
+															</td>
+														</tr>
+													)}
+												</React.Fragment>
+											);
+										})}
 									</tbody>
 								</table>
 							</div>
-						) : (
-							<div className="text-center py-16">
-								<div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
-									<MapPin className="w-8 h-8 text-gray-400" />
-								</div>
-								<p className="text-gray-600 mb-4 text-lg">
-									No routes created yet
-								</p>
-								<p className="text-gray-500 text-sm mb-6">
-									Create your first route template to start managing shipments
-								</p>
-								<Button onClick={handleAddNew} variant="primary">
-									<Plus className="w-5 h-5 mr-2" />
-									Create First Route
-								</Button>
-							</div>
-						)}
-					</Card>
-				)}
-
-				{/* Modal */}
-				{showModal && (
-					<div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-						<div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-							<div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-								<div>
-									<h2 className="text-2xl font-bold text-gray-900">
-										{editingRoute ? "Edit Route Template" : "Create New Route"}
-									</h2>
-									<p className="text-sm text-gray-600 mt-1">
-										Define shipping routes with pricing and delivery times
-									</p>
-								</div>
-								<button
-									onClick={() => {
-										setShowModal(false);
-										setEditingRoute(null);
-									}}
-									className="text-gray-400 hover:text-gray-600 transition-colors"
-								>
-									<X className="w-6 h-6" />
-								</button>
-							</div>
-
-							<form onSubmit={handleSubmit} className="p-6 space-y-6">
-								{/* Origin & Destination Section */}
-								<div className="grid md:grid-cols-2 gap-6">
-									{/* Origin Location */}
-									<div className="border-2 border-blue-100 rounded-xl p-5 bg-linear-to-br from-blue-50 to-white">
-										<h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
-											<MapPin className="h-5 w-5 text-blue-600" />
-											Origin Location
-										</h3>
-										<p className="text-sm text-gray-600 mb-4">
-											Where does the shipment start?
-										</p>
-
-										<LocationInput
-											label="Origin"
-											value={formData.origin}
-											onChange={(location) =>
-												setFormData({
-													...formData,
-													origin: location,
-												})
-											}
-											required
-											placeholder="Search for origin city..."
-										/>
-									</div>
-
-									{/* Destination Location */}
-									<div className="border-2 border-green-100 rounded-xl p-5 bg-linear-to-br from-green-50 to-white">
-										<h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
-											<MapPin className="h-5 w-5 text-green-600" />
-											Destination Location
-										</h3>
-										<p className="text-sm text-gray-600 mb-4">
-											Where should it be delivered?
-										</p>
-
-										<LocationInput
-											label="Destination"
-											value={formData.destination}
-											onChange={(location) =>
-												setFormData({
-													...formData,
-													destination: location,
-												})
-											}
-											required
-											placeholder="Search for destination city..."
-										/>
-									</div>
-								</div>
-
-								{/* Transport & Service Section */}
-								<div className="border-2 border-purple-100 rounded-xl p-5 bg-linear-to-br from-purple-50 to-white">
-									<h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-										<Package className="h-5 w-5 text-purple-600" />
-										Transport Details
-									</h3>
-
-									<div className="grid grid-cols-2 gap-4">
-										<Select
-											label="Transport Mode"
-											value={formData.transport_mode}
-											onChange={(e) =>
-												setFormData({
-													...formData,
-													transport_mode: e.target.value,
-												})
-											}
-											options={[
-												{ value: "road", label: "🚚 Road Transport" },
-												{ value: "air", label: "✈️ Air Transport" },
-												{ value: "sea", label: "🚢 Sea Transport" },
-											]}
-										/>
-
-										<Select
-											label="Service Level"
-											value={formData.service_level}
-											onChange={(e) =>
-												setFormData({
-													...formData,
-													service_level: e.target.value,
-												})
-											}
-											options={[
-												{ value: "Standard", label: "📦 Standard" },
-												{ value: "Express", label: "⚡ Express" },
-												{ value: "Economy", label: "🐢 Economy" },
-												{
-													value: "International Express",
-													label: "🌍 International Express",
-												},
-											]}
-										/>
-									</div>
-								</div>
-
-								{/* Preferred Driver Selection */}
-								<div className="border-2 border-blue-100 rounded-xl p-5 bg-linear-to-br from-blue-50 to-white">
-									<Label className="mb-2 block">Preferred Driver (Optional)</Label>
-									<p className="text-xs text-gray-500 mb-3">Auto-assign this driver to shipments using this route</p>
-									<SelectP 
-										value={formData.preferred_driver_id} 
-										onValueChange={(val) => setFormData({...formData, preferred_driver_id: val})}
-									>
-										<SelectTrigger>
-											<SelectValue placeholder="Select a preferred driver" />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="none">No driver (Manual assignment)</SelectItem>
-											{drivers.map((d) => (
-												<SelectItem key={d.id} value={d.id.toString()}>
-													{`${d.driver_code} - ${d.vehicle_type} (${d.user?.email})`}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</SelectP>
-								</div>
-
-								{/* Weight Brackets Section */}
-								<div className="border-2 border-orange-100 rounded-xl p-5 bg-linear-to-br from-orange-50 to-white">
-									<div className="flex items-center justify-between mb-4">
-										<div>
-											<h3 className="font-semibold text-gray-900 flex items-center gap-2">
-												<Package className="h-5 w-5 text-orange-600" />
-												Weight Brackets & Pricing
-											</h3>
-											<p className="text-sm text-gray-600 mt-1">
-												Define weight ranges with prices and delivery times
-											</p>
-										</div>
-										<Button
-											type="button"
-											variant="secondary"
-											size="sm"
-											onClick={addBracket}
-											className="border-2 border-orange-300 hover:bg-orange-50"
-										>
-											<Plus className="w-4 h-4 mr-1" /> Add Bracket
-										</Button>
-									</div>
-
-									{formData.weight_brackets.length === 0 && (
-										<div className="text-center p-8 border-2 border-dashed border-orange-300 rounded-lg bg-white">
-											<Package className="h-12 w-12 text-orange-400 mx-auto mb-3" />
-											<p className="text-gray-600 font-medium mb-2">
-												No weight brackets defined
-											</p>
-											<p className="text-sm text-gray-500 mb-4">
-												Add weight brackets to set pricing for different package
-												weights
-											</p>
-											<Button
-												type="button"
-												variant="secondary"
-												onClick={addBracket}
-												className="border-2 border-orange-300"
-											>
-												<Plus className="w-4 h-4 mr-1" /> Add First Bracket
-											</Button>
-										</div>
-									)}
-
-									<div className="space-y-3">
-										{formData.weight_brackets.map((bracket, index) => (
-											<div
-												key={index}
-												className="bg-white p-4 rounded-lg border-2 border-orange-200"
-											>
-												<div className="flex items-center justify-between mb-3">
-													<span className="text-sm font-semibold text-orange-900">
-														Bracket {index + 1}
-													</span>
-													<Button
-														type="button"
-														variant="ghost"
-														onClick={() => removeBracket(index)}
-														className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1"
-													>
-														<Trash2 className="w-4 h-4" />
-													</Button>
-												</div>
-
-												<div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-													<div>
-														<label className="block text-xs font-medium text-gray-700 mb-1">
-															Min Weight (kg)
-														</label>
-														<Input
-															placeholder="0"
-															type="number"
-															step="0.01"
-															value={bracket.min}
-															onChange={(e) =>
-																updateBracket(index, "min", e.target.value)
-															}
-															required
-														/>
-													</div>
-
-													<div>
-														<label className="block text-xs font-medium text-gray-700 mb-1">
-															Max Weight (kg)
-														</label>
-														<Input
-															placeholder="10"
-															type="number"
-															step="0.01"
-															value={bracket.max}
-															onChange={(e) =>
-																updateBracket(index, "max", e.target.value)
-															}
-															required
-														/>
-													</div>
-
-													<div>
-														<label className="block text-xs font-medium text-gray-700 mb-1">
-															Price (₦)
-														</label>
-														<Input
-															placeholder="5000"
-															type="number"
-															step="0.01"
-															value={bracket.price}
-															onChange={(e) =>
-																updateBracket(index, "price", e.target.value)
-															}
-															required
-														/>
-													</div>
-
-													<div>
-														<div className="relative top-5">
-															<Input
-																placeholder="2 - 3"
-																value={bracket.eta.replace(" days", "")}
-																onChange={(e) =>
-																	updateBracket(
-																		index,
-																		"eta",
-																		`${e.target.value} days`
-																	)
-																}
-																required
-															/>
-															<span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-																days
-															</span>
-														</div>
-													</div>
-												</div>
-
-												{/* Preview */}
-											<div className="mt-3 space-y-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-gray-600">
-												<div>
-													<strong>Preview:</strong> Packages weighing {bracket.min || "0"} - {bracket.max || "∞"} kg will
-													cost <strong className="text-green-600">₦{bracket.price || "0"}</strong> with delivery in <strong className="text-blue-600">{bracket.eta || "N/A"}</strong>
-												</div>
-												<div className="flex flex-wrap items-center gap-3 text-sm text-gray-700">
-													<div className="rounded-full bg-white px-3 py-1 shadow-sm">
-														<span className="font-medium text-gray-600">Unit price:</span>{" "}
-														<span className="font-semibold text-orange-700">
-															{(() => {
-																const min = parseFloat(bracket.min);
-																const max = parseFloat(bracket.max);
-																const price = parseFloat(bracket.price);
-																if (Number.isNaN(price) || price <= 0) return "—";
-																const width = Number.isNaN(max - min) || max - min <= 0 ? (max > 0 ? max : null) : max - min;
-																if (!width || width <= 0) return "—";
-																return `₦${Number((price / width).toFixed(2)).toLocaleString()} / kg`;
-															})()}
-													</span>
-													</div>
-													<div className="rounded-full bg-white px-3 py-1 shadow-sm">
-														<span className="font-medium text-gray-600">Weight span:</span>{" "}
-														<span className="font-semibold text-blue-700">
-															{(() => {
-																const min = parseFloat(bracket.min);
-																const max = parseFloat(bracket.max);
-																if (Number.isNaN(min) || Number.isNaN(max) || max <= min) return "—";
-																return `${(max - min).toFixed(2)} kg`;
-															})()}
-													</span>
-													</div>
-												</div>
-												</div>
-											</div>
-										))}
-									</div>
-								</div>
-
-								{/* Action Buttons */}
-								<div className="flex gap-3 pt-4 border-t border-gray-200">
-									<Button
-										type="button"
-										onClick={() => {
-											setShowModal(false);
-											setEditingRoute(null);
-										}}
-										fullWidth
-										variant="secondary"
-									>
-										Cancel
-									</Button>
-									<Button
-										type="submit"
-										fullWidth
-										variant="primary"
-										className="py-3!"
-									>
-										{editingRoute ? "✓ Update Route" : "✓ Create Route"}
-									</Button>
-								</div>
-							</form>
-						</div>
-					</div>
-				)}
+						</>
+					)}
+				</Panel>
 			</div>
+
+			{editing && (
+				<RouteFormSheet
+					route={editing.route}
+					drivers={drivers}
+					driversError={Boolean(driversQ.error)}
+					saving={saving}
+					serverError={saveError}
+					onCancel={closeForm}
+					onSave={save}
+				/>
+			)}
+
+			{deleting && (
+				<Sheet
+					size="small"
+					title="Delete route?"
+					onClose={() => !deleteBusy && setDeleting(null)}
+					footer={
+						<>
+							<Button type="button" variant="secondary" onClick={() => setDeleting(null)} disabled={deleteBusy} className="flex-1 sm:flex-none">
+								Cancel
+							</Button>
+							<Button type="button" variant="danger" onClick={confirmDelete} loading={deleteBusy} className="flex-1 sm:flex-none">
+								{deleteBusy ? "Deleting…" : "Delete route"}
+							</Button>
+						</>
+					}
+				>
+					<div className="space-y-3">
+						<p className="text-sm text-slate-600">
+							<span className="font-semibold text-slate-900">{routeTitle(deleting)}</span> ({modeLabel(deleting.transport_mode)} · {deleting.service_level}) and its{" "}
+							{bracketCount(deleting)} will be removed. New shipments can no longer be priced on it. This can&apos;t be undone.
+						</p>
+						{deleteError && <Alert type="error">{deleteError}</Alert>}
+					</div>
+				</Sheet>
+			)}
 		</DashboardLayout>
 	);
 }

@@ -1,158 +1,112 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState } from 'react';
-import DashboardLayout from '@/components/DashboardLayout';
-import { Card, Button, Loader } from '@/components/ui';
-import { BarChart3, Route, Users, Package, TrendingUp } from 'lucide-react';
-import Link from 'next/link';
-import { useAuthStore } from '@/lib/authStore';
-import { apiClient } from '@/lib/api';
+import React from "react";
+import Link from "next/link";
+import { Banknote, ChevronRight, Clock, Package, Route, ShieldCheck, Truck, UserPlus, Users } from "lucide-react";
+import DashboardLayout from "@/components/DashboardLayout";
+import { EmptyState, ErrorState, ListSkeleton, PageHeader, Panel, StatCard } from "@/components/dashboard/kit";
+import { apiClient } from "@/lib/api";
+import { formatMoney, statusMeta, timeAgo } from "@/lib/shipments";
+import { useRemote } from "@/lib/useRemote";
 
+interface Activity {
+	type: "shipment" | "user" | "route";
+	description: string;
+	performed_by?: string;
+	reference?: string;
+	createdAt: string;
+}
 interface AdminStats {
-  totalRoutes: number;
-  activeDrivers: number;
-  pendingShipments: number;
-  revenue: number;
-  recentActivity: any[];
+	totalRoutes: number;
+	activeDrivers: number;
+	pendingShipments: number;
+	revenue: number;
+	recentActivity: Activity[];
 }
 
+const ACTIVITY_ICON = { shipment: Package, user: UserPlus, route: Route } as const;
+
+const SHORTCUTS = [
+	{ label: "Shipments", text: "Assign drivers, update status", href: "/dashboard/admin/shipments", icon: Package },
+	{ label: "Routes & pricing", text: "Rates, markup and coverage", href: "/dashboard/admin/routes", icon: Route },
+	{ label: "Drivers", text: "Add and manage drivers", href: "/dashboard/admin/drivers", icon: Truck },
+	{ label: "Agents", text: "Verify and manage agents", href: "/dashboard/admin/agents", icon: ShieldCheck },
+	{ label: "Users", text: "Customers and accounts", href: "/dashboard/admin/users", icon: Users },
+];
+
 export default function AdminDashboard() {
-  const [statsData, setStatsData] = useState<AdminStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const { access_token: token} = useAuthStore();
+	const { data, loading, error, retry } = useRemote<AdminStats>("admin-stats", async () => (await apiClient.getAdminStats()).data);
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const response = await apiClient.getAdminStats();
-        if (response.success) {
-          setStatsData(response.data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch admin stats:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+	return (
+		<DashboardLayout role="admin">
+			<div className="space-y-6">
+				<PageHeader title="Operations overview" description="What needs attention across Obana today." />
 
-    if (token) {
-      fetchStats();
-    }
-  }, [token]);
+				{error ? (
+					<Panel>
+						<ErrorState text={error} onRetry={retry} />
+					</Panel>
+				) : (
+					<div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+						<StatCard label="Awaiting pickup" value={data?.pendingShipments ?? 0} icon={Clock} tone="warning" loading={loading} />
+						<StatCard label="Active drivers" value={data?.activeDrivers ?? 0} icon={Truck} tone="success" loading={loading} />
+						<StatCard label="Route templates" value={data?.totalRoutes ?? 0} icon={Route} tone="info" loading={loading} />
+						<StatCard label="Revenue this month" value={formatMoney(data?.revenue ?? 0)} icon={Banknote} tone="progress" loading={loading} hint="Excludes cancelled and failed" />
+					</div>
+				)}
 
-  const formatTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
-    if (seconds < 60) return 'Just now';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  };
+				<div className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
+					<Panel title="Manage" flush>
+						<ul className="divide-y divide-slate-100">
+							{SHORTCUTS.map(({ label, text, href, icon: Icon }) => (
+								<li key={href}>
+									<Link href={href} className="group flex items-center gap-3 px-4 py-3.5 transition hover:bg-slate-50 sm:px-5">
+										<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#1B3B5F]/5 text-[#1B3B5F]">
+											<Icon className="h-5 w-5" aria-hidden />
+										</span>
+										<span className="min-w-0 flex-1">
+											<span className="block font-medium text-slate-900">{label}</span>
+											<span className="block truncate text-sm text-slate-500">{text}</span>
+										</span>
+										<ChevronRight className="h-4 w-4 text-slate-400 transition group-hover:translate-x-0.5" aria-hidden />
+									</Link>
+								</li>
+							))}
+						</ul>
+					</Panel>
 
-  const stats = [
-    { 
-      label: 'Total Routes', 
-      value: statsData?.totalRoutes.toString() || '0', 
-      icon: Route, 
-      color: 'bg-blue-100 text-blue-600' 
-    },
-    { label: 'Active Drivers', value: statsData?.activeDrivers.toString() || '0', icon: Users, color: 'bg-green-100 text-green-600' },
-    { label: 'Pending Shipments', value: statsData?.pendingShipments.toString() || '0', icon: Package, color: 'bg-yellow-100 text-yellow-600' },
-    { 
-      label: 'Revenue (This Month)', 
-      value: new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(statsData?.revenue || 0), 
-      icon: TrendingUp, 
-      color: 'bg-purple-100 text-purple-600' 
-    },
-  ];
-
-  const quickActions = [
-    { label: 'Manage Routes', href: '/dashboard/admin/routes', icon: Route },
-    { label: 'Manage Drivers', href: '/dashboard/admin/drivers', icon: Users },
-    { label: 'View Shipments', href: '/dashboard/admin/shipments', icon: Package },
-    { label: 'Analytics', href: '/dashboard/admin/analytics', icon: BarChart3 },
-    { label: 'Agent Management', href: '/dashboard/admin/agents', icon: Users },
-  ];
-
-  return (
-    <DashboardLayout role="admin">
-      <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-          <p className="text-gray-600 mt-2">Manage your logistics operations</p>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center py-12"><Loader /></div>
-        ) : (
-          /* Stats */
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {stats.map((stat) => {
-              const Icon = stat.icon;
-              return (
-                <Card key={stat.label}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-600 text-sm font-medium">{stat.label}</p>
-                      <p className="text-2xl font-bold text-gray-900 mt-2">{stat.value}</p>
-                    </div>
-                    <div className={`p-3 rounded-lg ${stat.color}`}>
-                      <Icon className="w-6 h-6" />
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Quick Actions */}
-        <Card title="Quick Actions" description="Manage your logistics operations">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {quickActions.map((action) => {
-              const Icon = action.icon;
-              return (
-                <Link key={action.href} href={action.href}>
-                  <Button fullWidth variant="secondary" className="h-24 flex flex-col items-center justify-center gap-2">
-                    <Icon className="w-6 h-6" />
-                    <span className="text-sm">{action.label}</span>
-                  </Button>
-                </Link>
-              );
-            })}
-          </div>
-        </Card>
-
-        {/* Recent Activity */}
-        <Card title="Recent Activity" description="Latest operations">
-          <div className="space-y-3">
-            {loading ? (
-              <div className="py-4 text-center text-gray-500">Loading activity...</div>
-            ) : statsData?.recentActivity && statsData.recentActivity.length > 0 ? (
-              statsData.recentActivity.map((activity, i) => (
-                <div key={i} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
-                  <div>
-                    <p className="font-medium text-gray-900 capitalize">{activity.description}</p>
-                    <p className="text-sm text-gray-600">
-                      {activity.performed_by || 'System'} 
-                      {activity.reference ? ` • ${activity.reference}` : ''}
-                    </p>
-                  </div>
-                  <p className="text-sm text-gray-500">{formatTimeAgo(activity.createdAt)}</p>
-                </div>
-              ))
-            ) : (
-              <p className="text-gray-500 text-center py-4">No recent activity</p>
-            )}
-          </div>
-        </Card>
-      </div>
-    </DashboardLayout>
-  );
+					<Panel title="Recent activity" flush>
+						{loading ? (
+							<ListSkeleton rows={5} />
+						) : !data?.recentActivity?.length ? (
+							<EmptyState icon={Clock} title="No activity yet" text="Shipment updates, sign-ups and route changes will show here." />
+						) : (
+							<ul className="divide-y divide-slate-100">
+								{data.recentActivity.map((a, i) => {
+									const Icon = ACTIVITY_ICON[a.type] ?? Package;
+									return (
+										<li key={i} className="flex items-start gap-3 px-4 py-3.5 sm:px-5">
+											<span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+												<Icon className="h-4 w-4" aria-hidden />
+											</span>
+											<div className="min-w-0 flex-1">
+												<p className="font-medium text-slate-900 first-letter:uppercase">{a.type === "shipment" ? statusMeta(a.description).label : a.description}</p>
+												<p className="truncate text-sm text-slate-500">
+													{a.performed_by || "System"}
+													{a.reference ? ` · ${a.reference}` : ""}
+												</p>
+											</div>
+											<time className="shrink-0 text-xs text-slate-500" dateTime={a.createdAt}>
+												{timeAgo(a.createdAt)}
+											</time>
+										</li>
+									);
+								})}
+							</ul>
+						)}
+					</Panel>
+				</div>
+			</div>
+		</DashboardLayout>
+	);
 }

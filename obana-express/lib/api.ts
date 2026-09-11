@@ -344,6 +344,33 @@ class ApiClient {
     return response.data;
   }
 
+  // Partner carriers & markup (admin). Partners are added automatically when a quote returns their rates.
+  async listPartners() {
+    const response = await this.client.get<ApiResponse>('/partners');
+    return response.data;
+  }
+
+  async updatePartnerDefaults(data: { markup_percent: number }) {
+    const response = await this.client.put<ApiResponse>('/partners/default', data);
+    return response.data;
+  }
+
+  async updatePartner(slug: string, data: { enabled?: boolean; markup_percent?: number | null }) {
+    const response = await this.client.put<ApiResponse>(`/partners/${encodeURIComponent(slug)}`, data);
+    return response.data;
+  }
+
+  // Send an Obana-fleet shipment to a partner carrier (admin): live priced options, then book the chosen one.
+  async getPartnerQuotes(shipmentId: string) {
+    const response = await this.client.post<ApiResponse>(`/routes/partner-quotes/${shipmentId}`);
+    return response.data;
+  }
+
+  async pushToPartner(shipmentId: string, data: { rate_id: string; terminal_shipment_id: string; carrier_name?: string }) {
+    const response = await this.client.post<ApiResponse>(`/shipments/push-to-partner/${shipmentId}`, data);
+    return response.data;
+  }
+
   // Requests endpoints
   async listRequests() {
     const response = await this.client.get<ApiResponse>('/requests');

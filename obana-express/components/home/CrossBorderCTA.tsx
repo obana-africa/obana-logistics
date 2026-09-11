@@ -197,8 +197,8 @@ export default function CrossBorderCTA() {
 						className="text-base lg:text-lg leading-relaxed mb-10"
 						style={{ color: "rgba(255,255,255,0.78)" }}
 					>
-						Manage imports and exports with full visibility, reliable delivery,
-						and simplified processes all in one platform.
+						Ship from Europe to Africa with full visibility — one booking, one price
+						and live tracking from pickup to the final doorstep.
 					</p>
 
 					{/* CTA buttons */}

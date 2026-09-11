@@ -130,8 +130,8 @@ export default function HeroSection() {
               </h1>
 
               <p className="text-base lg:text-lg leading-relaxed mb-8 max-w-md" style={{ color: "#49494D" }}>
-                A B2B-first, tech-enabled logistics network powered by electric vehicles — built for
-                SME wholesale distribution across Africa, and simple enough for anyone sending a parcel.
+                A B2B-first, tech-enabled logistics network powered by electric vehicles built for
+                SME wholesale distribution across Africa.
               </p>
             </div>
 
@@ -180,7 +180,7 @@ export default function HeroSection() {
               </button>
             </form>
             <p className="text-xs mt-2 mb-0" style={{ color: "#9A9DAF" }}>
-              Real-time tracking · Updates by email &amp; WhatsApp
+              Real-time tracking · 24/7 support
             </p>
           </div>
 

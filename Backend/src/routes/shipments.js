@@ -23,6 +23,7 @@ router.get('/track/:shipment_reference', auth.authenticateToken, controller.getS
     router.put('/status/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin','driver','agent']), controller.updateShipmentStatus);
     router.put('/:shipment_id/assign-driver', auth.authenticateToken, auth.verifyRole(['admin', 'agent']), controller.assignDriver);
     router.post('/confirm-external/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin']), controller.confirmExternalShipment);
+    router.post('/push-to-partner/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin']), controller.pushToPartner);
 
 
     router.post('/cancel/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin', 'customer']), controller.cancelShipment);
