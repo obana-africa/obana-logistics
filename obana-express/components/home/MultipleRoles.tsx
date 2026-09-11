@@ -2,8 +2,8 @@
 
 import React, { useRef, useEffect, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
-import Image from "next/image";
-import { CldImage } from "next-cloudinary";
+import { cld } from "@/lib/site";
+/* eslint-disable @next/next/no-img-element -- Cloudinary sizes these images per screen via cld(). */
 
 // ─── Role card data ───────────────────────────────────────────────────────────
 const roles = [
@@ -85,13 +85,12 @@ function RoleCard({
 		>
 			{/* ── Background photo ── */}
 			<div className="absolute inset-0">
-				<CldImage
-					src={role.image}
+				<img
+					src={cld(role.image, 800, "c_fill,ar_3:4,g_auto")}
 					alt={role.imageAlt}
-					fill
-					sizes="(max-width: 768px) 100vw, 33vw"
-					className="object-cover object-center transition-transform duration-700 group-hover:scale-105"
-					priority={role.featured}
+					loading="lazy"
+					decoding="async"
+					className="absolute inset-0 h-full w-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
 				/>
 			</div>
 
@@ -114,7 +113,7 @@ function RoleCard({
 					className="font-bold text-white mb-2"
 					style={{
 						fontSize: role.featured ? "1.75rem" : "1.4rem",
-						fontFamily: "'Sora', 'DM Sans', sans-serif",
+						fontFamily: "var(--font-display)",
 					}}
 				>
 					{role.role}
@@ -146,7 +145,7 @@ function RoleCard({
 // ─── Main section ─────────────────────────────────────────────────────────────
 export default function MultipleRoles() {
 	return (
-		<section className="py-24 relative overflow-hidden" style={{ background: "#ffffff" }}>
+		<section id="roles" className="py-24 relative overflow-hidden" style={{ background: "#ffffff" }}>
 			{/* Subtle background tint */}
 			<div
 				className="absolute inset-0 pointer-events-none"
@@ -164,7 +163,7 @@ export default function MultipleRoles() {
 						style={{
 							color: "#1b3b5f",
 							fontSize: "clamp(2rem, 4vw, 3rem)",
-							fontFamily: "'Sora', 'DM Sans', sans-serif",
+							fontFamily: "var(--font-display)",
 							lineHeight: 1.1,
 						}}
 					>
@@ -174,7 +173,7 @@ export default function MultipleRoles() {
 						className="text-base lg:text-lg max-w-2xl mx-auto leading-relaxed"
 						style={{ color: "#49494D" }}
 					>
-						Whether you're sending, delivering, or managing operations, our
+						Whether you&apos;re sending, delivering, or managing operations, our
 						platform gives you the tools to play your role efficiently.
 					</p>
 				</div>

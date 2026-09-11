@@ -2,8 +2,8 @@
 
 import React, { useRef, useEffect, useState } from "react";
 import { ArrowUpRight, Check, Package, Truck } from "lucide-react";
-import Image from "next/image";
-import { CldImage } from "next-cloudinary";
+import { cld } from "@/lib/site";
+/* eslint-disable @next/next/no-img-element -- Cloudinary sizes these images per screen via cld(). */
 
 // ─── Shipment success card data (dynamic) ────────────────────────────────────
 const shipmentCard = {
@@ -15,7 +15,7 @@ const shipmentCard = {
 		{ label: "Status", value: "Pending" },
 	],
 	actions: [
-		{ label: "Track Shipment", href: "/auth/signup", primary: true },
+		{ label: "Track Shipment", href: "/#track", primary: true },
 		{ label: "Create Another Shipment", href: "/auth/signup", primary: false },
 	],
 };
@@ -75,7 +75,7 @@ function ShipmentCard({ visible }: { visible: boolean }) {
 				style={{
 					color: "#111111",
 					fontSize: "1.3rem",
-					fontFamily: "'Sora', 'DM Sans', sans-serif",
+					fontFamily: "var(--font-display)",
 				}}
 			>
 				{shipmentCard.title}
@@ -143,12 +143,12 @@ export default function CrossBorderCTA() {
 		>
 			{/* ── Background image ── */}
 			<div className="absolute inset-0">
-				<CldImage
-					src="shippingContainer_ol8fs9"
-					alt="Shipping containers background"
-					fill
-					className="object-cover object-center"
-					priority
+				<img
+					src={cld("shippingContainer_ol8fs9", 1600)}
+					alt=""
+					loading="lazy"
+					decoding="async"
+					className="absolute inset-0 h-full w-full object-cover object-center"
 				/>
 				{/* Dark navy overlay — matches Figma: deep #1b3b5f tint at ~75% opacity */}
 				<div
@@ -186,7 +186,7 @@ export default function CrossBorderCTA() {
 						style={{
 							color: "#f59e0b",
 							fontSize: "clamp(2.2rem, 4.5vw, 3.2rem)",
-							fontFamily: "'Sora', 'DM Sans', sans-serif",
+							fontFamily: "var(--font-display)",
 						}}
 					>
 						Cross-Border <br />
@@ -211,7 +211,7 @@ export default function CrossBorderCTA() {
 							Get Started
 						</a>
 						<a
-							href="/create-shipment"
+							href="/auth/signup"
 							className="inline-flex items-center gap-2 px-7 py-3.5 rounded-xl font-semibold text-sm transition-all duration-200 hover:bg-white/10 active:scale-[0.98]"
 							style={{
 								color: "#ffffff",
@@ -227,8 +227,8 @@ export default function CrossBorderCTA() {
 					{/* Trust badges */}
 					<div className="flex items-center gap-6 mt-8">
 						{[
-							{ icon: Truck, label: "Same-day delivery" },
-							{ icon: Check, label: "Fully insured" },
+							{ icon: Truck, label: "Partner carriers worldwide" },
+							{ icon: Check, label: "Live tracking" },
 						].map(({ icon: Icon, label }) => (
 							<div key={label} className="flex items-center gap-2">
 								<div

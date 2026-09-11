@@ -1,26 +1,23 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Inter } from "next/font/google";
+import { Inter, Sora } from "next/font/google";
 import { AuthProvider } from "@/lib/authContext";
 
-// Self-hosted by Next.js: no layout shift, no request to Google at page load.
+// Obana's fonts — Sora for headings, Inter for text. Self-hosted by Next.js: no layout shift, no Google request.
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const bricolage = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-bricolage", weight: ["500", "600", "700"], display: "swap" });
+const sora = Sora({ subsets: ["latin"], variable: "--font-sora", weight: ["400", "600", "700", "800"], display: "swap" });
 
 export const metadata: Metadata = {
 	metadataBase: new URL("https://logistics.obana.africa"),
 	title: {
-		default: "Obana Logistics — Deliveries across Nigeria and Africa",
+		default: "Obana Logistics — EV-powered fulfilment across Africa",
 		template: "%s · Obana Logistics",
 	},
 	description:
-		"Send a package, fulfil your business orders or connect deliveries to your platform with our API. Live tracking and WhatsApp updates on an electric-vehicle fleet.",
-	icons: {
-		icon: "https://res.cloudinary.com/dbewrzeuj/image/upload/q_auto/f_auto/v1778253380/favicon_nxkdui.ico",
-	},
+		"Create shipments, track deliveries in real time and plug logistics into your platform with our API. EV-powered fulfilment for businesses across Africa.",
 	openGraph: {
-		title: "Obana Logistics — Deliveries across Nigeria and Africa",
-		description: "For individuals, businesses and developers: book, track and integrate deliveries in minutes.",
+		title: "Obana Logistics — EV-powered fulfilment across Africa",
+		description: "Create shipments, track deliveries and integrate logistics into your platform.",
 		url: "https://logistics.obana.africa",
 		siteName: "Obana Logistics",
 		type: "website",
@@ -35,7 +32,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
 	return (
-		<html lang="en" className={`${inter.variable} ${bricolage.variable}`}>
+		<html lang="en" className={`${inter.variable} ${sora.variable}`}>
 			<body>
 				<AuthProvider>{children}</AuthProvider>
 			</body>
