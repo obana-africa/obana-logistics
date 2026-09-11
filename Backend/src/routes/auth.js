@@ -259,6 +259,7 @@ const authenticateToken = async (req, res, next) => {
                 if (userAttribute && userAttribute.user) {
                     const user = await getUser(null, null, true, req, res, userAttribute.user.id);
                     req.user = user;
+                    req.authMethod = 'api_key';
                     return next();
                 }
             }
@@ -277,6 +278,7 @@ const authenticateToken = async (req, res, next) => {
         )
       }
       req.user = user
+      req.authMethod = 'jwt'
       next()
     })
     return

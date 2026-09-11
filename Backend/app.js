@@ -11,6 +11,8 @@ const locations = require("./src/routes/locations")
 
 const PORT = process.env.PORT;
 const app = express();
+// Render sits behind a proxy; needed for the real client IP (rate limits).
+app.set("trust proxy", 1);
 
 app.use(express.json());
 const http = require("http");
@@ -25,7 +27,7 @@ const server = http.createServer(app);
 const session = require("express-session");
 const passport = require("./src/config/passport");
 app.use(
-	session({ secret: "obana", resave: false, saveUninitialized: true })
+	session({ secret: process.env.SESSION_SECRET || "obana", resave: false, saveUninitialized: true })
 );
 app.use(passport.initialize());
 app.use(passport.session());
