@@ -27,7 +27,7 @@ const faqs = [
 		id: 4,
 		question: "How secure is the platform?",
 		answer:
-			"Security is a top priority. All transactions are encrypted, payments are processed through verified gateways, and every shipment is tracked end-to-end. Your data and packages are always protected.",
+			"Security is a top priority. All connections are encrypted, accounts and integrations are protected by secure sign-in and API keys, and every shipment is tracked end-to-end.",
 	},
 	{
 		id: 5,
@@ -45,7 +45,19 @@ const faqs = [
 		id: 7,
 		question: "How is pricing calculated?",
 		answer:
-			"Pricing is based on distance, package weight/dimensions, and your selected service level (standard, express, or same-day). You'll see a full quote before confirming any shipment — no hidden fees.",
+			"Pricing is based on distance, package weight/dimensions, and your selected service level (Economy, Standard or Express). You'll see a full quote before confirming any shipment — no hidden fees.",
+	},
+	{
+		id: 8,
+		question: "Do you deliver beyond your own fleet?",
+		answer:
+			"Yes. Alongside our electric fleet, we work with partner carriers for longer interstate and international routes. You book and pay once with Obana, track everything in one place, and we manage the handover.",
+	},
+	{
+		id: 9,
+		question: "How do I connect Obana to my store or platform?",
+		answer:
+			"Register your business to get an API key, then create and track shipments from your own system with simple API requests. Our developer docs include ready-to-use examples in cURL, Node.js and Python.",
 	},
 ];
 
@@ -116,7 +128,7 @@ function FAQItem({
 					style={{
 						color: "#1b3b5f",
 						fontSize: "clamp(1rem, 1.8vw, 1.1rem)",
-						fontFamily: "'Sora', 'DM Sans', sans-serif",
+						fontFamily: "var(--font-display)",
 					}}
 				>
 					{faq.question}
@@ -202,7 +214,7 @@ export default function FAQ() {
 						style={{
 							color: "#1b3b5f",
 							fontSize: "clamp(2rem, 4.5vw, 3.2rem)",
-							fontFamily: "'Sora', 'DM Sans', sans-serif",
+							fontFamily: "var(--font-display)",
 							lineHeight: 1.1,
 						}}
 					>
@@ -212,10 +224,10 @@ export default function FAQ() {
 						className="text-base lg:text-lg leading-relaxed"
 						style={{ color: "#49494D" }}
 					>
-						Everything you need to know about Obana Logistics. Can't find your
+						Everything you need to know about Obana Logistics. Can&apos;t find your
 						answer?{" "}
 						<a
-							href="/contact"
+							href="mailto:obana.africa@gmail.com"
 							className="font-semibold underline underline-offset-2 hover:opacity-70 transition-opacity"
 							style={{ color: "#1b3b5f" }}
 						>
@@ -259,7 +271,7 @@ export default function FAQ() {
 						Our support team is available 24/7 to help you.
 					</p>
 					<a
-						href="/contact"
+						href="mailto:obana.africa@gmail.com"
 						className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-200 hover:opacity-90 active:scale-[0.97]"
 						style={{ background: "#ffffff", color: "#1b3b5f" }}
 					>

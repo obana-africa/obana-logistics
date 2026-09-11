@@ -10,7 +10,7 @@ const stepsData = [
     title: "Create a shipment",
     shortDescription: "Tell us what you're shipping, where it's going, and when it needs to arrive.",
     expandedDescription:
-      "Tell us what you're shipping, where it's going, and when it needs to arrive. Enter pickup and drop-off locations, package dimensions, weight, and any special handling instructions. Choose from standard, express, or same-day delivery options.",
+      "Tell us what you're shipping, where it's going, and when it needs to arrive. Enter pickup and drop-off locations, package dimensions, weight, and any special handling instructions. Choose Economy, Standard or Express.",
     ctaLabel: "Get Started",
     ctaHref: "/auth/signup",
   },
@@ -19,9 +19,9 @@ const stepsData = [
     number: "02",
     icon: UserCircle2,
     title: "Get matched with a driver",
-    shortDescription: "Our system connects you with the right driver for the job.",
+    shortDescription: "Our own driver or a trusted partner carrier — whichever fits the route.",
     expandedDescription:
-      "Our intelligent matching algorithm instantly pairs your shipment with the best available driver based on location, vehicle type, rating, and real-time availability. You'll receive driver details and an ETA within seconds.",
+      "We assign the right option for your route: an Obana driver for local runs, or a trusted partner carrier for interstate and international routes. You'll see who is handling your shipment and when to expect it.",
 	  ctaLabel: "Get Started",
 	  ctaHref: "/auth/signup",
   },
@@ -32,7 +32,7 @@ const stepsData = [
     title: "Track delivery in real time",
     shortDescription: "Follow your shipment live, from pickup to drop-off.",
     expandedDescription:
-      "Get live GPS tracking, automated status notifications, and estimated arrival times. Share tracking links with your customers. Our heatmap shows exactly where your goods are at every moment.",
+      "Follow every status change from pickup to drop-off, share the tracking link with your customer, and get email and WhatsApp updates along the way.",
 	  ctaLabel: "Get Started",
 	  ctaHref: "/auth/signup",
   },
@@ -41,9 +41,9 @@ const stepsData = [
     number: "04",
     icon: CheckCheck,
     title: "Confirm completion",
-    shortDescription: "Review and confirm — then pay securely.",
+    shortDescription: "Delivery confirmed and saved to your dashboard.",
     expandedDescription:
-      "Review proof of delivery, rate your driver, and release payment instantly via our secure escrow system. Digital receipts and analytics are saved to your dashboard for all future shipments.",
+      "Once the package is delivered, the shipment is marked complete and kept in your dashboard — so you always have a full history of every delivery.",
 	  ctaLabel: "Get Started",
 	  ctaHref: "/auth/signup",
   },
@@ -119,7 +119,7 @@ function UniversalCard({
           fontSize: "6rem",
           lineHeight: 1,
           color: isExpanded ? "rgba(255,255,255,0.06)" : "rgba(27,59,95,0.04)",
-          fontFamily: "'Sora', 'DM Sans', sans-serif",
+          fontFamily: "var(--font-display)",
           transition: "color 0.3s ease",
         }}
       >
@@ -159,7 +159,7 @@ function UniversalCard({
           style={{
             color: "#1b3b5f",
             fontSize: "1rem",
-            fontFamily: "'Sora', 'DM Sans', sans-serif",
+            fontFamily: "var(--font-display)",
             ...(isExpanded && { color: "#f59e0b" }),
           }}
         >
@@ -195,7 +195,7 @@ export default function HowItWorks() {
   const { ref: headingRef, visible: headingVisible } = useVisible(0.2);
 
   return (
-    <section className="py-24 pt-8 lg:pt-24 pb-24 relative overflow-hidden mt-0" style={{ background: "#ffffff" }}>
+    <section id="services" className="py-24 pt-8 lg:pt-24 pb-24 relative overflow-hidden mt-0" style={{ background: "#ffffff" }}>
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
@@ -220,7 +220,7 @@ export default function HowItWorks() {
             style={{
               color: "#1b3b5f",
               fontSize: "clamp(2.2rem, 5vw, 3.5rem)",
-              fontFamily: "'Sora', 'DM Sans', sans-serif",
+              fontFamily: "var(--font-display)",
               lineHeight: 1.08,
             }}
           >
@@ -230,7 +230,7 @@ export default function HowItWorks() {
             className="text-base lg:text-lg max-w-2xl mx-auto leading-relaxed"
             style={{ color: "#49494D" }}
           >
-            From creation to completion — post your shipment, get matched instantly, and track every mile until it's delivered.
+            From creation to completion — post your shipment, get matched instantly, and track every mile until it&apos;s delivered.
           </p>
         </div>
 

@@ -2,8 +2,8 @@
 
 import React, { useRef, useEffect, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
-import Image from "next/image";
-import { CldImage } from "next-cloudinary";
+import { cld } from "@/lib/site";
+/* eslint-disable @next/next/no-img-element -- Cloudinary sizes these images per screen via cld(). */
 
 // ─── Feature card data ────────────────────────────────────────────────────────
 const features = [
@@ -22,7 +22,7 @@ const features = [
 		id: 2,
 		title: "Know Where Every Package Is",
 		description: "Track shipments live with accurate updates, ensuring transparency from pickup to delivery.",
-		cta: { label: "Get Started", href: "/auth/signup" },
+		cta: { label: "Track a Shipment", href: "/#track" },
 		image: "shipmentPhone_pkt5ly",
 		imageAlt: "Shipment tracking screen on mobile",
 		cardBg: "#f5f9ff",
@@ -33,7 +33,7 @@ const features = [
 		id: 3,
 		title: "Plug Logistics Into Your Platform",
 		description: "Integrate our API into your platform to automate shipping, tracking, and order fulfillment—no manual work needed.",
-		cta: { label: "Get Started", href: "/auth/signup" },
+		cta: { label: "Get API Key", href: "/onboarding/business" },
 		image: "developerPhone_z88iz9",
 		imageAlt: "Developer API settings screen on mobile",
 		cardBg: "#f5f9ff",
@@ -115,11 +115,13 @@ function FeatureCard({
 						paddingTop: isTop ? "20px" : "0px",
 					}}
 				>
-					<CldImage
-						src={feature.image}
+					<img
+						src={cld(feature.image, 640)}
 						alt={feature.imageAlt}
 						width={300}
 						height={600}
+						loading="lazy"
+						decoding="async"
 						className="group-hover:scale-[1.02] transition-transform duration-500"
 						style={{
 							width: "70%",
@@ -144,11 +146,13 @@ function FeatureCard({
 							filter: "drop-shadow(0 8px 24px rgba(27,59,95,0.25))",
 						}}
 					>
-						<CldImage
-							src={feature.overlay}
+						<img
+							src={cld(feature.overlay, 800)}
 							alt="Obana web interface"
 							width={400}
 							height={320}
+							loading="lazy"
+							decoding="async"
 							className="w-full h-auto rounded-2xl"
 						/>
 					</div>
@@ -163,7 +167,7 @@ function FeatureCard({
 					style={{
 						color: "#2e465f",
 						fontSize: "clamp(1.2rem, 2vw, 1.4rem)",
-						fontFamily: "'Sora', 'DM Sans', sans-serif",
+						fontFamily: "var(--font-display)",
 					}}
 				>
 					{feature.title}
@@ -191,6 +195,7 @@ function FeatureCard({
 export default function QuickActions() {
 	return (
 		<section
+			id="features"
 			className="pt-10 pb-24 relative overflow-hidden"
 			style={{ background: "#ffffff" }}
 		>
@@ -218,7 +223,7 @@ export default function QuickActions() {
 						style={{
 							color: "#1b3b5f",
 							fontSize: "clamp(2rem, 4vw, 3rem)",
-							fontFamily: "'Sora', 'DM Sans', sans-serif",
+							fontFamily: "var(--font-display)",
 							lineHeight: 1.1,
 						}}
 					>

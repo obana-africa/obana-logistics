@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useRef, useEffect, useState } from "react";
-import Image from "next/image";
-import { CldImage } from "next-cloudinary";
+import { cld } from "@/lib/site";
+/* eslint-disable @next/next/no-img-element -- Cloudinary sizes these images per screen via cld(). */
 
 // ─── Partner data ─────────────────────────────────────────────────────────────
 const partners = [
@@ -80,13 +80,14 @@ function LogoCard({ partner }: { partner: (typeof partners)[0] }) {
 			}}
 		>
 			<div className="relative flex items-center justify-center w-full h-full">
-				<CldImage
-					src={partner.logo}
+				<img
+					src={cld(partner.logo, 320)}
 					alt={partner.name}
 					width={partner.width}
 					height={partner.height}
+					loading="lazy"
+					decoding="async"
 					className="object-contain max-w-full max-h-full"
-					style={{ filter: "grayscale(0%)" }}
 				/>
 			</div>
 		</div>
@@ -172,7 +173,7 @@ export default function Partners() {
 							style={{
 								color: "#1b3b5f",
 								fontSize: "clamp(2rem, 4.5vw, 3rem)",
-								fontFamily: "'Sora', 'DM Sans', sans-serif",
+								fontFamily: "var(--font-display)",
 								lineHeight: 1.1,
 							}}
 						>
@@ -182,7 +183,8 @@ export default function Partners() {
 							className="mt-4 text-base lg:text-lg max-w-xl mx-auto leading-relaxed"
 							style={{ color: "#49494D" }}
 						>
-							Trusted by leading logistics companies across Africa and beyond.
+							One booking with Obana: our electric fleet handles local runs, and trusted partner carriers take
+							interstate and international routes — you still pay once and track everything in one place.
 						</p>
 					</div>
 				</div>
