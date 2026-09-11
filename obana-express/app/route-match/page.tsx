@@ -80,7 +80,8 @@ export default function QuotePage() {
 		} catch (err) {
 			const code = axios.isAxiosError(err) ? err.response?.status : undefined;
 			const message = axios.isAxiosError(err) ? (err.response?.data as { message?: string } | undefined)?.message : undefined;
-			if (code === 404) next = { status: "empty", body };
+			// Only the API's own JSON 404 means "no routes"; an HTML 404 means the endpoint itself is missing.
+			if (code === 404 && message) next = { status: "empty", body };
 			else if (code === 429) next = { status: "limited", body };
 			else if (code === 400) next = { status: "error", body, message: message || "Some details don't look right. Check them and try again." };
 			else next = { status: "error", body, message: NETWORK_ERROR };
