@@ -972,6 +972,9 @@ const shipmentController = {
                     data: {
                         shipment_id: shipment.id,
                         shipment_reference: shipment.shipment_reference,
+                        order_id: shipment.order_reference,
+                        shipping_fee: Number(shipment.shipping_fee),
+                        currency: shipment.currency,
                         tracking_url: buildTrackingUrl(shipment.shipment_reference),
                         carrier: shipment.carrier_name,
                         status: shipment.status,
