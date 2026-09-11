@@ -15,7 +15,7 @@
 	--color-canvas: #f7f8fb;
 
 	--font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-	--font-display: var(--font-sora), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+	--font-display: var(--font-bricolage), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
 	--shadow-card: 0 1px 2px rgb(16 38 62 / 0.04), 0 8px 24px -12px rgb(16 38 62 / 0.14);
 	--shadow-lift: 0 24px 60px -20px rgb(16 38 62 / 0.35);
@@ -53,6 +53,16 @@ h6 {
 /* Anchor jumps land below the sticky header. */
 [id] {
 	scroll-margin-top: 5.5rem;
+}
+
+/* Indeterminate loading bar (dashboard boot). */
+@keyframes slide {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(300%);
+	}
 }
 
 @media (prefers-reduced-motion: reduce) {

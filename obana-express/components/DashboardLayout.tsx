@@ -1,172 +1,265 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useAuth } from "@/lib/authContext";
-import { useRouter } from "next/navigation";
-import { Menu, X, LogOut, Home, Settings, Users } from "lucide-react";
-import Link from "next/link";
-import { useAuthStore } from "@/lib/authStore";
+import React, { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import {
+	LayoutDashboard,
+	LogOut,
+	Menu,
+	Package,
+	PackagePlus,
+	Route,
+	ShieldCheck,
+	Truck,
+	UserRound,
+	Users,
+	X,
+	type LucideIcon,
+} from "lucide-react";
+import { useAuth } from "@/lib/authContext";
+import { dashboardFor } from "@/lib/site";
+
+type Role = "customer" | "driver" | "admin" | "agent";
 
 interface DashboardLayoutProps {
 	children: React.ReactNode;
-	role: "customer" | "driver" | "admin" | "agent";
+	role: Role;
 }
 
-const navigationByRole = {
-  customer: [
-    { name: 'Dashboard', href: '/dashboard/customer', icon: Home },
-    { name: 'Create Shipment', href: '/dashboard/customer/shipments/new', icon: Home },
-    { name: 'My Shipments', href: '/dashboard/customer/shipments', icon: Home },
-    // { name: 'Tracking', href: '/dashboard/customer/tracking', icon: Home },
-    { name: 'settings', href: '/dashboard/customer/profile', icon: Settings },
-  ],
-  driver: [
-    { name: 'Dashboard', href: '/dashboard/driver', icon: Home },
-    // { name: 'Available Jobs', href: '/dashboard/driver/jobs', icon: Home },
-    // { name: 'My Deliveries', href: '/dashboard/driver/deliveries', icon: Home },
-    // { name: 'Earnings', href: '/dashboard/driver/earnings', icon: Home },
-    { name: 'Profile', href: '/dashboard/driver/profile', icon: Settings },
-  ],
-  admin: [
-    { name: 'Dashboard', href: '/dashboard/admin', icon: Home },
-    { name: 'Route Templates', href: '/dashboard/admin/routes', icon: Home },
-    { name: 'Users', href: '/dashboard/admin/users', icon: Users },
-    { name: 'Drivers', href: '/dashboard/admin/drivers', icon: Home },
-    { name: 'Shipments', href: '/dashboard/admin/shipments', icon: Home },
-    { name: 'Agents', href: '/dashboard/admin/agents', icon: Users },
-  ],
-  agent: [
-    { name: 'Dashboard', href: '/dashboard/agent', icon: Home },
-    { name: 'Shipments', href: '/dashboard/agent/shipments', icon: Home },
-    { name: 'Profile', href: '/dashboard/agent/profile', icon: Settings },
-  ],
+type NavItem = { name: string; href: string; icon: LucideIcon };
+
+// Only pages that exist. The first four show in the phone tab bar.
+const NAV: Record<Role, NavItem[]> = {
+	customer: [
+		{ name: "Overview", href: "/dashboard/customer", icon: LayoutDashboard },
+		{ name: "New shipment", href: "/dashboard/customer/shipments/new", icon: PackagePlus },
+		{ name: "Shipments", href: "/dashboard/customer/shipments", icon: Package },
+		{ name: "Account", href: "/dashboard/customer/profile", icon: UserRound },
+	],
+	driver: [
+		{ name: "Deliveries", href: "/dashboard/driver", icon: Truck },
+		{ name: "Account", href: "/dashboard/driver/profile", icon: UserRound },
+	],
+	agent: [
+		{ name: "Overview", href: "/dashboard/agent", icon: LayoutDashboard },
+		{ name: "Shipments", href: "/dashboard/agent/shipments", icon: Package },
+		{ name: "Account", href: "/dashboard/agent/profile", icon: UserRound },
+	],
+	admin: [
+		{ name: "Overview", href: "/dashboard/admin", icon: LayoutDashboard },
+		{ name: "Shipments", href: "/dashboard/admin/shipments", icon: Package },
+		{ name: "Routes & pricing", href: "/dashboard/admin/routes", icon: Route },
+		{ name: "Drivers", href: "/dashboard/admin/drivers", icon: Truck },
+		{ name: "Agents", href: "/dashboard/admin/agents", icon: ShieldCheck },
+		{ name: "Users", href: "/dashboard/admin/users", icon: Users },
+	],
 };
 
-export default function DashboardLayout({
-	children,
-	role,
-}: DashboardLayoutProps) {
-	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const { user, isAuthenticated, isLoading, logout } = useAuth();
-	const person = user
-	const router = useRouter();
+const ROLE_LABEL: Record<Role, string> = { customer: "Customer", driver: "Driver", agent: "Agent", admin: "Admin" };
 
-	// redirect unauthenticated users away from dashboards
+/** The nav item for the current page: the longest href that prefixes the path. */
+function activeHref(items: NavItem[], pathname: string) {
+	return items
+		.filter((i) => pathname === i.href || pathname.startsWith(i.href + "/"))
+		.sort((a, b) => b.href.length - a.href.length)[0]?.href;
+}
+
+function initials(first?: string, last?: string, email?: string) {
+	const s = `${first?.[0] ?? ""}${last?.[0] ?? ""}`.trim();
+	return (s || email?.[0] || "?").toUpperCase();
+}
+
+export default function DashboardLayout({ children, role }: DashboardLayoutProps) {
+	const { user, isAuthenticated, isLoading, logout } = useAuth();
+	const router = useRouter();
+	const pathname = usePathname() ?? "";
+	const [menuOpen, setMenuOpen] = useState(false);
+
+	const userRole = (user?.account_type ?? (user as { role?: string } | null)?.role) as Role | undefined;
+	const wrongRole = !!userRole && userRole !== role && userRole !== "admin";
+
 	useEffect(() => {
-		if (!isLoading && !isAuthenticated) {
-			router.replace('/auth/login');
-		}
-	}, [isLoading, isAuthenticated, router]);
+		if (isLoading) return;
+		if (!isAuthenticated) router.replace("/auth/login");
+		else if (wrongRole) router.replace(dashboardFor(user));
+	}, [isLoading, isAuthenticated, wrongRole, user, router]);
+
+	// Close the drawer on Escape and lock page scroll while it is open.
+	useEffect(() => {
+		if (!menuOpen) return;
+		const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+		document.addEventListener("keydown", onKey);
+		const prev = document.body.style.overflow;
+		document.body.style.overflow = "hidden";
+		return () => {
+			document.removeEventListener("keydown", onKey);
+			document.body.style.overflow = prev;
+		};
+	}, [menuOpen]);
+
+	const items = NAV[role];
+	const current = activeHref(items, pathname);
+	const first = user?.first_name ?? user?.attributes?.first_name;
+	const last = user?.last_name ?? user?.attributes?.last_name;
+	const fullName = [first, last].filter(Boolean).join(" ") || user?.email || "Your account";
 
 	const handleLogout = async () => {
+		setMenuOpen(false);
 		await logout();
-		router.push("/");
+		router.replace("/");
 	};
 
-	const navItems = navigationByRole[role];
+	if (isLoading || !isAuthenticated || wrongRole) {
+		return (
+			<div className="flex min-h-dvh items-center justify-center bg-slate-50" role="status" aria-live="polite">
+				<div className="flex flex-col items-center gap-4">
+					<Image src="/logo-blue.png" alt="Obana Logistics" width={120} height={51} className="h-9 w-auto" priority />
+					<span className="h-1 w-32 overflow-hidden rounded-full bg-slate-200">
+						<span className="block h-full w-1/3 animate-[slide_1s_ease-in-out_infinite] rounded-full bg-[#1B3B5F]" />
+					</span>
+					<span className="sr-only">Loading your dashboard…</span>
+				</div>
+			</div>
+		);
+	}
+
+	const accountCard = (
+		<div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
+			<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1B3B5F] text-sm font-bold text-white">{initials(first, last, user?.email)}</span>
+			<div className="min-w-0 flex-1">
+				<p className="truncate text-sm font-semibold text-slate-900">{fullName}</p>
+				<p className="truncate text-xs text-slate-500">{ROLE_LABEL[userRole ?? role]} account</p>
+			</div>
+		</div>
+	);
+
+	const navList = (onNavigate?: () => void) => (
+		<ul className="space-y-1">
+			{items.map(({ name, href, icon: Icon }) => {
+				const active = href === current;
+				return (
+					<li key={href}>
+						<Link
+							href={href}
+							onClick={onNavigate}
+							aria-current={active ? "page" : undefined}
+							className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition ${
+								active ? "bg-[#1B3B5F] text-white" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+							}`}
+						>
+							<Icon className="h-5 w-5 shrink-0" aria-hidden />
+							{name}
+						</Link>
+					</li>
+				);
+			})}
+		</ul>
+	);
+
+	const tabs = items.slice(0, 4);
 
 	return (
-		<div className="flex h-screen bg-gray-100">
-			{/* Sidebar */}
-			<aside
-				className={`${
-					sidebarOpen ? "translate-x-0" : "-translate-x-full"
-				} fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 text-white transition-transform duration-300 lg:static lg:translate-x-0`}
-			>
-				<div className="flex items-center justify-between p-6 border-b border-gray-800">
-					<Link href="/" className="">
-						<Image
-							src="/white-logo.svg"
-							alt="Obana Logistics Logo"
-							width={120}
-							height={100}
-							className="ml-2"
-						/>
-					</Link>
-					<button
-						onClick={() => setSidebarOpen(false)}
-						className="lg:hidden text-gray-400 hover:text-white"
-					>
-						<X className="w-6 h-6" />
-					</button>
-				</div>
-
-				<nav className="mt-8 space-y-2 px-3">
-					{navItems.map((item) => {
-						const Icon = item.icon;
-						return (
-							<Link
-								key={item.href}
-								href={item.href}
-								className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
-								onClick={() => setSidebarOpen(false)}
-							>
-								<Icon className="w-5 h-5" />
-								<span>{item.name}</span>
-							</Link>
-						);
-					})}
+		<div className="min-h-dvh bg-slate-50">
+			{/* Desktop sidebar */}
+			<aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white lg:flex">
+				<Link href="/" className="flex h-16 items-center px-6" aria-label="Obana Logistics home">
+					<Image src="/logo-blue.png" alt="Obana Logistics" width={120} height={51} className="h-9 w-auto" priority />
+				</Link>
+				<nav aria-label="Dashboard" className="flex-1 overflow-y-auto px-3 py-4">
+					{navList()}
 				</nav>
-
-				<div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-800 space-y-2">
-					<div className="px-4 py-2 bg-gray-800 rounded-lg">
-						<p className="text-xs text-gray-400">Logged in as</p>
-						<p className="text-sm font-semibold text-white truncate">
-							{person?.email || person?.attributes?.first_name}
-						</p>
-					</div>
+				<div className="space-y-2 border-t border-slate-100 p-3">
+					{accountCard}
 					<button
+						type="button"
 						onClick={handleLogout}
-						className="w-full flex items-center gap-2 px-4 py-2 text-red-400 hover:bg-gray-800 rounded-lg transition-colors"
+						className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-rose-50 hover:text-rose-700"
 					>
-						<LogOut className="w-5 h-5" />
-						<span>Logout</span>
+						<LogOut className="h-5 w-5" aria-hidden /> Sign out
 					</button>
 				</div>
 			</aside>
 
-			{/* Main Content */}
-			<div className="flex-1 flex flex-col overflow-hidden">
-				{/* Header */}
-				<header className="bg-white shadow-sm border-b border-gray-200">
-					<div className="flex items-center justify-between p-6">
+			{/* Phone top bar */}
+			<header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur lg:hidden">
+				<Link href="/" aria-label="Obana Logistics home">
+					<Image src="/logo-blue.png" alt="Obana Logistics" width={100} height={43} className="h-8 w-auto" priority />
+				</Link>
+				<button
+					type="button"
+					onClick={() => setMenuOpen(true)}
+					aria-label="Open account menu"
+					className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1B3B5F] text-xs font-bold text-white"
+				>
+					{initials(first, last, user?.email)}
+				</button>
+			</header>
+
+			<main className="px-4 pb-28 pt-5 sm:px-6 lg:ml-64 lg:px-10 lg:pb-12 lg:pt-8">
+				<div className="mx-auto max-w-6xl">{children}</div>
+			</main>
+
+			{/* Phone tab bar */}
+			<nav
+				aria-label="Dashboard"
+				className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+			>
+				<ul className="flex">
+					{tabs.map(({ name, href, icon: Icon }) => {
+						const active = href === current;
+						return (
+							<li key={href} className="flex-1">
+								<Link
+									href={href}
+									aria-current={active ? "page" : undefined}
+									className={`flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-semibold ${active ? "text-[#1B3B5F]" : "text-slate-500"}`}
+								>
+									<Icon className={`h-5 w-5 ${active ? "stroke-[2.4]" : ""}`} aria-hidden />
+									<span className="max-w-full truncate px-1">{name}</span>
+								</Link>
+							</li>
+						);
+					})}
+					<li className="flex-1">
 						<button
-							onClick={() => setSidebarOpen(true)}
-							className="lg:hidden text-gray-600 hover:text-gray-900"
+							type="button"
+							onClick={() => setMenuOpen(true)}
+							aria-expanded={menuOpen}
+							className="flex h-16 w-full flex-col items-center justify-center gap-1 text-[11px] font-semibold text-slate-500"
 						>
-							<Menu className="w-6 h-6" />
+							<Menu className="h-5 w-5" aria-hidden />
+							Menu
 						</button>
-						<h2 className="text-xl font-semibold text-gray-900 hidden lg:block">
-							{/* {navigationByRole[role].find(item => item.href === typeof window !== 'undefined' ? window.location.pathname : '')?.name || 'Dashboard'} */}
-							{navItems.find(
-								(item) =>
-									item.href ===
-									(typeof window !== "undefined"
-										? window.location.pathname
-										: "")
-							)?.name || "Dashboard"}
-						</h2>
-						<div className="flex items-center gap-4">
-							<span className="text-sm text-gray-600">
-								{user?.first_name} {user?.last_name}
-							</span>
+					</li>
+				</ul>
+			</nav>
+
+			{/* Phone drawer */}
+			{menuOpen && (
+				<div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+					<button type="button" aria-label="Close menu" className="absolute inset-0 bg-slate-900/40" onClick={() => setMenuOpen(false)} />
+					<div className="absolute inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl">
+						<div className="mb-4 flex items-center justify-between">
+							<p className="text-base font-semibold text-slate-900">Menu</p>
+							<button type="button" onClick={() => setMenuOpen(false)} aria-label="Close menu" className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100">
+								<X className="h-5 w-5" />
+							</button>
 						</div>
+						{accountCard}
+						<nav aria-label="All pages" className="mt-4">
+							{navList(() => setMenuOpen(false))}
+						</nav>
+						<button
+							type="button"
+							onClick={handleLogout}
+							className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+						>
+							<LogOut className="h-5 w-5" aria-hidden /> Sign out
+						</button>
 					</div>
-				</header>
-
-				{/* Content */}
-				<main className="flex-1 overflow-auto">
-					<div className="p-6">{children}</div>
-				</main>
-			</div>
-
-			{/* Mobile overlay */}
-			{sidebarOpen && (
-				<div
-					className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-					onClick={() => setSidebarOpen(false)}
-				/>
+				</div>
 			)}
 		</div>
 	);

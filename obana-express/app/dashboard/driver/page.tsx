@@ -1,251 +1,164 @@
 "use client";
-import { Card, Button, Badge, Loader, Select, Input } from '@/components/ui';
-import { apiClient } from '@/lib/api';
-import { TrendingUp, Package, MapPin, Clock, X } from 'lucide-react';
-import { useAuth } from '@/lib/authContext';
-import { useEffect, useState } from 'react';
-import DashboardLayout from '@/components/DashboardLayout';
+
+import React, { useState } from "react";
+import { CheckCircle2, MapPin, Package, Truck, X } from "lucide-react";
+import DashboardLayout from "@/components/DashboardLayout";
+import { EmptyState, ErrorState, ListSkeleton, PageHeader, Panel, StatCard, StatusBadge } from "@/components/dashboard/kit";
+import { Alert, Button, Input, Select, Textarea } from "@/components/ui";
+import { apiClient } from "@/lib/api";
+import { useAuthStore } from "@/lib/authStore";
+import { CLOSED_STATUSES, STATUS_OPTIONS, routeLabel, type ShipmentStatus } from "@/lib/shipments";
+import { errorMessage, useRemote } from "@/lib/useRemote";
+
+type Place = { city?: string; state?: string; country?: string; line1?: string; phone?: string };
 interface Shipment {
-  id: number;
-  shipment_reference: string;
-  pickup_address: { city: string; state: string };
-  delivery_address: { city: string; state: string; line1: string };
-  total_weight: string;
-  status: string;
-  metadata: any;
+	id: number;
+	shipment_reference: string;
+	pickup_address?: Place;
+	delivery_address?: Place;
+	total_weight?: string | number;
+	status: ShipmentStatus;
+	metadata?: { carrier_details?: { delivery_eta?: string } };
 }
 
+// A driver moves a shipment forward; creating/cancelling is for customers and admins.
+const DRIVER_STATUSES = STATUS_OPTIONS.filter((o) => !["pending", "cancelled"].includes(o.value));
+
 export default function DriverDashboard() {
-  const [shipments, setShipments] = useState<Shipment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ active: 0, completed: 0, earnings: 0 });
-  const { user } = useAuth();
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
-  const [updateForm, setUpdateForm] = useState({ status: '', location: '', notes: '' });
+	const user = useAuthStore((s) => s.user);
+	const userId = user?.id ? String(user.id) : null;
+	const { data, loading, error, retry } = useRemote<Shipment[]>(
+		userId && `driver-shipments:${userId}`,
+		async () => (await apiClient.listShipments(Number(userId), { role: "driver", limit: 50 })).data?.shipments ?? [],
+	);
 
-  useEffect(() => {
-    if (user?.id) {
-      loadShipments();
-    }
-  }, [user]);
+	const [selected, setSelected] = useState<Shipment | null>(null);
+	const [form, setForm] = useState({ status: "", location: "", notes: "" });
+	const [saving, setSaving] = useState(false);
+	const [saveError, setSaveError] = useState("");
+	const [notice, setNotice] = useState("");
 
-  const loadShipments = async () => {
-    try {
-      if (!user?.id) return;
-      
-      const response = await apiClient.listShipments(Number(user.id), { role: 'driver', limit: 10 });
-      const data = response.data?.shipments || [];
-      setShipments(data);
-      
-      // Calculate stats      
-      const active = data.filter((s: any) => s.status !== 'delivered').length || 0;
-      const completed = data.filter((s: any) => s.status === 'delivered').length || 0;
-      
-      setStats({
-        active,
-        completed,
-        earnings: completed * 5000, 
-      });
-    } catch (err) {
-      console.error('Error loading shipments:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+	const shipments = data ?? [];
+	const active = shipments.filter((s) => !CLOSED_STATUSES.includes(s.status));
+	const done = shipments.filter((s) => s.status === "delivered");
+	const firstName = user?.first_name ?? user?.attributes?.first_name;
 
-  const handleUpdateClick = (shipment: Shipment) => {
-    setSelectedShipment(shipment);
-    setUpdateForm({ 
-      status: shipment.status, 
-      location: '', 
-      notes: '' 
-    });
-    setShowUpdateModal(true);
-  };
+	const open = (s: Shipment) => {
+		setSelected(s);
+		setSaveError("");
+		setForm({ status: s.status === "pending" ? "picked_up" : s.status, location: "", notes: "" });
+	};
 
-  const handleUpdateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedShipment) return;
-    
-    try {
-      setLoading(true);
-      await apiClient.updateShipmentStatus(selectedShipment.id.toString(), updateForm.status, updateForm.notes, updateForm.location);
-      setShowUpdateModal(false);
-      loadShipments();
-    } catch (err) {
-      console.error(err);
-      setLoading(false);
-    }
-  };
+	const deliveryPlace = (s: Shipment) => [s.delivery_address?.city, s.delivery_address?.state].filter(Boolean).join(", ");
 
-  const statCards = [
-    { label: 'Active Deliveries', value: stats.active, icon: Package, color: 'bg-blue-100 text-blue-600' },
-    { label: 'Completed', value: stats.completed, icon: MapPin, color: 'bg-green-100 text-green-600' },
-    { label: 'Total Earnings', value: `₦${stats.earnings.toLocaleString()}`, icon: TrendingUp, color: 'bg-purple-100 text-purple-600' },
-  ];
+	const submit = async (e: React.FormEvent) => {
+		e.preventDefault();
+		if (!selected) return;
+		setSaving(true);
+		setSaveError("");
+		try {
+			const location = form.status === "delivered" ? form.location || deliveryPlace(selected) : form.location;
+			await apiClient.updateShipmentStatus(String(selected.id), form.status, form.notes || undefined, location);
+			setNotice(`${selected.shipment_reference} updated.`);
+			setSelected(null);
+			retry();
+		} catch (err) {
+			setSaveError(errorMessage(err, "We couldn't update this shipment. Please try again."));
+		} finally {
+			setSaving(false);
+		}
+	};
 
-  return (
-    <DashboardLayout role="driver">
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Welcome Driver!</h1>
-          <p className="text-gray-600 mt-2">Manage your deliveries and earnings</p>
-        </div>
+	return (
+		<DashboardLayout role="driver">
+			<div className="space-y-6">
+				<PageHeader title={firstName ? `Hi ${firstName}` : "Your deliveries"} description="Update each delivery as you go — customers see it straight away." />
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {statCards.map((stat) => {
-            const Icon = stat.icon;
-            return (
-              <Card key={stat.label}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-gray-600 text-sm font-medium">{stat.label}</p>
-                    <p className="text-2xl font-bold text-gray-900 mt-2">{stat.value}</p>
-                  </div>
-                  <div className={`p-3 rounded-lg ${stat.color}`}>
-                    <Icon className="w-6 h-6" />
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+				{notice && (
+					<Alert type="success" role="status">
+						{notice}
+					</Alert>
+				)}
 
-        {/* Active Deliveries */}
-        <Card title="Your Deliveries" description="Manage your assigned shipments">
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <Loader />
-            </div>
-          ) : shipments.length > 0 ? (
-            <div className="space-y-3">
-              {shipments.map((shipment) => (
-                <div
-                  key={shipment.id}
-                  className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="font-semibold text-gray-900">
-                        {shipment.pickup_address?.city} → {shipment.delivery_address?.city}
-                      </h3>
-                      <p className="text-sm text-gray-600 mt-1">{shipment.delivery_address?.line1}</p>
-                    </div>
-                    <Badge
-                      variant={
-                        shipment.status === 'delivered'
-                          ? 'success'
-                        : shipment.status === 'in_transit'
-                          ? 'info'
-                          : 'warning'
-                      }
-                    >
-                      {shipment.status}
-                    </Badge>
-                  </div>
+				<div className="grid grid-cols-2 gap-3 sm:gap-4">
+					<StatCard label="To deliver" value={active.length} icon={Truck} tone="progress" loading={loading} />
+					<StatCard label="Delivered" value={done.length} icon={CheckCircle2} tone="success" loading={loading} />
+				</div>
 
-                  <div className="grid grid-cols-3 gap-4 pt-3 border-t border-gray-100">
-                    <div>
-                      <p className="text-xs text-gray-600">Weight</p>
-                      <p className="font-medium text-gray-900">{shipment.total_weight} kg</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-600">Est. Delivery</p>
-                      <p className="font-medium text-gray-900">{shipment.metadata?.carrier_details?.delivery_eta || 'N/A'}</p>
-                    </div>
-                    <div className="text-right">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => handleUpdateClick(shipment)}
-                      >
-                        Update Status
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">No deliveries assigned yet</p>
-              <p className="text-sm text-gray-500 mt-2">Check back soon for new deliveries!</p>
-            </div>
-          )}
-        </Card>
+				<Panel title="Assigned to you" flush>
+					{loading ? (
+						<ListSkeleton rows={3} />
+					) : error ? (
+						<ErrorState text={error} onRetry={retry} />
+					) : !shipments.length ? (
+						<EmptyState icon={Package} title="No deliveries yet" text="When a shipment is assigned to you it appears here, with the pickup and drop-off address." />
+					) : (
+						<ul className="divide-y divide-slate-100">
+							{shipments.map((s) => (
+								<li key={s.id} className="px-4 py-4 sm:px-5">
+									<div className="flex items-start justify-between gap-3">
+										<div className="min-w-0">
+											<p className="font-semibold text-slate-900">{routeLabel(s.pickup_address, s.delivery_address)}</p>
+											<p className="mt-0.5 font-mono text-xs text-slate-500">{s.shipment_reference}</p>
+										</div>
+										<StatusBadge status={s.status} />
+									</div>
+									{s.delivery_address?.line1 && (
+										<p className="mt-2 flex items-start gap-1.5 text-sm text-slate-600">
+											<MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+											{s.delivery_address.line1}
+										</p>
+									)}
+									<div className="mt-3 flex items-center justify-between gap-3">
+										<p className="text-sm text-slate-500">
+											{s.total_weight ? `${s.total_weight} kg` : ""}
+											{s.metadata?.carrier_details?.delivery_eta ? ` · ETA ${s.metadata.carrier_details.delivery_eta}` : ""}
+										</p>
+										{!CLOSED_STATUSES.includes(s.status) && (
+											<Button size="sm" onClick={() => open(s)}>
+												Update status
+											</Button>
+										)}
+									</div>
+								</li>
+							))}
+						</ul>
+					)}
+				</Panel>
+			</div>
 
-        {/* Update Status Modal */}
-        {showUpdateModal && selectedShipment && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <Card className="w-full max-w-md">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Update Shipment Status</h2>
-                <button onClick={() => setShowUpdateModal(false)} className="text-gray-500 hover:text-gray-700">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              
-              <div className="mb-4">
-                <p className="text-sm text-gray-600">Shipment Ref: <span className="font-medium text-gray-900">{selectedShipment.shipment_reference}</span></p>
-              </div>
-
-              <form onSubmit={handleUpdateSubmit} className="space-y-4">
-                <Select
-                  label="New Status"
-                  value={updateForm.status}
-                  onChange={(e) => {
-                    const newStatus = e.target.value;
-                    let newLocation = updateForm.location;
-                    if (newStatus === 'delivered' && selectedShipment) {
-                       newLocation = `${selectedShipment.delivery_address?.city || ''}, ${selectedShipment.delivery_address?.state || ''}`.trim().replace(/^, /, '');
-                    }
-                    setUpdateForm({ ...updateForm, status: newStatus, location: newLocation });
-                  }}
-                  options={[
-                    { value: 'pending', label: 'Pending' },
-                    { value: 'confirmed', label: 'Confirmed' },
-                    { value: 'picked_up', label: 'Picked Up' },
-                    { value: 'dispatched', label: 'Dispatched' },
-                    { value: 'in_transit', label: 'In Transit' },
-                    { value: 'delivered', label: 'Delivered' },
-                    { value: 'cancelled', label: 'Cancelled' },
-                    { value: 'returned', label: 'Returned' },
-                  ]}
-                />
-
-                <Input
-                  label="Current Location"
-                  placeholder="e.g. Ikeja, Lagos"
-                  value={updateForm.location}
-                  onChange={(e) => setUpdateForm({ ...updateForm, location: e.target.value })}
-                  disabled={updateForm.status === 'delivered'}
-                  required
-                />
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                  <textarea
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    rows={3}
-                    placeholder="Optional notes about the delivery..."
-                    value={updateForm.notes}
-                    onChange={(e) => setUpdateForm({ ...updateForm, notes: e.target.value })}
-                  />
-                </div>
-
-                <div className="pt-2">
-                  <Button type="submit" fullWidth variant="primary">
-                    Update Status
-                  </Button>
-                </div>
-              </form>
-            </Card>
-          </div>
-        )}
-      </div>
-    </DashboardLayout>
-  );
+			{selected && (
+				<div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="update-title">
+					<button type="button" aria-label="Close" className="absolute inset-0 bg-slate-900/40" onClick={() => setSelected(null)} />
+					<form onSubmit={submit} className="relative w-full max-w-md space-y-4 rounded-t-3xl bg-white p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl">
+						<div className="flex items-start justify-between gap-3">
+							<div>
+								<h2 id="update-title" className="text-lg font-semibold text-slate-900">
+									Update delivery
+								</h2>
+								<p className="font-mono text-xs text-slate-500">{selected.shipment_reference}</p>
+							</div>
+							<button type="button" onClick={() => setSelected(null)} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100">
+								<X className="h-5 w-5" />
+							</button>
+						</div>
+						{saveError && <Alert type="error">{saveError}</Alert>}
+						<Select label="Status" required value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} options={DRIVER_STATUSES} />
+						<Input
+							label="Where are you now?"
+							required={form.status !== "delivered"}
+							placeholder={form.status === "delivered" ? deliveryPlace(selected) || "Delivery address" : "e.g. Ikeja, Lagos"}
+							value={form.location}
+							onChange={(e) => setForm({ ...form, location: e.target.value })}
+							helperText={form.status === "delivered" ? "Leave empty to use the delivery address." : undefined}
+						/>
+						<Textarea label="Note for the customer (optional)" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+						<Button type="submit" size="lg" fullWidth loading={saving}>
+							{saving ? "Saving…" : "Save update"}
+						</Button>
+					</form>
+				</div>
+			)}
+		</DashboardLayout>
+	);
 }

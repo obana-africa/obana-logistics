@@ -1,123 +1,90 @@
 "use client";
 
 import React, { useState } from "react";
-import { Button, Input, Card, Alert } from "@/components/ui";
-import { Mail, ArrowLeft, CheckCircle } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
+import { ArrowLeft, CheckCircle2, Mail } from "lucide-react";
+import { AuthShell } from "@/components/AuthShell";
+import { Alert, Button, Input } from "@/components/ui";
+import { API_BASE_URL } from "@/lib/site";
 
 export default function ForgotPasswordPage() {
-    const [loading, setLoading] = useState(false);
-    const [email, setEmail] = useState("");
-    const [error, setError] = useState("");
-    const [success, setSuccess] = useState(false);
+	const [identifier, setIdentifier] = useState("");
+	const [loading, setLoading] = useState(false);
+	const [error, setError] = useState("");
+	const [sent, setSent] = useState(false);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError("");
-        setLoading(true);
+	const handleSubmit = async (e: React.FormEvent) => {
+		e.preventDefault();
+		setError("");
+		setLoading(true);
+		try {
+			const res = await fetch(`${API_BASE_URL}/users/reset-password`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ user_identification: identifier.trim() }),
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(data.message || "We couldn't send the reset link. Please try again.");
+			setSent(true);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+		} finally {
+			setLoading(false);
+		}
+	};
 
-        try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/users/reset-password`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ user_identification: email })
-            });
+	return (
+		<AuthShell>
+			{sent ? (
+				<div className="text-center">
+					<span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50">
+						<CheckCircle2 className="h-7 w-7 text-emerald-600" />
+					</span>
+					<h2 className="mt-5 text-2xl font-bold text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
+						Check your inbox
+					</h2>
+					<p className="mt-2 text-slate-600">
+						If an account exists for <strong className="text-slate-900">{identifier}</strong>, we&apos;ve sent a link to reset your password.
+					</p>
+					<Link href="/auth/login" className="mt-8 block">
+						<Button size="lg" fullWidth>
+							Back to sign in
+						</Button>
+					</Link>
+				</div>
+			) : (
+				<>
+					<h2 className="text-3xl font-bold text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
+						Reset your password
+					</h2>
+					<p className="mt-2 text-slate-600">Enter the email or phone number on your account and we&apos;ll send you a reset link.</p>
 
-            const data = await response.json();
+					{error && (
+						<Alert type="error" className="mt-6">
+							{error}
+						</Alert>
+					)}
 
-            if (!response.ok) {
-                throw new Error(data.message || 'Failed to process request');
-            }
+					<form onSubmit={handleSubmit} className="mt-8 space-y-5">
+						<Input
+							label="Email or phone number"
+							autoComplete="username"
+							placeholder="you@company.com"
+							required
+							value={identifier}
+							onChange={(e) => setIdentifier(e.target.value)}
+							icon={<Mail />}
+						/>
+						<Button type="submit" size="lg" fullWidth loading={loading}>
+							{loading ? "Sending…" : "Send reset link"}
+						</Button>
+					</form>
 
-            setSuccess(true);
-        } catch (err: any) {
-            setError(err.message || "An error occurred. Please try again.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div className="min-h-screen bg-linear-to-br from-slate-900 via-blue-900 to-slate-800 flex items-center justify-center p-4">
-            <div className="w-full max-w-md">
-                <Card className="shadow-2xl border-0 backdrop-blur-sm bg-white/95">
-                    <div className="mb-6 text-center">
-                        <Link href="/" className="inline-block bg-[#f4f4f4] rounded-lg mb-4">
-                            <Image
-                                src="/logo.svg"
-                                alt="Obana Logistics Logo"
-                                width={100}
-                                height={100}
-                                className="ml-2"
-                            />
-                        </Link>
-                        <h2 className="text-2xl font-bold text-gray-900">
-                            Reset Password
-                        </h2>
-                        <p className="text-gray-600 mt-2">
-                            Enter your email or phone to receive reset instructions
-                        </p>
-                    </div>
-
-                    {success ? (
-                        <div className="text-center py-6">
-                            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <CheckCircle className="w-8 h-8 text-green-600" />
-                            </div>
-                            <h3 className="text-lg font-semibold text-gray-900 mb-2">Request Sent</h3>
-                            <p className="text-gray-600 mb-6">
-                                If an account exists for <strong>{email}</strong>, you will receive instructions to reset your password shortly.
-                            </p>
-                            <Link href="/auth/login">
-                                <Button fullWidth variant="primary">
-                                    Return to Login
-                                </Button>
-                            </Link>
-                        </div>
-                    ) : (
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            {error && (
-                                <Alert type="error" onClick={() => setError("")}>
-                                    {error}
-                                </Alert>
-                            )}
-
-                            <Input
-                                label="Email or Phone Number"
-                                type="text"
-                                placeholder="Enter your email or phone"
-                                required
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                icon={<Mail className="w-5 h-5 text-gray-400" />}
-                            />
-
-                            <Button
-                                type="submit"
-                                loading={loading}
-                                fullWidth
-                                variant="primary"
-                                className="h-12 font-semibold bg-[#1B3E5D]"
-                            >
-                                Send Reset Link
-                            </Button>
-
-                            <div className="text-center">
-                                <Link
-                                    href="/auth/login"
-                                    className="inline-flex items-center text-sm text-gray-600 hover:text-[#1B3E5D] font-medium transition-colors"
-                                >
-                                    <ArrowLeft className="w-4 h-4 mr-2" />
-                                    Back to Login
-                                </Link>
-                            </div>
-                        </form>
-                    )}
-                </Card>
-            </div>
-        </div>
-    );
+					<Link href="/auth/login" className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-[#1B3B5F]">
+						<ArrowLeft className="h-4 w-4" /> Back to sign in
+					</Link>
+				</>
+			)}
+		</AuthShell>
+	);
 }

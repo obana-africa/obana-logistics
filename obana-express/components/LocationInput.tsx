@@ -146,6 +146,8 @@ export const LocationInput = ({
 						<option value="" disabled>
 							{countries.length ? "Country" : "Loading countries…"}
 						</option>
+						{/* Keep the chosen country visible while the full list loads. */}
+						{!countries.length && current.countryCode && <option value={current.countryCode}>{current.country || current.countryCode}</option>}
 						{countries.map((c) => (
 							<option key={c.isoCode} value={c.isoCode}>
 								{c.flag ? `${c.flag} ` : ""}

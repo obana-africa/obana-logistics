@@ -39,7 +39,7 @@ const faqs = [
 		id: 6,
 		question: "What areas do you currently cover?",
 		answer:
-			"We currently operate across major cities in Nigeria with rapid expansion underway. Enter your pickup and delivery addresses when creating a shipment and our system will confirm route availability instantly.",
+			"Our core service is international shipping from Europe to countries across Africa, and we also deliver nationwide within Nigeria. Enter your pickup and delivery addresses when you create a shipment and we'll confirm the route and price instantly.",
 	},
 	{
 		id: 7,

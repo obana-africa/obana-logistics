@@ -2,317 +2,194 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui";
-import { AlertCircle, CheckCircle, Copy, Eye, EyeOff } from "lucide-react";
+import { ArrowRight, Check, CheckCircle2, Copy, Eye, EyeOff, KeyRound } from "lucide-react";
+import { AuthShell } from "@/components/AuthShell";
+import { Alert, Button, Input, Textarea } from "@/components/ui";
 import { apiClient } from "@/lib/api";
 
+const slugify = (s: string) =>
+	s
+		.toLowerCase()
+		.normalize("NFKD")
+		.replace(/[̀-ͯ]/g, "")
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 40);
+
 export default function BusinessOnboardingPage() {
-	const [step, setStep] = useState<"form" | "success">("form");
+	const [form, setForm] = useState({ name: "", slug: "", base_url: "", description: "" });
+	const [slugEdited, setSlugEdited] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState("");
 	const [apiKey, setApiKey] = useState("");
-	const [showApiKey, setShowApiKey] = useState(false);
+	const [showKey, setShowKey] = useState(false);
 	const [copied, setCopied] = useState(false);
-
-	const [formData, setFormData] = useState({
-		name: "",
-		slug: "",
-		base_url: "",
-		description: "",
-	});
-
-	const handleInputChange = (
-		e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-	) => {
-		const { name, value } = e.target;
-		setFormData((prev) => ({
-			...prev,
-			[name]: value,
-		}));
-	};
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
-		setLoading(true);
 		setError("");
-
+		setLoading(true);
 		try {
-			// registe response interface
-         
-			const response = await apiClient.registerTenant(
-				formData.name,
-				formData.slug,
-				formData.base_url,
-				formData.description
-			);
-
-			if (response?.data?.api_key) {
-				setApiKey(response.data.api_key);
-				setStep("success");
-			} else {
-				setError("Failed to generate API key");
-			}
-		} catch (err: any) {
-			setError(err.response?.data?.message || "Registration failed");
+			const response = await apiClient.registerTenant(form.name.trim(), form.slug, form.base_url.trim(), form.description.trim());
+			if (response?.data?.api_key) setApiKey(response.data.api_key);
+			else setError(response?.message || "We couldn't create your API key. Please try again.");
+		} catch (err) {
+			const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+			setError(message || "Registration failed. Please check your details and try again.");
 		} finally {
 			setLoading(false);
 		}
 	};
 
-	const copyToClipboard = () => {
-		navigator.clipboard.writeText(apiKey);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
+	const copyKey = async () => {
+		try {
+			await navigator.clipboard.writeText(apiKey);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 2000);
+		} catch {
+			setShowKey(true); // clipboard blocked — show it so it can be copied by hand
+		}
 	};
 
-	return (
-		<div className="min-h-screen bg-linear-to-br from-slate-50 to-slate-100 pt-20 pb-12">
-			<div className="max-w-2xl mx-auto px-4">
-				{/* Header */}
-				<div className="mb-8">
-					<Link href="/" className="text-blue-600 hover:text-blue-700 font-medium mb-4 inline-block">
-						← Back to Home
-					</Link>
-					<h1 className="text-4xl font-bold text-gray-900 mb-2">
-						Integrate Obana Logistics
-					</h1>
-					<p className="text-lg text-gray-600">
-						Register your business and get instant API access to manage shipments programmatically
-					</p>
+	if (apiKey) {
+		return (
+			<AuthShell wide>
+				<span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50">
+					<CheckCircle2 className="h-7 w-7 text-emerald-600" />
+				</span>
+				<h2 className="mt-5 text-3xl font-bold text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
+					You&apos;re connected
+				</h2>
+				<p className="mt-2 text-slate-600">
+					<strong className="text-slate-900">{form.name}</strong> is registered. Here is your API key.
+				</p>
+
+				<div className="mt-6 rounded-2xl bg-slate-900 p-4">
+					<p className="text-xs font-medium uppercase tracking-wider text-slate-400">API key</p>
+					<div className="mt-2 flex items-center gap-2">
+						<code className="min-w-0 flex-1 break-all font-mono text-sm text-emerald-300">{showKey ? apiKey : "•".repeat(Math.min(apiKey.length, 32))}</code>
+						<button
+							type="button"
+							onClick={() => setShowKey((s) => !s)}
+							aria-label={showKey ? "Hide API key" : "Show API key"}
+							className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white"
+						>
+							{showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+						</button>
+						<button
+							type="button"
+							onClick={copyKey}
+							className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/15"
+						>
+							{copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+							{copied ? "Copied" : "Copy"}
+						</button>
+					</div>
 				</div>
 
-				{step === "form" ? (
-					// Registration Form
-					<div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
-						<div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-							<div className="flex gap-3">
-								<AlertCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-								<div>
-									<h3 className="font-semibold text-blue-900 mb-1">
-										What You'll Get
-									</h3>
-									<ul className="text-sm text-blue-800 space-y-1">
-										<li>• Unique API Key for your business</li>
-										<li>• Full access to shipment creation & tracking</li>
-										<li>• Real-time webhooks for shipment updates</li>
-										<li>• Comprehensive API documentation</li>
-									</ul>
-								</div>
-							</div>
-						</div>
+				<Alert type="warning" className="mt-4">
+					Store this key somewhere safe and only use it on your server. Anyone with it can create shipments for your business.
+				</Alert>
 
-						<form onSubmit={handleSubmit} className="space-y-5">
-							{error && (
-								<div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-									{error}
-								</div>
-							)}
-
+				<ol className="mt-8 space-y-4">
+					{[
+						["Read the API docs", "See how to authenticate and create or track shipments."],
+						["Add the key to your server", "Send it as Authorization: Bearer <your key> with each request."],
+						["Create your first shipment", "Your customers get tracking links and updates automatically."],
+					].map(([title, text], i) => (
+						<li key={title} className="flex gap-3">
+							<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1B3B5F] text-sm font-bold text-white">{i + 1}</span>
 							<div>
-								<label className="block text-sm font-semibold text-gray-900 mb-2">
-									Business Name *
-								</label>
-								<input
-									type="text"
-									name="name"
-									value={formData.name}
-									onChange={handleInputChange}
-									placeholder="e.g., Zoho CRM, Shopify Store"
-									className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-									required
-								/>
-								<p className="text-xs text-gray-500 mt-1">
-									Your business or application name
-								</p>
+								<p className="font-semibold text-slate-900">{title}</p>
+								<p className="text-sm text-slate-600">{text}</p>
 							</div>
+						</li>
+					))}
+				</ol>
 
-							<div>
-								<label className="block text-sm font-semibold text-gray-900 mb-2">
-									Slug (URL-friendly identifier) *
-								</label>
-								<input
-									type="text"
-									name="slug"
-									value={formData.slug}
-									onChange={handleInputChange}
-									placeholder="e.g., zohocrm"
-									pattern="^[a-z0-9-]+$"
-									className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-									required
-								/>
-								<p className="text-xs text-gray-500 mt-1">
-									Lowercase letters, numbers, and hyphens only
-								</p>
-							</div>
+				<div className="mt-8 grid gap-3 sm:grid-cols-2">
+					<Link href="/docs">
+						<Button size="lg" fullWidth>
+							Open the API docs <ArrowRight className="h-4 w-4" />
+						</Button>
+					</Link>
+					<Link href="/">
+						<Button size="lg" variant="secondary" fullWidth>
+							Back to home
+						</Button>
+					</Link>
+				</div>
+			</AuthShell>
+		);
+	}
 
-							<div>
-								<label className="block text-sm font-semibold text-gray-900 mb-2">
-									Base URL *
-								</label>
-								<input
-									type="url"
-									name="base_url"
-									value={formData.base_url}
-									onChange={handleInputChange}
-									placeholder="e.g., www.zohoapis.com/crm/v2"
-									className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-									required
-								/>
-								<p className="text-xs text-gray-500 mt-1">
-									Your application's base API URL
-								</p>
-							</div>
+	return (
+		<AuthShell wide>
+			<span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#1B3B5F]/5 text-[#1B3B5F]">
+				<KeyRound className="h-6 w-6" />
+			</span>
+			<h2 className="mt-5 text-3xl font-bold text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
+				Connect your platform
+			</h2>
+			<p className="mt-2 text-slate-600">Register your business to get an API key and create and track shipments from your own system.</p>
 
-							<div>
-								<label className="block text-sm font-semibold text-gray-900 mb-2">
-									Description
-								</label>
-								<textarea
-									name="description"
-									value={formData.description}
-									onChange={handleInputChange}
-									placeholder="Brief description of your business or integration..."
-									rows={4}
-									className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
-								/>
-							</div>
+			{error && (
+				<Alert type="error" className="mt-6">
+					{error}
+				</Alert>
+			)}
 
-							<div className="pt-4">
-								<Button
-									type="submit"
-									disabled={loading}
-									className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2"
-								>
-									{loading ? (
-										<>
-											<div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-											Registering...
-										</>
-									) : (
-										"Register & Get API Key"
-									)}
-								</Button>
-							</div>
-						</form>
+			<form onSubmit={handleSubmit} className="mt-8 space-y-5">
+				<Input
+					label="Business or app name"
+					required
+					placeholder="e.g. Ade Fashion Store"
+					value={form.name}
+					onChange={(e) => {
+						const name = e.target.value;
+						setForm((f) => ({ ...f, name, slug: slugEdited ? f.slug : slugify(name) }));
+					}}
+				/>
+				<Input
+					label="Short ID"
+					required
+					pattern="^[a-z0-9-]+$"
+					placeholder="ade-fashion-store"
+					value={form.slug}
+					onChange={(e) => {
+						setSlugEdited(true);
+						setForm((f) => ({ ...f, slug: slugify(e.target.value) }));
+					}}
+					helperText="Lowercase letters, numbers and hyphens. Filled in from your name — change it if you like."
+				/>
+				<Input
+					label="Your platform's web address"
+					type="url"
+					required
+					inputMode="url"
+					placeholder="https://yourstore.com"
+					value={form.base_url}
+					onChange={(e) => setForm((f) => ({ ...f, base_url: e.target.value }))}
+					helperText="Start with https://"
+				/>
+				<Textarea
+					label="What will you ship? (optional)"
+					rows={3}
+					placeholder="e.g. Fashion orders from our online store, shipped from the UK to Nigeria and Ghana."
+					value={form.description}
+					onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+				/>
+				<Button type="submit" size="lg" fullWidth loading={loading}>
+					{loading ? "Creating your key…" : "Get my API key"}
+				</Button>
+			</form>
 
-						<p className="text-sm text-gray-600 text-center mt-6">
-							Already registered?{" "}
-							<Link href="/docs" className="text-blue-600 hover:underline font-medium">
-								View API Documentation
-							</Link>
-						</p>
-					</div>
-				) : (
-					// Success State
-					<div className="bg-white rounded-2xl shadow-lg p-8 border border-slate-200">
-						<div className="text-center mb-8">
-							<div className="flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mx-auto mb-4">
-								<CheckCircle className="w-8 h-8 text-green-600" />
-							</div>
-							<h2 className="text-3xl font-bold text-gray-900 mb-2">
-								Welcome Aboard! 🎉
-							</h2>
-							<p className="text-gray-600">
-								Your business is now registered. Here's your API Key:
-							</p>
-						</div>
-
-						{/* API Key Display */}
-						<div className="bg-slate-900 rounded-lg p-4 mb-6 font-mono">
-							<div className="flex items-center justify-between">
-								<span className="text-slate-400 text-sm">API Key:</span>
-								<button
-									onClick={() => setShowApiKey(!showApiKey)}
-									className="text-slate-400 hover:text-slate-300"
-								>
-									{showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-								</button>
-							</div>
-							<div className="flex items-center gap-2 mt-2">
-								<code className="text-green-400 flex-1 break-all">
-									{showApiKey ? apiKey : "••••••••••••••••••••••"}
-								</code>
-								<button
-									onClick={copyToClipboard}
-									className={`p-2 rounded transition-colors ${
-										copied
-											? "bg-green-600 text-white"
-											: "bg-slate-700 hover:bg-slate-600 text-slate-300"
-									}`}
-									title="Copy to clipboard"
-								>
-									<Copy className="w-4 h-4" />
-								</button>
-							</div>
-						</div>
-
-						<div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-8">
-							<p className="text-sm text-yellow-800">
-								<strong>⚠️ Note:</strong> Save your API key securely.
-								Anyone with this key can create shipments on your behalf. Keep it secret.
-							</p>
-						</div>
-
-						<div className="space-y-4">
-							<h3 className="font-semibold text-gray-900">Next Steps:</h3>
-							<ol className="space-y-3">
-								<li className="flex gap-3">
-									<span className="shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
-										1
-									</span>
-									<div>
-										<p className="font-medium text-gray-900">
-											Read the API Documentation
-										</p>
-										<p className="text-sm text-gray-600">
-											Learn how to authenticate and use the Shipments API
-										</p>
-									</div>
-								</li>
-								<li className="flex gap-3">
-									<span className="shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
-										2
-									</span>
-									<div>
-										<p className="font-medium text-gray-900">
-											Integrate with Your Application
-										</p>
-										<p className="text-sm text-gray-600">
-											Use your API key to authenticate requests from your backend
-										</p>
-									</div>
-								</li>
-								<li className="flex gap-3">
-									<span className="shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
-										3
-									</span>
-									<div>
-										<p className="font-medium text-gray-900">
-											Start Creating Shipments
-										</p>
-										<p className="text-sm text-gray-600">
-											Use the API endpoints to create and track shipments
-										</p>
-									</div>
-								</li>
-							</ol>
-						</div>
-
-						<div className="flex gap-3 mt-8 pt-8 border-t border-slate-200">
-							<Link href="/docs" className="flex-1">
-								<Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">
-									View API Docs
-								</Button>
-							</Link>
-							<Link href="/" className="flex-1">
-								<Button variant="ghost" className="w-full">
-									Back to Home
-								</Button>
-							</Link>
-						</div>
-					</div>
-				)}
-			</div>
-		</div>
+			<p className="mt-8 border-t border-slate-100 pt-6 text-center text-sm text-slate-600">
+				Already registered?{" "}
+				<Link href="/docs" className="font-semibold text-[#1B3B5F] hover:underline">
+					Read the API docs
+				</Link>
+			</p>
+		</AuthShell>
 	);
 }

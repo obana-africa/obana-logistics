@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Card, Button, Input, Select } from '@/components/ui';
+import { Alert, Card, Button, Input, Select } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -20,6 +20,8 @@ export default function CreateShipmentPage() {
   const [newShipmentInfo, setNewShipmentInfo] = useState<any>(null);
   const [matchedRoute, setMatchedRoute] = useState<any>(null);
   const [step, setStep] = useState<'details' | 'match' | 'confirm'>('details');
+  // After the first "Continue", show field errors live so users fix them before moving on.
+  const [showFieldErrors, setShowFieldErrors] = useState(false);
   const [formData, setFormData] = useState({
     transport_mode: '',
     service_level: '',
@@ -98,25 +100,41 @@ export default function CreateShipmentPage() {
     setNewShipmentInfo(null);
   };
 
+  // Everything the shipment needs is checked here, on step 1 — nothing should fail later at "Create shipment".
+  const validateDetails = () => {
+    const e: Record<string, string> = {};
+    const emailOk = (v: string) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+    const phoneOk = (v: string) => v.replace(/\D/g, '').length >= 8;
+    const p = formData.pickup_address;
+    const d = formData.delivery_address;
+    if (!p.country || !p.state || !p.city) e['pickup.location'] = 'Choose the pickup country, state and city.';
+    if (!p.line1.trim()) e['pickup.line1'] = 'Enter the pickup street address.';
+    if (!phoneOk(p.phone)) e['pickup.phone'] = 'Enter a phone number for the pickup contact.';
+    if (!emailOk(p.email)) e['pickup.email'] = 'Enter a valid email address.';
+    if (!d.country || !d.state || !d.city) e['delivery.location'] = 'Choose the delivery country, state and city.';
+    if (!d.line1.trim()) e['delivery.line1'] = 'Enter the delivery street address.';
+    if (!phoneOk(d.phone)) e['delivery.phone'] = "Enter the recipient's phone number.";
+    if (!emailOk(d.email)) e['delivery.email'] = 'Enter a valid email address.';
+    formData.items.forEach((item, i) => {
+      if (!item.name.trim()) e[`item.${i}.name`] = 'Enter what this item is.';
+      if (!(parseInt(item.quantity) >= 1)) e[`item.${i}.quantity`] = 'At least 1.';
+      if (!(parseFloat(item.price) > 0)) e[`item.${i}.price`] = 'Enter the item value.';
+    });
+    if (!formData.transport_mode) e.transport_mode = 'Choose how to ship.';
+    if (!formData.service_level) e.service_level = 'Choose a service level.';
+    return e;
+  };
+  const fieldErrors: Record<string, string> = showFieldErrors ? validateDetails() : {};
+  const errorCount = Object.keys(fieldErrors).length;
+
   const handleMatchRoute = async () => {
-    // Validate location fields
-    if (!formData.pickup_address.city || !formData.pickup_address.state || !formData.pickup_address.country) {
-      showError('Please select a complete pickup location (City, State, and Country)');
-      return;
-    }
-
-    if (!formData.delivery_address.city || !formData.delivery_address.state || !formData.delivery_address.country) {
-      showError('Please select a complete delivery location (City, State, and Country)');
-      return;
-    }
-
-    if (formData.items.length === 0 || formData.items.some(item => !item.name || !item.quantity || !item.price)) {
-      showError('Please add at least one item with all required fields (Name, Quantity, and Price)');
-      return;
-    }
-
-    if (!formData.transport_mode || !formData.service_level) {
-      showError('Please select both Transport Mode and Service Level');
+    const found = validateDetails();
+    setShowFieldErrors(true);
+    if (Object.keys(found).length) {
+      // Take the user to the first field that needs attention.
+      requestAnimationFrame(() =>
+        document.querySelector('[aria-invalid="true"], [data-invalid="true"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      );
       return;
     }
 
@@ -206,53 +224,32 @@ export default function CreateShipmentPage() {
     <DashboardLayout role="customer">
       <div className="max-w-3xl mx-auto space-y-6 pb-12">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Create Shipment</h1>
-            <p className="text-gray-600 mt-1">Ship your package in 3 easy steps</p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl" style={{ fontFamily: 'var(--font-display)' }}>New shipment</h1>
+            <p className="mt-1 text-slate-600">Add the addresses and items, pick a price, then confirm.</p>
           </div>
-          <Link href="/dashboard/customer/shipments">
-            <Button variant="ghost">← Back</Button>
+          <Link href="/dashboard/customer/shipments" className="shrink-0 rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">
+            Cancel
           </Link>
         </div>
 
-        {/* Progress Indicator */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <div className="flex items-center justify-between">
-            <div className={`flex items-center gap-3 ${step === 'details' ? 'text-blue-600' : 'text-gray-400'}`}>
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                step === 'details' ? 'bg-blue-600 text-white' : 'bg-gray-200'
-              }`}>
-                <Package className="h-5 w-5" />
-              </div>
-              <span className="font-medium">Details</span>
-            </div>
-            <div className="flex-1 h-1 mx-4 bg-gray-200">
-              <div className={`h-full transition-all ${step !== 'details' ? 'bg-blue-600' : 'bg-gray-200'}`} 
-                   style={{ width: step === 'match' ? '50%' : step === 'confirm' ? '100%' : '0%' }} />
-            </div>
-            <div className={`flex items-center gap-3 ${step === 'match' ? 'text-blue-600' : 'text-gray-400'}`}>
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                step === 'match' ? 'bg-blue-600 text-white' : 'bg-gray-200'
-              }`}>
-                <Truck className="h-5 w-5" />
-              </div>
-              <span className="font-medium">Pricing</span>
-            </div>
-            <div className="flex-1 h-1 mx-4 bg-gray-200">
-              <div className={`h-full transition-all ${step === 'confirm' ? 'bg-blue-600' : 'bg-gray-200'}`} 
-                   style={{ width: step === 'confirm' ? '100%' : '0%' }} />
-            </div>
-            <div className={`flex items-center gap-3 ${step === 'confirm' ? 'text-blue-600' : 'text-gray-400'}`}>
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                step === 'confirm' ? 'bg-blue-600 text-white' : 'bg-gray-200'
-              }`}>
-                <Check className="h-5 w-5" />
-              </div>
-              <span className="font-medium">Confirm</span>
-            </div>
-          </div>
-        </div>
+        {/* Progress: three equal columns so it always fits a phone */}
+        <ol className="grid grid-cols-3 gap-2" aria-label="Progress">
+          {([['details', 'Details', Package], ['match', 'Price', Truck], ['confirm', 'Confirm', Check]] as const).map(([key, label, Icon], i) => {
+            const current = ['details', 'match', 'confirm'].indexOf(step);
+            const state = i < current ? 'done' : i === current ? 'current' : 'todo';
+            return (
+              <li key={key} aria-current={state === 'current' ? 'step' : undefined} className="flex flex-col gap-2">
+                <span className={`h-1.5 rounded-full ${state === 'todo' ? 'bg-slate-200' : 'bg-[#1B3B5F]'}`} />
+                <span className={`flex items-center gap-1.5 text-sm font-semibold ${state === 'todo' ? 'text-slate-400' : 'text-[#1B3B5F]'}`}>
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="truncate">{i + 1}. {label}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ol>
 
         {/* Error Modal */}
         {showErrorModal && error && (
@@ -355,19 +352,15 @@ export default function CreateShipmentPage() {
                       countryCode: formData.pickup_address.countryCode,
                       stateCode: formData.pickup_address.stateCode,
                     }}
-                    onChange={(location) => setFormData({
-                      ...formData,
-                      pickup_address: { 
-                        ...formData.pickup_address, 
-                        ...location 
-                      }
-                    })}
+                    onChange={(location) => setFormData((prev) => ({ ...prev, pickup_address: { ...prev.pickup_address, ...location } }))}
                     required
                     placeholder="Search for pickup city..."
                   />
+                  {fieldErrors['pickup.location'] && <p data-invalid="true" className="-mt-3 text-sm text-rose-600">{fieldErrors['pickup.location']}</p>}
 
                   <Input
-                    label="Street Address *"
+                    label="Street address"
+                    error={fieldErrors['pickup.line1']}
                     placeholder="e.g., 123 Main Street, Building A"
                     value={formData.pickup_address.line1}
                     onChange={(e) => setFormData({
@@ -387,7 +380,7 @@ export default function CreateShipmentPage() {
                     })}
                   />
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <Input
                       label="ZIP/Postal Code"
                       placeholder="Optional"
@@ -398,7 +391,8 @@ export default function CreateShipmentPage() {
                       })}
                     />
                     <PhoneInput
-                      label="Phone Number"
+                      label="Phone number"
+                      error={fieldErrors['pickup.phone']}
                       value={formData.pickup_address.phone}
                       onChange={(phone) => setFormData({
                         ...formData,
@@ -408,7 +402,7 @@ export default function CreateShipmentPage() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <Input
                       label="Contact Name"
                       placeholder="Pickup contact person"
@@ -419,7 +413,8 @@ export default function CreateShipmentPage() {
                       })}
                     />
                     <Input
-                      label="Email Address"
+                      label="Email address"
+                      error={fieldErrors['pickup.email']}
                       type="email"
                       placeholder="contact@example.com"
                       value={formData.pickup_address.email}
@@ -450,19 +445,15 @@ export default function CreateShipmentPage() {
                       countryCode: formData.delivery_address.countryCode,
                       stateCode: formData.delivery_address.stateCode,
                     }}
-                    onChange={(location) => setFormData({
-                      ...formData,
-                      delivery_address: { 
-                        ...formData.delivery_address, 
-                        ...location 
-                      }
-                    })}
+                    onChange={(location) => setFormData((prev) => ({ ...prev, delivery_address: { ...prev.delivery_address, ...location } }))}
                     required
                     placeholder="Search for delivery city..."
                   />
+                  {fieldErrors['delivery.location'] && <p data-invalid="true" className="-mt-3 text-sm text-rose-600">{fieldErrors['delivery.location']}</p>}
 
                   <Input
-                    label="Street Address *"
+                    label="Street address"
+                    error={fieldErrors['delivery.line1']}
                     placeholder="e.g., 456 Elm Avenue"
                     value={formData.delivery_address.line1}
                     onChange={(e) => setFormData({
@@ -482,7 +473,7 @@ export default function CreateShipmentPage() {
                     })}
                   />
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <Input
                       label="ZIP/Postal Code"
                       placeholder="Optional"
@@ -493,7 +484,8 @@ export default function CreateShipmentPage() {
                       })}
                     />
                     <PhoneInput
-                      label="Phone Number"
+                      label="Recipient phone"
+                      error={fieldErrors['delivery.phone']}
                       value={formData.delivery_address.phone}
                       onChange={(phone) => setFormData({
                         ...formData,
@@ -503,7 +495,7 @@ export default function CreateShipmentPage() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <Input
                       label="Recipient First Name"
                       placeholder="John"
@@ -525,7 +517,8 @@ export default function CreateShipmentPage() {
                   </div>
 
                   <Input
-                    label="Recipient Email"
+                    label="Recipient email"
+                    error={fieldErrors['delivery.email']}
                     type="email"
                     placeholder="recipient@example.com"
                     value={formData.delivery_address.email}
@@ -564,9 +557,10 @@ export default function CreateShipmentPage() {
                         )}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <Input
-                          label="Item Name *"
+                          label="Item name"
+                          error={fieldErrors[`item.${index}.name`]}
                           placeholder="e.g., Laptop"
                           value={item.name}
                           onChange={(e) => {
@@ -577,7 +571,8 @@ export default function CreateShipmentPage() {
                           required
                         />
                         <Input
-                          label="Quantity *"
+                          label="Quantity"
+                          error={fieldErrors[`item.${index}.quantity`]}
                           type="number"
                           min="1"
                           placeholder="1"
@@ -602,9 +597,10 @@ export default function CreateShipmentPage() {
                         }}
                       />
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <Input
-                          label="Price (₦) *"
+                          label="Item value (₦)"
+                          error={fieldErrors[`item.${index}.price`]}
                           type="number"
                           step="0.01"
                           placeholder="0.00"
@@ -656,16 +652,20 @@ export default function CreateShipmentPage() {
                 </h3>
                 <p className="text-sm text-gray-600 mb-5">How would you like to ship?</p>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-4 sm:grid-cols-2">
                   <Select
-                    label="Transport Mode *"
+                    label="Transport mode"
+                    error={fieldErrors.transport_mode}
+                    placeholder="Choose"
                     options={transportModes}
                     value={formData.transport_mode}
                     onChange={(e) => setFormData({ ...formData, transport_mode: e.target.value })}
                     required
                   />
                   <Select
-                    label="Service Level *"
+                    label="Service level"
+                    error={fieldErrors.service_level}
+                    placeholder="Choose"
                     options={serviceLevels}
                     value={formData.service_level}
                     onChange={(e) => setFormData({ ...formData, service_level: e.target.value })}
@@ -674,6 +674,11 @@ export default function CreateShipmentPage() {
                 </div>
               </div>
 
+              {errorCount > 0 && (
+                <Alert type="error">
+                  {errorCount === 1 ? '1 detail needs' : `${errorCount} details need`} your attention — check the highlighted fields above.
+                </Alert>
+              )}
               <Button
                 onClick={handleMatchRoute}
                 loading={loading}
@@ -821,7 +826,7 @@ export default function CreateShipmentPage() {
                   <Truck className="h-5 w-5 text-blue-600" />
                   Shipment Summary
                 </h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid gap-4 sm:grid-cols-2 text-sm">
                   <div>
                     <p className="text-gray-600">Route</p>
                     <p className="font-semibold text-gray-900">
