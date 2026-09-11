@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronRight, Eye, EyeOff, Lock, Mail, Package, PlugZap, Shield, Truck, Upload, UserRound } from "lucide-react";
@@ -11,6 +11,11 @@ import { Alert, Button, Input, Select } from "@/components/ui";
 import { useAuth } from "@/lib/authContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { dashboardFor } from "@/lib/site";
+import { safeNextPath, withNext } from "@/components/quote/quote";
+
+const subscribeNothing = () => () => {};
+// ?next=/… returns people to where they were (e.g. booking a quote); anything unsafe is ignored.
+const readNext = () => safeNextPath(new URLSearchParams(window.location.search).get("next"));
 
 type Role = "customer" | "driver" | "agent";
 
@@ -57,6 +62,7 @@ export default function SignupPage() {
 	const router = useRouter();
 	const { signup, error, clearError } = useAuth();
 	const [role, setRole] = useState<Role | null>(null);
+	const next = useSyncExternalStore(subscribeNothing, readNext, () => null);
 	const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", password: "", confirm: "" });
 	const [show, setShow] = useState({ password: false, confirm: false });
 	const [agent, setAgent] = useState({
@@ -130,7 +136,7 @@ export default function SignupPage() {
 				};
 			}
 			const response = await signup(form.first_name.trim(), form.last_name.trim(), form.email.trim(), form.phone, form.password, role, additional);
-			router.replace(dashboardFor(response?.data?.user ?? { role }));
+			router.replace(next ?? dashboardFor(response?.data?.user ?? { role }));
 		} catch (err) {
 			setFormError(err instanceof Error ? err.message : "We couldn't create your account. Please try again.");
 		} finally {
@@ -184,7 +190,7 @@ export default function SignupPage() {
 
 					<p className="mt-8 border-t border-slate-100 pt-6 text-center text-sm text-slate-600">
 						Already have an account?{" "}
-						<Link href="/auth/login" className="font-semibold text-[#1B3B5F] hover:underline">
+						<Link href={next ? withNext("/auth/login", next) : "/auth/login"} className="font-semibold text-[#1B3B5F] hover:underline">
 							Sign in
 						</Link>
 					</p>
