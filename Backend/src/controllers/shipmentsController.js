@@ -791,6 +791,23 @@ const shipmentController = {
                 };
             }
 
+            // Booked from a saved quote: the server sets the price from the quote (24 hours, same route,
+            // no heavier than quoted), never from the browser. Otherwise the booking is priced as before.
+            let bookedQuote = null;
+            if (!req.store && payload.quote_reference) {
+                const { heldQuoteOption } = require('./routesController');
+                const quote = await db.quotes.findOne({ where: { reference: String(payload.quote_reference).toUpperCase() } });
+                const weight = payload.items.reduce((sum, item) => sum + (parseFloat(item.weight) || 0.5) * (parseInt(item.quantity, 10) || 1), 0);
+                const option = heldQuoteOption(quote, { optionId: payload.quote_option_id, pickup: payload.pickup_address, delivery: payload.delivery_address, weight });
+                if (option) {
+                    bookedQuote = quote;
+                    payload.shipping_fee = option.price;
+                    payload.transport_mode = option.transport_mode;
+                    payload.service_level = option.service_level;
+                    payload.carrier_slug = 'obana';
+                }
+            }
+
             const transaction = await db.sequelize.transaction();
 
             try {
@@ -874,6 +891,7 @@ const shipmentController = {
                         salesperson: payload.salesperson || null,
                         store_customer: storeCustomer,
                         store_quote_option: storeQuoteOption,
+                        quote_reference: bookedQuote ? bookedQuote.reference : null,
                         carrier_details: {
                             carrier_name: payload.dispatcher?.carrier_name,
                             carrier_logo: payload.dispatcher?.carrier_logo,
@@ -952,6 +970,10 @@ const shipmentController = {
                     }
                 }, { transaction });
 
+
+                if (bookedQuote) {
+                    await bookedQuote.update({ status: 'booked', shipment_id: shipment.id, user_id: userId }, { transaction });
+                }
 
                 if (!isInternal) {
                     console.log(`[EXTERNAL CARRIER] Shipment ${shipmentReference} assigned to ${payload.dispatcher?.carrier_name || 'External Carrier'}`);

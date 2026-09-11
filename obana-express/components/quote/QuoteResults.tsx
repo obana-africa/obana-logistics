@@ -9,7 +9,7 @@ import type { PublicQuote, PublicQuoteOption, PublicQuoteRequest } from "@/lib/a
 import { formatMoney } from "@/lib/shipments";
 import { SUPPORT_EMAIL } from "@/lib/site";
 import { QUOTE_FORM_ID } from "./QuoteForm";
-import { bookingPath, formatPrice, withNext } from "./quote";
+import { bookingPath, formatPrice, savePendingQuote, withNext } from "./quote";
 
 export type QuoteState =
 	| { status: "idle" }
@@ -78,8 +78,12 @@ function OptionCard({
 	const mode = option.transport_mode ? MODE[option.transport_mode] : undefined;
 	const ModeIcon = mode?.Icon ?? Route;
 	const details = [mode?.label, option.service_level].filter(Boolean).join(" · ");
-	const book = bookingPath(body);
+	const book = bookingPath(body, quote.reference, option.id);
 	const charged = formatMoney(option.price, "NGN");
+	// Also remember the choice in this browser, in case sign-up takes a detour that drops the link.
+	const remember = () => {
+		if (quote.reference) savePendingQuote({ reference: quote.reference, path: book, label: `${routeText(body)} · ${provider}`, expires_at: quote.expires_at });
+	};
 	const shown = converted ? formatPrice(option.display_price as number, quote.display_currency) : charged;
 
 	return (
@@ -125,11 +129,11 @@ function OptionCard({
 
 			<div className="mt-4 flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-end sm:gap-4">
 				{!signedIn && (
-					<Link href={withNext("/auth/login", book)} className="py-2 text-center text-sm font-semibold text-[#1B3B5F] hover:underline">
+					<Link href={withNext("/auth/login", book)} onClick={remember} className="py-2 text-center text-sm font-semibold text-[#1B3B5F] hover:underline">
 						I already have an account
 					</Link>
 				)}
-				<Link href={signedIn ? book : withNext("/auth/signup", book)} aria-label={`Book this shipment with ${provider}`} className={primaryLink}>
+				<Link href={signedIn ? book : withNext("/auth/signup", book)} onClick={remember} aria-label={`Book this shipment with ${provider}`} className={primaryLink}>
 					Book this shipment
 				</Link>
 			</div>

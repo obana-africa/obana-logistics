@@ -4,8 +4,10 @@
 import React, { useState, useSyncExternalStore } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Alert, Card, Button, Input } from '@/components/ui';
-import { apiClient } from '@/lib/api';
+import { apiClient, type SavedQuote } from '@/lib/api';
 import { formatMoney } from '@/lib/shipments';
+import { useRemote } from '@/lib/useRemote';
+import { clearPendingQuote } from '@/components/quote/quote';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Check, Package, MapPin, Truck, Clock, AlertCircle, X } from 'lucide-react';
@@ -59,7 +61,12 @@ type PriceOption = {
   estimated_delivery?: string | null;
   preferred_driver?: { id: number | string; driver_code?: string; vehicle_type?: string } | null;
   carrier?: string;
+  /** The saved quote's price, which the server honours for this booking. */
+  held?: boolean;
 };
+
+// Same spellings rule as the server ("Lagos State" = "Lagos").
+const normalizeState = (s: string) => s.trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').replace(/ state$/, '');
 
 const splitName = (full: string) => {
   const [first_name = '', ...rest] = full.trim().split(/\s+/);
@@ -89,6 +96,13 @@ export default function CreateShipmentPage() {
 		setFormData((prev) => withQuotePrefill(prev, search));
 	}
 
+  // Booking from a saved quote (?quote=Q-…&option=…): its option is pre-selected, and while the quote holds
+  // (24 hours, same route, no heavier than quoted) its price is what the server charges.
+  const quoteParams = new URLSearchParams(search);
+  const quoteRef = quoteParams.get('quote');
+  const quotedOptionId = quoteParams.get('option');
+  const savedQuote = useRemote<SavedQuote | null>(quoteRef && `quote:${quoteRef}`, async () => (await apiClient.getQuote(quoteRef as string)).data ?? null);
+
   const setPickup = (patch: Partial<Form['pickup_address']>) =>
     setFormData((prev) => ({ ...prev, pickup_address: { ...prev.pickup_address, ...patch } }));
   const setDelivery = (patch: Partial<Form['delivery_address']>) =>
@@ -102,12 +116,21 @@ export default function CreateShipmentPage() {
     0
   );
 
+  const quote = savedQuote.data;
+  const quoteHolds = !!quote && !quote.expired && quote.status === 'quoted';
+  const samePlace = (place: { state: string; countryCode: string }, saved: { state: string; country_code: string }) =>
+    place.countryCode.toUpperCase() === saved.country_code.toUpperCase() && normalizeState(place.state) === normalizeState(saved.state);
+  const heldOption =
+    quote && quoteHolds && samePlace(formData.pickup_address, quote.origin) && samePlace(formData.delivery_address, quote.destination) && shipmentWeight <= quote.weight_kg + 0.01
+      ? quote.options.find((o) => o.id === quotedOptionId && o.provider === 'obana') ?? null
+      : null;
+
   // Every service the server priced for this route, cheapest first. A partner rate (or a lone route price) is one option.
   const crossBorder = formData.pickup_address.countryCode !== formData.delivery_address.countryCode;
   const priceOptions: PriceOption[] = !matchedRoute
     ? []
     : matchedRoute.options?.length
-      ? matchedRoute.options
+      ? matchedRoute.options.map((o: PriceOption) => (heldOption && o.id === heldOption.id ? { ...o, price: heldOption.price, held: true } : o))
       : [{
           id: 'only',
           transport_mode: matchedRoute.service?.transport_mode || (crossBorder ? 'air' : 'road'),
@@ -118,7 +141,7 @@ export default function CreateShipmentPage() {
           preferred_driver: matchedRoute.external ? null : matchedRoute.preferred_driver,
           carrier: matchedRoute.external ? matchedRoute.carrier?.name : undefined,
         }];
-  const selected = priceOptions.find((o) => o.id === selectedOptionId) ?? priceOptions[0];
+  const selected = priceOptions.find((o) => o.id === selectedOptionId) ?? priceOptions.find((o) => o.id === quotedOptionId) ?? priceOptions[0];
 
   const deliveryAddress = () => {
     const { name, ...rest } = formData.delivery_address;
@@ -232,10 +255,14 @@ export default function CreateShipmentPage() {
         rate_id: matchedRoute.rate_id,
         shipping_fee: selected.price,
         estimated_delivery: selected.estimated_delivery,
-        preferred_driver_id: selected.preferred_driver?.id
+        preferred_driver_id: selected.preferred_driver?.id,
+        // The server charges the quoted price only if this quote still holds for this booking.
+        quote_reference: quoteRef || undefined,
+        quote_option_id: quoteRef ? selected.id : undefined,
       });
 
       if (response.success && response.data) {
+        clearPendingQuote();
         setNewShipmentInfo(response.data);
         setShowSuccessModal(true);
         setError('');
@@ -358,6 +385,15 @@ export default function CreateShipmentPage() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {quote && (
+          <div role="status" className="rounded-xl border border-[#1B3B5F]/15 bg-[#f1fdfc] px-4 py-3 text-sm text-slate-700">
+            <span className="font-semibold text-slate-900">Booking from quote {quote.reference}.</span>{' '}
+            {quoteHolds
+              ? `The route and weight are filled in, and the quoted price holds until ${new Date(quote.expires_at).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })} for the same route and weight.`
+              : "This quote has expired or was already used, so today's prices apply."}
           </div>
         )}
 
@@ -615,6 +651,9 @@ export default function CreateShipmentPage() {
                             {serviceLabel(o)}
                             {i === 0 && priceOptions.length > 1 && (
                               <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">Cheapest</span>
+                            )}
+                            {o.held && (
+                              <span className="rounded-full bg-[#dcfbf9] px-2 py-0.5 text-xs font-semibold text-[#1B3B5F]">Quoted price</span>
                             )}
                           </span>
                           <span className="mt-0.5 flex items-center gap-1.5 text-sm text-gray-600">

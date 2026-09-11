@@ -90,8 +90,8 @@ export function buildRequest(origin: Place, destination: Place, weight: string, 
 	return { origin: toApi(origin), destination: toApi(destination), weight_kg: Number(parseFloat(weight).toFixed(2)), display_currency: currency };
 }
 
-/** New-shipment form, prefilled with the quoted route and weight. */
-export function bookingPath(body: PublicQuoteRequest) {
+/** New-shipment form, prefilled with the quoted route and weight, plus the saved quote and chosen option when there is one. */
+export function bookingPath(body: PublicQuoteRequest, reference?: string | null, optionId?: string) {
 	const q = new URLSearchParams();
 	for (const [side, p] of [["pickup", body.origin], ["delivery", body.destination]] as const) {
 		q.set(`${side}_country`, p.country);
@@ -101,6 +101,8 @@ export function bookingPath(body: PublicQuoteRequest) {
 		q.set(`${side}_city`, p.city);
 	}
 	q.set("weight", String(body.weight_kg));
+	if (reference) q.set("quote", reference);
+	if (reference && optionId) q.set("option", optionId);
 	return `/dashboard/customer/shipments/new?${q.toString()}`;
 }
 
@@ -121,4 +123,45 @@ export function safeNextPath(next: string | null | undefined) {
 		}
 	}
 	return next;
+}
+
+// The last quote someone chose to book, kept in this browser so it survives sign-up detours that drop
+// the ?next= link (business onboarding, password reset). The dashboard offers it until it expires.
+export type PendingQuote = { reference: string; path: string; label: string; expires_at: string };
+const PENDING_KEY = "obana:pending-quote";
+
+export function savePendingQuote(p: PendingQuote) {
+	try {
+		localStorage.setItem(PENDING_KEY, JSON.stringify(p));
+	} catch {
+		// Storage unavailable (private mode, blocked): the ?next= link still carries the quote.
+	}
+}
+
+/** The raw stored value: a string, so it can be a useSyncExternalStore snapshot. */
+export function readPendingQuoteRaw(): string | null {
+	try {
+		return localStorage.getItem(PENDING_KEY);
+	} catch {
+		return null;
+	}
+}
+
+/** A stored quote that is still valid and points at a safe path on this site, or null. */
+export function parsePendingQuote(raw: string | null): PendingQuote | null {
+	try {
+		const p = raw ? (JSON.parse(raw) as PendingQuote) : null;
+		if (!p?.reference || !safeNextPath(p.path) || !(new Date(p.expires_at).getTime() > Date.now())) return null;
+		return p;
+	} catch {
+		return null;
+	}
+}
+
+export function clearPendingQuote() {
+	try {
+		localStorage.removeItem(PENDING_KEY);
+	} catch {
+		// Nothing to clear.
+	}
 }

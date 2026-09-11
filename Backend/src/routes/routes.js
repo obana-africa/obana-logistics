@@ -15,6 +15,8 @@ router.delete('/:id', auth.authenticateToken, auth.verifyRole(['admin']), contro
 router.post('/match', auth.authenticateToken, controller.matchTemplate)
 // Public price check for the website (no login).
 router.post('/quote', rateLimit({ windowMs: 10 * 60 * 1000, max: 20, message: 'Too many quotes in a short time. Please wait a few minutes and try again.' }), controller.publicQuote)
+// A saved quote, so the booking page can pick up where the quote page left off.
+router.get('/quote/:reference', auth.authenticateToken, controller.getQuote)
 router.post('/partner-quotes/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin']), controller.partnerQuotesForShipment)
 router.post('/zohoitem', requireWebhookSecret, controller.createTemplateFromZoho)
 
