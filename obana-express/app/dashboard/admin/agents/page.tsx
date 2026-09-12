@@ -4,11 +4,12 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Search, ShieldAlert, ShieldCheck, Trash2, UserCheck, Users, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { EmptyState, ErrorState, ListSkeleton, PageHeader, Panel, StatCard, ToneBadge } from "@/components/dashboard/kit";
+import { EmptyState, ErrorState, ListSkeleton, PageHeader, Pager, Panel, StatCard, ToneBadge } from "@/components/dashboard/kit";
 import { Alert, Button } from "@/components/ui";
 import { apiClient } from "@/lib/api";
 import { formatDate, type Tone } from "@/lib/shipments";
 import { errorMessage, useRemote } from "@/lib/useRemote";
+import { usePaged } from "@/lib/usePaged";
 
 // Shape of GET /agents (agentController.listAgents — names are merged in from user attributes).
 export interface Agent {
@@ -151,6 +152,7 @@ export default function ManageAgentsPage() {
 		.sort((x, y) => Number(y.a.verification_status === "pending") - Number(x.a.verification_status === "pending") || x.i - y.i)
 		.map(({ a }) => a);
 	const filtered = Boolean(q || verification || account);
+	const paged = usePaged(visible, 20, JSON.stringify([q, verification, account]));
 	const verifyCount = (v: string) => (v ? agents.filter((a) => a.verification_status === v).length : agents.length);
 
 	const clearFilters = () => {
@@ -293,7 +295,7 @@ export default function ManageAgentsPage() {
 						<>
 							{/* Phones and tablets: cards */}
 							<ul className="divide-y divide-slate-100 lg:hidden">
-								{visible.map((a) => {
+								{paged.items.map((a) => {
 									const name = nameOf(a) || a.user?.email || a.agent_code;
 									return (
 										<li key={a.id} className={`flex items-stretch ${a.verification_status === "pending" ? "bg-amber-50/40" : ""}`}>
@@ -339,7 +341,7 @@ export default function ManageAgentsPage() {
 										</tr>
 									</thead>
 									<tbody className="divide-y divide-slate-100">
-										{visible.map((a) => {
+										{paged.items.map((a) => {
 											const name = nameOf(a) || a.user?.email || a.agent_code;
 											const v = meta(VERIFICATION, a.verification_status);
 											const s = meta(ACCOUNT, a.status);
@@ -399,6 +401,7 @@ export default function ManageAgentsPage() {
 							</div>
 						</>
 					)}
+					<Pager page={paged.page} pages={paged.pages} total={paged.total} noun="agents" onPage={paged.setPage} />
 				</Panel>
 			</div>
 

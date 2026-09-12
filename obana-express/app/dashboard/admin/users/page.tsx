@@ -3,10 +3,11 @@
 import React, { useState } from "react";
 import { Search, Users, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { EmptyState, ErrorState, ListSkeleton, PageHeader, Panel, ToneBadge } from "@/components/dashboard/kit";
+import { EmptyState, ErrorState, ListSkeleton, PageHeader, Pager, Panel, ToneBadge } from "@/components/dashboard/kit";
 import { apiClient } from "@/lib/api";
 import { formatDate, type Tone } from "@/lib/shipments";
 import { useRemote } from "@/lib/useRemote";
+import { usePaged } from "@/lib/usePaged";
 
 // Shape of GET /users (userController.getUsers): user columns with every user attribute flattened on top
 // (first_name, last_name, role …). Older payloads may nest them under `attributes`.
@@ -80,6 +81,7 @@ export default function AdminUsersPage() {
 		return hay.includes(q) || (qDigits.length >= 3 && (u.phone ?? "").replace(/\D/g, "").includes(qDigits));
 	});
 	const filtered = Boolean(q || role);
+	const paged = usePaged(visible, 20, JSON.stringify([q, role]));
 	const count = (r: string) => (r ? users.filter((u) => roleOf(u) === r).length : users.length);
 
 	const clearFilters = () => {
@@ -144,7 +146,7 @@ export default function AdminUsersPage() {
 						<>
 							{/* Phones and tablets: cards */}
 							<ul className="divide-y divide-slate-100 lg:hidden">
-								{visible.map((u) => {
+								{paged.items.map((u) => {
 									const name = nameOf(u);
 									const r = roleMeta(roleOf(u));
 									return (
@@ -177,7 +179,7 @@ export default function AdminUsersPage() {
 										</tr>
 									</thead>
 									<tbody className="divide-y divide-slate-100">
-										{visible.map((u) => {
+										{paged.items.map((u) => {
 											const name = nameOf(u);
 											const r = roleMeta(roleOf(u));
 											return (
@@ -204,6 +206,7 @@ export default function AdminUsersPage() {
 							</div>
 						</>
 					)}
+					<Pager page={paged.page} pages={paged.pages} total={paged.total} noun="users" onPage={paged.setPage} />
 				</Panel>
 
 				{!loading && !error && users.length > 0 && (

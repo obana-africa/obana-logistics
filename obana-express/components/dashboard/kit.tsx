@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import { AlertTriangle, RotateCw } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, RotateCw } from "lucide-react";
 import { statusMeta, type Tone } from "@/lib/shipments";
 
 // Building blocks shared by the customer, driver, agent and admin dashboards.
@@ -187,5 +187,40 @@ export function ListSkeleton({ rows = 4 }: { rows?: number }) {
 				</li>
 			))}
 		</ul>
+	);
+}
+
+/** Previous / next under a list: "Page 2 of 7 · 134 routes". Hidden when everything fits on one page. */
+export function Pager({
+	page,
+	pages,
+	total,
+	noun,
+	onPage,
+	disabled,
+}: {
+	page: number;
+	pages: number;
+	total: number;
+	noun: string;
+	onPage: (page: number) => void;
+	disabled?: boolean;
+}) {
+	if (pages <= 1) return null;
+	const button = "flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40";
+	return (
+		<nav aria-label="Pages" className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 sm:px-5">
+			<p className="text-sm text-slate-600">
+				Page {page} of {pages} · {total.toLocaleString()} {noun}
+			</p>
+			<div className="flex gap-2">
+				<button type="button" onClick={() => onPage(page - 1)} disabled={page <= 1 || disabled} aria-label="Previous page" className={button}>
+					<ChevronLeft className="h-4 w-4" aria-hidden />
+				</button>
+				<button type="button" onClick={() => onPage(page + 1)} disabled={page >= pages || disabled} aria-label="Next page" className={button}>
+					<ChevronRight className="h-4 w-4" aria-hidden />
+				</button>
+			</div>
+		</nav>
 	);
 }

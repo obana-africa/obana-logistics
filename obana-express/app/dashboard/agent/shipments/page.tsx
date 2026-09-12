@@ -7,24 +7,34 @@ import { apiClient } from '@/lib/api';
 import { useAuth } from '@/lib/authContext';
 import Link from 'next/link';
 import { Eye } from 'lucide-react';
+import { Pager } from '@/components/dashboard/kit';
+
+// The server sends shipments a page at a time (without paging, only the latest 20 ever showed).
+const PAGE_SIZE = 20;
 
 export default function AgentShipmentsPage() {
   const { user } = useAuth();
   const [shipments, setShipments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     if (user?.id) {
-      loadShipments();
+      loadShipments(page);
     }
-  }, [user]);
+  }, [user, page]);
 
-  const loadShipments = async () => {
+  const loadShipments = async (pageNo: number) => {
+    setLoading(true);
     try {
       // Pass role='agent' to filter correctly on backend
-      const response = await apiClient.listShipments(Number(user?.id), { role: 'agent' });
+      const response = await apiClient.listShipments(Number(user?.id), { role: 'agent', page: pageNo, limit: PAGE_SIZE });
       if (response.success) {
         setShipments(response.data.shipments);
+        setPages(Math.max(1, response.data.pagination?.pages || 1));
+        setTotal(response.data.pagination?.total ?? 0);
       }
     } catch (error) {
       console.error('Error loading shipments:', error);
@@ -44,6 +54,7 @@ export default function AgentShipmentsPage() {
           {loading ? (
             <div className="flex justify-center py-12"><Loader /></div>
           ) : shipments.length > 0 ? (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
@@ -80,6 +91,8 @@ export default function AgentShipmentsPage() {
                 </tbody>
               </table>
             </div>
+            <Pager page={page} pages={pages} total={total} noun="shipments" onPage={setPage} disabled={loading} />
+            </>
           ) : (
             <div className="text-center py-12 text-gray-500">No shipments assigned yet.</div>
           )}

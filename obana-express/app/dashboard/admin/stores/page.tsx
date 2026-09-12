@@ -3,13 +3,14 @@
 import React, { useState } from "react";
 import { Search, Store as StoreIcon, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { EmptyState, ErrorState, ListSkeleton, PageHeader, Panel, ToneBadge } from "@/components/dashboard/kit";
+import { EmptyState, ErrorState, ListSkeleton, PageHeader, Pager, Panel, ToneBadge } from "@/components/dashboard/kit";
 import { Alert } from "@/components/ui";
 import { ConfirmSheet } from "@/components/stores/Sheet";
 import { lastUsedLabel, prettyUrl, storeStatusLabel, storeStatusTone } from "@/components/stores/stores";
 import { apiClient, type Store } from "@/lib/api";
 import { formatDate } from "@/lib/shipments";
 import { errorMessage, useRemote } from "@/lib/useRemote";
+import { usePaged } from "@/lib/usePaged";
 
 function ToggleButton({ s, onClick }: { s: Store; onClick: () => void }) {
 	const paused = s.status === "paused";
@@ -38,6 +39,7 @@ export default function AdminStoresPage() {
 	const all = data ?? [];
 	const q = query.trim().toLowerCase();
 	const stores = q ? all.filter((s) => [s.name, s.website_url, s.owner?.email, s.owner?.phone].some((v) => v?.toLowerCase().includes(q))) : all;
+	const paged = usePaged(stores, 20, q);
 	const active = all.filter((s) => s.status === "active").length;
 
 	const toggle = async () => {
@@ -106,7 +108,7 @@ export default function AdminStoresPage() {
 					) : (
 						<>
 							<ul className="divide-y divide-slate-100 lg:hidden">
-								{stores.map((s) => (
+								{paged.items.map((s) => (
 									<li key={s.id} className="px-4 py-4">
 										<div className="flex items-start justify-between gap-3">
 											<div className="min-w-0">
@@ -142,7 +144,7 @@ export default function AdminStoresPage() {
 										</tr>
 									</thead>
 									<tbody className="divide-y divide-slate-100">
-										{stores.map((s) => (
+										{paged.items.map((s) => (
 											<tr key={s.id} className="hover:bg-slate-50">
 												<td className="max-w-[16rem] px-5 py-3.5">
 													<p className="truncate font-semibold text-slate-900">{s.name}</p>
@@ -168,6 +170,7 @@ export default function AdminStoresPage() {
 							</div>
 						</>
 					)}
+					<Pager page={paged.page} pages={paged.pages} total={paged.total} noun="stores" onPage={paged.setPage} />
 				</Panel>
 			</div>
 

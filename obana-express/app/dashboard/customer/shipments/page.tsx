@@ -7,6 +7,10 @@ import { Package, Clock, Truck, CheckCircle, XCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api';
 import Link from 'next/link';
 import { useAuthStore } from '@/lib/authStore';
+import { Pager } from '@/components/dashboard/kit';
+
+// The server sends shipments a page at a time (without paging, only the latest 20 ever showed).
+const PAGE_SIZE = 20;
 
 interface Shipment {
   id: number;
@@ -29,28 +33,34 @@ export default function CustomerShipmentsPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const user = useAuthStore((state) => state.user);
 
   useEffect(() => {
     const userId = user?.id ? Number(user.id) : null;
     if (userId) {
-      loadData(userId);
+      loadData(userId, page);
     } else {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, page]);
 
-  const loadData = async (userId: number) => {
+  const loadData = async (userId: number, pageNo: number) => {
     setLoading(true);
     try {
       const [shipmentsResponse, statsResponse] = await Promise.all([
-        apiClient.listShipments(userId),
+        apiClient.listShipments(userId, { page: pageNo, limit: PAGE_SIZE }),
         apiClient.getCustomerStats(),
       ]);
 
       if (shipmentsResponse.data) {
         setShipments(shipmentsResponse.data?.shipments || []);
+        const pg = shipmentsResponse.data?.pagination;
+        setPages(Math.max(1, pg?.pages || 1));
+        setTotal(pg?.total ?? 0);
       }
       if (statsResponse.success) {
         setStats(statsResponse.data);
@@ -152,6 +162,17 @@ export default function CustomerShipmentsPage() {
                 </div>
               </Card>
             ))}
+            <Pager
+              page={page}
+              pages={pages}
+              total={total}
+              noun="shipments"
+              onPage={(p) => {
+                setPage(p);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              disabled={loading}
+            />
           </div>
           
         ) : (
