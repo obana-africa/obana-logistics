@@ -109,14 +109,34 @@ const itemsOf = (order, weights) =>
         currency: order.currency_code || 'USD'
     }))
 
-/** The store row the Zoho integration books as, so shipments are tagged to it. */
+/**
+ * The store row Zoho shipments are tagged to, so they sit alongside the ones
+ * the shop creates.
+ *
+ * Falls back to the only store there is when nothing is configured, and to no
+ * store at all rather than refusing the order. A missing environment variable
+ * is not a reason to drop a shipment someone in Zoho has asked for — it should
+ * arrive, be visible to admin, and be re-tagged later.
+ */
 const zohoStore = async () => {
     const id = Number(process.env.ZOHO_STORE_ID)
     if (id) {
         const byId = await db.stores.findByPk(id)
         if (byId) return byId
+        console.warn(`[ZOHO SHIPMENT] ZOHO_STORE_ID=${id} matches no store — falling back`)
     }
-    return db.stores.findOne({ where: { name: process.env.ZOHO_STORE_NAME || 'Zoho Inventory' } })
+
+    const byName = await db.stores.findOne({ where: { name: process.env.ZOHO_STORE_NAME || 'Zoho Inventory' } })
+    if (byName) return byName
+
+    const all = await db.stores.findAll({ where: { status: 'active' }, limit: 2 })
+    if (all.length === 1) {
+        console.warn(`[ZOHO SHIPMENT] no ZOHO_STORE_ID set — using the only active store, ${all[0].name} (${all[0].id})`)
+        return all[0]
+    }
+
+    console.warn('[ZOHO SHIPMENT] no store resolved — the shipment will be created untagged. Set ZOHO_STORE_ID.')
+    return null
 }
 
 /**
@@ -131,8 +151,15 @@ const bookShipment = async (payload, store) => {
     // req.store set, and createShipment refuses anything with neither. So the
     // owner is loaded here too — without it every booking is turned away as
     // unauthenticated, and the shipment silently never exists.
-    const owner = await db.users.findByPk(store.owner_user_id)
-    if (!owner) throw new Error(`Store ${store.id} has no owner user ${store.owner_user_id}`)
+    //
+    // With no store at all we still need someone to own the row, so it falls to
+    // an admin: better an untagged shipment an admin can see and re-tag than no
+    // shipment for an order Zoho has already flagged as going out.
+    const owner = store
+        ? await db.users.findByPk(store.owner_user_id)
+        : await db.users.findOne({ where: { role: 'admin' }, order: [['id', 'ASC']] })
+
+    if (!owner) throw new Error(store ? `Store ${store.id} has no owner user` : 'No admin user to own an untagged shipment')
 
     const captured = {}
     const res = {
@@ -140,7 +167,10 @@ const bookShipment = async (payload, store) => {
         json(body) { captured.body = body; return this },
         send(body) { captured.body = body; return this }
     }
-    await shipmentsController.createShipment({ body: payload, store, user: owner, authMethod: 'store_key' }, res)
+    await shipmentsController.createShipment(
+        { body: payload, ...(store ? { store, authMethod: 'store_key' } : {}), user: owner },
+        res
+    )
     return { status: captured.status ?? 200, body: captured.body ?? {} }
 }
 
@@ -229,7 +259,6 @@ const fulfil = async (salesOrderId) => {
     }
 
     const store = await zohoStore()
-    if (!store) throw new Error('No store row for the Zoho integration — set ZOHO_STORE_ID')
 
     const { weights, defaulted } = await zoho.getItemWeights(
         (order.line_items || []).map((li) => li.item_id)
