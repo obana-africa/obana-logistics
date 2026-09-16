@@ -139,6 +139,23 @@ const zohoStore = async () => {
     return null
 }
 
+/** Whoever the shipment is recorded against when no store owns it. */
+const shipmentOwner = async (store) => {
+    if (store?.owner_user_id) {
+        const byStore = await db.users.findByPk(store.owner_user_id)
+        if (byStore) return byStore
+    }
+
+    const configured = Number(process.env.ZOHO_OWNER_USER_ID)
+    if (configured) {
+        const byEnv = await db.users.findByPk(configured)
+        if (byEnv) return byEnv
+    }
+
+    const anyStore = await db.stores.findOne({ where: { status: 'active' }, order: [['id', 'ASC']] })
+    return anyStore ? db.users.findByPk(anyStore.owner_user_id) : null
+}
+
 /**
  * Run createShipment without letting it answer the caller.
  *
@@ -152,14 +169,14 @@ const bookShipment = async (payload, store) => {
     // owner is loaded here too — without it every booking is turned away as
     // unauthenticated, and the shipment silently never exists.
     //
-    // With no store at all we still need someone to own the row, so it falls to
-    // an admin: better an untagged shipment an admin can see and re-tag than no
-    // shipment for an order Zoho has already flagged as going out.
-    const owner = store
-        ? await db.users.findByPk(store.owner_user_id)
-        : await db.users.findOne({ where: { role: 'admin' }, order: [['id', 'ASC']] })
-
-    if (!owner) throw new Error(store ? `Store ${store.id} has no owner user` : 'No admin user to own an untagged shipment')
+    // With no store at all the row still needs an owner. Roles live in
+    // user_attributes here rather than on users, so there is no role column to
+    // filter on — take the configured user, or fall back to whoever owns a
+    // store, which is an operator by definition.
+    const owner = await shipmentOwner(store)
+    if (!owner) {
+        throw new Error('No user available to own the shipment — set ZOHO_OWNER_USER_ID or ZOHO_STORE_ID')
+    }
 
     const captured = {}
     const res = {
