@@ -283,9 +283,14 @@ const createShipmentOrder = async ({
             ...(customFields?.length ? { shipmentorder_custom_fields: customFields } : {})
         }
     })
-    const shipment = body?.shipmentorder ?? body?.shipment_order
-    if (!shipment?.shipmentorder_id) throw new Error('Zoho created no shipment order')
-    return shipment
+    const shipment = body?.shipment_order ?? body?.shipmentorder
+    // Zoho answers with shipment_order.shipment_id here, not the
+    // shipmentorder_id its own documentation names. Reading only the documented
+    // field would throw on a shipment order it had just created successfully,
+    // and the write-back would look like a failure while Zoho held the record.
+    const id = shipment?.shipment_id ?? shipment?.shipmentorder_id
+    if (!id) throw new Error(`Zoho created no shipment order — got ${JSON.stringify(body).slice(0, 200)}`)
+    return { ...shipment, shipmentorder_id: String(id) }
 }
 
 /** Move a shipment order on. Zoho's own vocabulary: shipped, delivered. */
