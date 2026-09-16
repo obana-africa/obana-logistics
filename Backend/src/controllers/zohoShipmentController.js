@@ -427,7 +427,16 @@ const fulfil = async (salesOrderId) => {
  * books that the books do not agree with, and the order stops adding up.
  */
 const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productTypes = new Map() }) => {
-    const date = new Date().toISOString().slice(0, 10)
+    /* Zoho refuses a package dated before its sales order — "The package date
+       should be on or after sales order date." Today in UTC can be yesterday in
+       the org's own timezone, so an order raised this evening in Lagos is dated
+       tomorrow as far as toISOString is concerned, and the package is refused
+       for being a day early.
+    
+       Take whichever is later. ISO dates compare correctly as strings. */
+    const today = new Date().toISOString().slice(0, 10)
+    const orderDate = String(order.date || '').slice(0, 10)
+    const date = orderDate && orderDate > today ? orderDate : today
 
     // Only goods can go in a Zoho package — "Hang on, you cannot package
     // services!" — and only the item master says which is which. A service line
