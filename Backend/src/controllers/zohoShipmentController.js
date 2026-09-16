@@ -443,7 +443,23 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
     let pkg = null
     let shipmentOrder = null
 
-    if (packable.length) {
+    // A sales order already carrying a package has been packed — by an earlier
+    // run that failed on the way back, or by hand. Zoho counts the quantity as
+    // recorded and refuses to pack it twice, so reuse what is there rather than
+    // failing: the goal is an order that ends up correct, not one packed by us.
+    const existingPackage = (Array.isArray(order.packages) ? order.packages : [])[0]
+    if (existingPackage) {
+        pkg = { package_id: existingPackage.package_id, package_number: existingPackage.package_number }
+        if (existingPackage.shipment_id) {
+            shipmentOrder = { shipmentorder_id: String(existingPackage.shipment_id) }
+            console.log(
+                `[ZOHO SHIPMENT] ${order.salesorder_number} already packed as ${existingPackage.package_number} ` +
+                    `and shipped as ${existingPackage.shipment_id} — reusing both`
+            )
+        } else {
+            console.log(`[ZOHO SHIPMENT] ${order.salesorder_number} already packed as ${existingPackage.package_number} — reusing it`)
+        }
+    } else if (packable.length) {
         pkg = await zoho.createPackage({
             salesOrderId: order.salesorder_id,
             date,
@@ -476,7 +492,7 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
 
     const trackingUrl = `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
 
-    if (pkg) {
+    if (pkg && !shipmentOrder) {
         shipmentOrder = await zoho.createShipmentOrder({
             salesOrderId: order.salesorder_id,
             packageIds: [pkg.package_id],
