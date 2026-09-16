@@ -113,13 +113,32 @@ const findSalesOrderByNumber = async (salesOrderNumber) => {
     return hit?.salesorder_id ? String(hit.salesorder_id) : null
 }
 
+/** Zoho stores a weight next to its unit, and the unit is not always kg. */
+const TO_KG = { kg: 1, kgs: 1, g: 0.001, gm: 0.001, gms: 0.001, lb: 0.45359237, lbs: 0.45359237, oz: 0.0283495231 }
+
+const toKg = (value, unit) => {
+    const n = Number.parseFloat(value)
+    if (!Number.isFinite(n) || n <= 0) return null
+    const factor = TO_KG[String(unit || 'kg').trim().toLowerCase()]
+    return factor ? n * factor : null
+}
+
 /**
- * Weight in kilograms for each item, read from the cf_weight custom field.
+ * Weight in kilograms for each item.
  *
- * Fetched for the whole order in one call rather than one per line. Items with
- * no cf_weight fall back to DEFAULT_ITEM_WEIGHT_KG and are reported in
+ * Zoho keeps this in package_details — its Package Geometry — not in a custom
+ * field, and that is where the real numbers are: the org has cf_weight defined
+ * but set on none of its items, while package_details carries 0.8 kg for a boot
+ * and 0.5 kg for a shirt. Reading cf_weight alone therefore found nothing and
+ * defaulted every line, which is a quoted price built on a guess while Zoho
+ * held the answer.
+ *
+ * cf_weight is still read last, so an org that does populate it keeps working.
+ *
+ * Fetched for the whole order in one call rather than one per line. Whatever
+ * still has no weight falls back to DEFAULT_ITEM_WEIGHT_KG and is reported in
  * `defaulted` — a silent default is how an under-quoted shipment becomes a
- * standing loss nobody can trace, so the caller records which items guessed.
+ * standing loss nobody can trace, so the caller records which lines guessed.
  */
 const getItemWeights = async (itemIds) => {
     const ids = [...new Set((itemIds || []).map((id) => String(id || '').trim()).filter(Boolean))]
@@ -132,15 +151,20 @@ const getItemWeights = async (itemIds) => {
 
     for (const item of items) {
         const id = String(item.item_id)
-        const raw =
+
+        const cf =
             item.custom_field_hash?.cf_weight ??
             (Array.isArray(item.custom_fields)
-                ? item.custom_fields.find((f) => f.api_name === 'cf_weight' || /weight/i.test(f.label || ''))?.value
+                ? item.custom_fields.find((f) => f.api_name === 'cf_weight')?.value
                 : undefined)
 
-        const parsed = Number.parseFloat(raw)
-        if (Number.isFinite(parsed) && parsed > 0) {
-            weights.set(id, parsed)
+        const found =
+            toKg(item.package_details?.weight, item.package_details?.weight_unit) ??
+            toKg(item.weight, item.weight_unit) ??
+            toKg(cf, 'kg')
+
+        if (found) {
+            weights.set(id, Number(found.toFixed(4)))
         } else {
             weights.set(id, DEFAULT_ITEM_WEIGHT_KG)
             defaulted.push({ item_id: id, name: item.name ?? null })
@@ -255,14 +279,27 @@ const setShipmentStatus = async (shipmentOrderId, action) => {
 const getShipmentOrder = async (shipmentOrderId) =>
     (await call('get', `shipmentorders/${encodeURIComponent(shipmentOrderId)}`))?.shipmentorder ?? null
 
+/** A custom field's value, whichever shape Zoho returned it in. */
+const customField = (record, apiName) => {
+    const hash = record?.custom_field_hash?.[apiName]
+    if (hash !== undefined && hash !== null && hash !== '') return hash
+    const list = Array.isArray(record?.custom_fields) ? record.custom_fields : []
+    const hit = list.find((f) => f.api_name === apiName)
+    return hit?.value ?? null
+}
+
 /**
- * Put the shipping charge on the sales order.
+ * Write the shipment back onto the sales order: the charge, and the fields the
+ * order already has waiting for it — shipment id, tracking url, status.
  *
  * Zoho replaces line_items on a sales-order update, so the order is read back
  * and sent whole. Changing only the charge would empty the order — the kind of
  * mistake that is quiet until someone opens the invoice.
+ *
+ * Only the custom fields being set are sent. Echoing all of them back risks
+ * rewriting values this flow has no business touching.
  */
-const setSalesOrderShippingCharge = async (salesOrderId, shippingCharge) => {
+const updateSalesOrderShipment = async (salesOrderId, { shippingCharge, customFields = {} } = {}) => {
     const order = await getSalesOrder(salesOrderId)
 
     const line_items = (Array.isArray(order.line_items) ? order.line_items : []).map((li) => ({
@@ -276,14 +313,23 @@ const setSalesOrderShippingCharge = async (salesOrderId, shippingCharge) => {
         ...(li.discount !== undefined && li.discount !== '' ? { discount: li.discount } : {})
     }))
 
+    const custom_fields = Object.entries(customFields)
+        .filter(([, value]) => value !== undefined && value !== null && value !== '')
+        .map(([api_name, value]) => ({ api_name, value: String(value) }))
+
     const body = await call('put', `salesorders/${encodeURIComponent(salesOrderId)}`, {
-        data: { line_items, shipping_charge: num(shippingCharge) }
+        data: {
+            line_items,
+            ...(shippingCharge === undefined ? {} : { shipping_charge: num(shippingCharge) }),
+            ...(custom_fields.length ? { custom_fields } : {})
+        }
     })
     return body?.salesorder ?? null
 }
 
 module.exports = {
     DEFAULT_ITEM_WEIGHT_KG,
+    toKg,
     accessToken,
     call,
     getSalesOrder,
@@ -294,5 +340,6 @@ module.exports = {
     createShipmentOrder,
     setShipmentStatus,
     getShipmentOrder,
-    setSalesOrderShippingCharge
+    customField,
+    updateSalesOrderShipment
 }

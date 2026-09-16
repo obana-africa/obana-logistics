@@ -109,14 +109,34 @@ const itemsOf = (order, weights) =>
         currency: order.currency_code || 'USD'
     }))
 
-/** The store row the Zoho integration books as, so shipments are tagged to it. */
+/**
+ * The store row Zoho shipments are tagged to, so they sit alongside the ones
+ * the shop creates.
+ *
+ * Falls back to the only store there is when nothing is configured, and to no
+ * store at all rather than refusing the order. A missing environment variable
+ * is not a reason to drop a shipment someone in Zoho has asked for — it should
+ * arrive, be visible to admin, and be re-tagged later.
+ */
 const zohoStore = async () => {
     const id = Number(process.env.ZOHO_STORE_ID)
     if (id) {
         const byId = await db.stores.findByPk(id)
         if (byId) return byId
+        console.warn(`[ZOHO SHIPMENT] ZOHO_STORE_ID=${id} matches no store — falling back`)
     }
-    return db.stores.findOne({ where: { name: process.env.ZOHO_STORE_NAME || 'Zoho Inventory' } })
+
+    const byName = await db.stores.findOne({ where: { name: process.env.ZOHO_STORE_NAME || 'Zoho Inventory' } })
+    if (byName) return byName
+
+    const all = await db.stores.findAll({ where: { status: 'active' }, limit: 2 })
+    if (all.length === 1) {
+        console.warn(`[ZOHO SHIPMENT] no ZOHO_STORE_ID set — using the only active store, ${all[0].name} (${all[0].id})`)
+        return all[0]
+    }
+
+    console.warn('[ZOHO SHIPMENT] no store resolved — the shipment will be created untagged. Set ZOHO_STORE_ID.')
+    return null
 }
 
 /**
@@ -131,8 +151,15 @@ const bookShipment = async (payload, store) => {
     // req.store set, and createShipment refuses anything with neither. So the
     // owner is loaded here too — without it every booking is turned away as
     // unauthenticated, and the shipment silently never exists.
-    const owner = await db.users.findByPk(store.owner_user_id)
-    if (!owner) throw new Error(`Store ${store.id} has no owner user ${store.owner_user_id}`)
+    //
+    // With no store at all we still need someone to own the row, so it falls to
+    // an admin: better an untagged shipment an admin can see and re-tag than no
+    // shipment for an order Zoho has already flagged as going out.
+    const owner = store
+        ? await db.users.findByPk(store.owner_user_id)
+        : await db.users.findOne({ where: { role: 'admin' }, order: [['id', 'ASC']] })
+
+    if (!owner) throw new Error(store ? `Store ${store.id} has no owner user` : 'No admin user to own an untagged shipment')
 
     const captured = {}
     const res = {
@@ -140,7 +167,10 @@ const bookShipment = async (payload, store) => {
         json(body) { captured.body = body; return this },
         send(body) { captured.body = body; return this }
     }
-    await shipmentsController.createShipment({ body: payload, store, user: owner, authMethod: 'store_key' }, res)
+    await shipmentsController.createShipment(
+        { body: payload, ...(store ? { store, authMethod: 'store_key' } : {}), user: owner },
+        res
+    )
     return { status: captured.status ?? 200, body: captured.body ?? {} }
 }
 
@@ -229,7 +259,6 @@ const fulfil = async (salesOrderId) => {
     }
 
     const store = await zohoStore()
-    if (!store) throw new Error('No store row for the Zoho integration — set ZOHO_STORE_ID')
 
     const { weights, defaulted } = await zoho.getItemWeights(
         (order.line_items || []).map((li) => li.item_id)
@@ -291,7 +320,18 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted }) => {
         }))
     })
 
-    const { rate, effective_date, used_fallback } = await zoho.getNairaRate(date)
+    // The rate the order itself was priced at, when it carries one. Every other
+    // figure on this order was converted with cf_exchange_rate; converting the
+    // shipping charge with anything else makes the order stop adding up, however
+    // correct the other number is. Zoho's currency settings are the fallback for
+    // an order raised without it.
+    const orderRate = Number(zoho.customField(order, 'cf_exchange_rate'))
+    const rateSource = orderRate > 0 ? 'salesorder.cf_exchange_rate' : 'zoho_currency_settings'
+    const { rate, effective_date } =
+        orderRate > 0
+            ? { rate: orderRate, effective_date: order.date ?? null }
+            : await zoho.getNairaRate(date)
+
     const baseCurrency = String(order.currency_code || 'USD').toUpperCase()
     const feeInBase = baseCurrency === 'NGN' ? feeNgn : Number((feeNgn / rate).toFixed(2))
 
@@ -322,8 +362,8 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted }) => {
                 shipping_charge_base: feeInBase,
                 base_currency: baseCurrency,
                 ngn_rate: rate,
+                rate_source: rateSource,
                 rate_effective_date: effective_date,
-                rate_used_fallback: used_fallback,
                 // Which lines had no cf_weight and shipped at the default. Left
                 // here deliberately: it is the only trace of a price that was
                 // guessed rather than measured.
@@ -332,11 +372,23 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted }) => {
         }
     })
 
-    await zoho.setSalesOrderShippingCharge(order.salesorder_id, feeInBase)
+    // The order already carries fields waiting for this: Shipment Id, Tracking
+    // URL, Shipment Status. Filling them is what makes the shipment visible to
+    // whoever opens the order in Zoho, rather than only to us.
+    await zoho.updateSalesOrderShipment(order.salesorder_id, {
+        shippingCharge: feeInBase,
+        customFields: {
+            cf_shipment_id: shipment.shipment_reference,
+            cf_tracking_url: trackingUrl,
+            cf_shipment_status: 'Shipment Created',
+            cf_carrier_name: 'Obana Logistics'
+        }
+    })
 
     console.log(
         `[ZOHO SHIPMENT] ${order.salesorder_number} → ${shipment.shipment_reference} · ` +
-            `₦${feeNgn} = ${feeInBase} ${baseCurrency} @ ${rate} (${effective_date})` +
+            `₦${feeNgn} = ${feeInBase} ${baseCurrency} @ ${rate} (${rateSource})` +
+            ` · tracking ${trackingUrl}` +
             (defaulted.length ? ` · ${defaulted.length} line(s) used the default weight` : '')
     )
 }
