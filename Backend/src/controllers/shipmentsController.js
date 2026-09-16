@@ -1551,6 +1551,17 @@ const shipmentController = {
      * Update Zoho Inventory Shipment Order Status
      */
     async updateZohoShipmentStatus(shipment, status) {
+        // The sales order carries the status for every Zoho-raised shipment,
+        // including the ones with no Zoho shipment order behind them — a
+        // service-item order can never have one, and that is most of the
+        // marketplace catalogue.
+        try {
+            const { syncStatusToSalesOrder } = require('./zohoShipmentController');
+            await syncStatusToSalesOrder(shipment, status);
+        } catch (err) {
+            console.error('[ZOHO SYNC] sales order status update failed:', err.message);
+        }
+
         if (!shipment.order_reference?.startsWith('SO-') || !shipment.external_shipment_id) return;
 
         try {

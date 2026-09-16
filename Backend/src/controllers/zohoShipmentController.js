@@ -537,4 +537,61 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
     )
 }
 
-module.exports = { triggerFromSalesOrder, resolveAndFulfil, fulfil, wantsObana, deliveryAddressOf, itemsOf, PICKUP }
+/**
+ * Push an Obana status change onto the Zoho sales order.
+ *
+ * Zoho will not put a service item in a package, and a shipment order cannot
+ * exist without one — so for a marketplace whose catalogue is services there is
+ * no Zoho shipment record to move through statuses. The sales order's own
+ * fields are the only place the status can live, and they are where anyone
+ * working in Zoho looks anyway.
+ *
+ * Runs for every shipment that came from Zoho, alongside the shipment-order
+ * status call for the orders that do have one.
+ */
+const syncStatusToSalesOrder = async (shipment, status) => {
+    const salesOrderId = shipment?.metadata?.zoho?.salesorder_id
+    if (!salesOrderId) return { skipped: 'not_a_zoho_shipment' }
+
+    const label = {
+        pending: 'Pending',
+        confirmed: 'Shipment Created',
+        picked_up: 'Picked Up',
+        dispatched: 'Dispatched',
+        in_transit: 'In Transit',
+        delivered: 'Delivered',
+        failed: 'Failed',
+        cancelled: 'Cancelled',
+        returned: 'Returned'
+    }[String(status || '').toLowerCase()]
+
+    if (!label) return { skipped: `unmapped_status_${status}` }
+
+    try {
+        await zoho.updateSalesOrderShipment(salesOrderId, {
+            customFields: {
+                cf_shipment_status: label,
+                cf_shipment_id: shipment.shipment_reference,
+                cf_tracking_url: `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
+            }
+        })
+        console.log(`[ZOHO SHIPMENT] ${shipment.shipment_reference} → sales order ${salesOrderId} marked ${label}`)
+        return { updated: true, status: label }
+    } catch (error) {
+        // Never let a Zoho hiccup fail an Obana status change; the shipment is
+        // still moving and the order can be brought back into line on the next one.
+        console.error(`[ZOHO SHIPMENT] could not mark ${salesOrderId} as ${label}:`, error?.zoho || error?.message)
+        return { updated: false, error: error?.message ?? String(error) }
+    }
+}
+
+module.exports = {
+    triggerFromSalesOrder,
+    resolveAndFulfil,
+    fulfil,
+    syncStatusToSalesOrder,
+    wantsObana,
+    deliveryAddressOf,
+    itemsOf,
+    PICKUP
+}
