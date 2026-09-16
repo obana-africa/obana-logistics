@@ -18,6 +18,10 @@ const shipmentsController = require('./shipmentsController')
 const TRIGGER_FIELD = process.env.ZOHO_SHIPMENT_TRIGGER_FIELD || 'cf_create_shipment'
 const TRIGGER_VALUE = process.env.ZOHO_SHIPMENT_TRIGGER_VALUE || 'Via Obana'
 
+// createShipment requires both, and only accepts these vocabularies.
+const TRANSPORT_MODE = process.env.ZOHO_TRANSPORT_MODE || 'road'
+const SERVICE_LEVEL = process.env.ZOHO_SERVICE_LEVEL || 'Standard'
+
 // Goods ship from the Obana warehouse. Vendor drop-ships do not come through
 // this door — an order raised from inside Zoho is one ops is packing here.
 const PICKUP = {
@@ -65,17 +69,31 @@ const wantsObana = (order) => {
 }
 
 /** Zoho's shipping_address plus the order's contact, in the shape we book with. */
-const deliveryAddressOf = (order) => {
+const deliveryAddressOf = (order, customer = null) => {
     const address = order.shipping_address || order.billing_address || {}
     const name = str(order.customer_name) || ''
     const [first, ...rest] = name.split(/\s+/)
     const contact = Array.isArray(order.contact_persons_details) ? order.contact_persons_details[0] : null
 
+    // A sales order routinely carries an address with no phone on it, while the
+    // customer record it belongs to has one. A courier will not take a delivery
+    // without a number, so fall through to the customer — still the customer on
+    // this order, fetched by its own customer_id, never a search.
+    const person = Array.isArray(customer?.contact_persons) ? customer.contact_persons[0] : null
+
     return {
         first_name: str(contact?.first_name) || str(first) || 'Customer',
         last_name: str(contact?.last_name) || str(rest.join(' ')) || '-',
-        email: str(contact?.email) || str(order.email) || null,
-        phone: str(contact?.phone) || str(contact?.mobile) || str(address.phone) || null,
+        email: str(contact?.email) || str(order.email) || str(customer?.email) || str(person?.email) || null,
+        phone:
+            str(contact?.phone) ||
+            str(contact?.mobile) ||
+            str(address.phone) ||
+            str(customer?.phone) ||
+            str(customer?.mobile) ||
+            str(person?.phone) ||
+            str(person?.mobile) ||
+            null,
         is_residential: true,
         line1: str(address.address) || str(address.street) || '',
         line2: str(address.street2) || '',
@@ -235,6 +253,29 @@ const triggerFromSalesOrder = async (req, res) => {
     }
 
     const reference = salesOrderId || salesOrderNumber
+
+    /* Zoho must be answered immediately — rating, booking and three write-backs
+       will not finish inside its webhook timeout, and a timeout makes it record
+       a failure for a shipment that in fact succeeded.
+    
+       `wait=1` runs it inline and returns the outcome instead. Not for Zoho: it
+       is for whoever is setting this up, so a failure can be read from the
+       response rather than hunted for in a log on another machine. */
+    if (String(req.query?.wait || '') === '1') {
+        try {
+            const result = await resolveAndFulfil({ salesOrderId, salesOrderNumber })
+            return res.status(200).json({ success: true, salesorder: reference, result })
+        } catch (error) {
+            console.error(`[ZOHO SHIPMENT] ${reference} failed:`, error?.zoho || error?.message || error)
+            return res.status(502).json({
+                success: false,
+                salesorder: reference,
+                error: error?.message || String(error),
+                zoho: error?.zoho ?? null
+            })
+        }
+    }
+
     res.status(202).json({ success: true, message: 'Shipment request accepted', salesorder: reference })
 
     resolveAndFulfil({ salesOrderId, salesOrderNumber }).catch((error) =>
@@ -260,7 +301,14 @@ const resolveAndFulfil = async ({ salesOrderId, salesOrderNumber }) => {
  * was lost or whose write-back failed halfway.
  */
 const fulfil = async (salesOrderId) => {
+    // Each stage announces itself. Every failure so far has been invisible
+    // until someone read a log, and a 202 means the caller never sees any of
+    // it — so the log has to be able to answer "how far did it get?" on its own.
+    const step = (name, detail = '') => console.log(`[ZOHO SHIPMENT] ${salesOrderId} · ${name}${detail ? ' · ' + detail : ''}`)
+
+    step('reading sales order')
     const order = await zoho.getSalesOrder(salesOrderId)
+    step('read', `${order.salesorder_number} · ${order.customer_name} · ${(order.line_items || []).length} line(s)`)
 
     if (!wantsObana(order)) {
         console.log(`[ZOHO SHIPMENT] ${order.salesorder_number}: ${TRIGGER_FIELD} is not "${TRIGGER_VALUE}" — ignoring`)
@@ -269,13 +317,19 @@ const fulfil = async (salesOrderId) => {
 
     // One shipment per sales order. The rule fires on every edit, so without
     // this a second save books a second courier.
-    const existing = await db.shippings.findOne({ where: { order_reference: order.salesorder_number } })
+    const store = await zohoStore()
+    step('store', store ? `${store.name} (${store.id})` : 'none — shipment will be untagged')
+
+    // Scoped to the store: a sales order already shipped by another tenant is
+    // not this integration's shipment, and skipping on it would silently refuse
+    // an order Zoho has asked us to send.
+    const existing = await db.shippings.findOne({
+        where: { order_reference: order.salesorder_number, ...(store ? { tenant_id: store.id } : {}) }
+    })
     if (existing) {
-        console.log(`[ZOHO SHIPMENT] ${order.salesorder_number} already has ${existing.shipment_reference} — ignoring`)
+        step('already shipped', existing.shipment_reference)
         return { skipped: 'already_shipped', shipment_reference: existing.shipment_reference }
     }
-
-    const store = await zohoStore()
 
     const { weights, defaulted } = await zoho.getItemWeights(
         (order.line_items || []).map((li) => li.item_id)
@@ -283,13 +337,38 @@ const fulfil = async (salesOrderId) => {
     const items = itemsOf(order, weights)
     if (!items.length) throw new Error(`Sales order ${order.salesorder_number} has no line items to ship`)
 
+    const totalKg = items.reduce((sum, i) => sum + (Number(i.weight) || 0) * (Number(i.quantity) || 1), 0)
+    step('weights', `${totalKg} kg across ${items.length} line(s)` + (defaulted.length ? ` · ${defaulted.length} defaulted` : ''))
+
+    // The order's own address often has no phone; its customer record does.
+    const customer = order.customer_id
+        ? await zoho.getContact(order.customer_id).catch((err) => {
+              console.warn(`[ZOHO SHIPMENT] could not read customer ${order.customer_id}: ${err.message}`)
+              return null
+          })
+        : null
+
+    const delivery = deliveryAddressOf(order, customer)
+    step('delivery', `${delivery.city}, ${delivery.state} · phone ${delivery.phone || 'MISSING'}`)
+    if (!delivery.phone) {
+        throw new Error(
+            `No phone number for ${order.customer_name || 'the customer'} on ${order.salesorder_number} — ` +
+                'a courier cannot collect without one. Add it to the contact in Zoho.'
+        )
+    }
+
     const booked = await bookShipment(
         {
             order_id: order.salesorder_number,
             vendor_name: 'Obana Africa',
             carrier_slug: 'obana',
+            // createShipment validates both of these, and the quote option id
+            // ties the price charged to the service level recorded.
+            transport_mode: TRANSPORT_MODE,
+            service_level: SERVICE_LEVEL,
+            quote_option_id: `obana-${TRANSPORT_MODE}-${SERVICE_LEVEL.toLowerCase()}`,
             pickup_address: PICKUP,
-            delivery_address: deliveryAddressOf(order),
+            delivery_address: delivery,
             items,
             notes: `Zoho sales order ${order.salesorder_number}`,
             customer: {
@@ -302,8 +381,10 @@ const fulfil = async (salesOrderId) => {
         store
     )
 
+    step('booking', `HTTP ${booked.status}`)
     if (!booked.body?.success) {
-        throw new Error(`Booking refused: ${booked.body?.message || 'unknown'}`)
+        const errors = Array.isArray(booked.body?.errors) ? ` — ${booked.body.errors.join('; ')}` : ''
+        throw new Error(`Booking refused: ${booked.body?.message || 'unknown'}${errors}`)
     }
     if (booked.body.duplicate) {
         return { skipped: 'already_shipped', shipment_reference: booked.body.data?.shipment_reference }
@@ -311,7 +392,9 @@ const fulfil = async (salesOrderId) => {
 
     const shipment = await db.shippings.findByPk(booked.body.data.shipment_id)
     const feeNgn = num(shipment.shipping_fee)
+    step('booked', `${shipment.shipment_reference} · ₦${feeNgn}`)
 
+    step('writing back to zoho')
     await writeBackToZoho({ order, shipment, feeNgn, defaulted })
 
     return { shipment_reference: shipment.shipment_reference, shipping_fee_ngn: feeNgn }
