@@ -610,8 +610,117 @@ const syncStatusToSalesOrder = async (shipment, status) => {
     }
 }
 
+/* ─────────────────── Zoho → Obana: a status set in Zoho ──────────────────── */
+
+/** What Zoho (or a person typing in it) might say, and what Obana calls it. */
+const INBOUND_STATUS = {
+    'shipment created': 'confirmed',
+    confirmed: 'confirmed',
+    pending: 'pending',
+    packed: 'confirmed',
+    'picked up': 'picked_up',
+    picked_up: 'picked_up',
+    pickedup: 'picked_up',
+    dispatched: 'dispatched',
+    shipped: 'dispatched',
+    'in transit': 'in_transit',
+    in_transit: 'in_transit',
+    intransit: 'in_transit',
+    delivered: 'delivered',
+    failed: 'failed',
+    cancelled: 'cancelled',
+    canceled: 'cancelled',
+    returned: 'returned'
+}
+
+const toObanaStatus = (value) => INBOUND_STATUS[String(value || '').trim().toLowerCase()] ?? null
+
+/**
+ * The endpoint Zoho calls when someone changes a shipment's status there.
+ *
+ * The two systems have to agree in both directions: a shipment marked
+ * delivered in Zoho is delivered, and Obana should say so without anyone
+ * re-typing it. Runs through updateShipmentStatus rather than writing the row,
+ * so the change lands with a tracking event and the same notifications any
+ * other status change would raise.
+ */
+const statusFromZoho = async (req, res) => {
+    const salesOrderNumber = str(req.query?.salesorder_number) || str(req.body?.salesorder_number)
+    const salesOrderId = str(req.query?.salesorder_id) || str(req.body?.salesorder_id)
+    const rawStatus = str(req.query?.status) || str(req.body?.status) || str(req.query?.shipment_status)
+
+    if (!salesOrderNumber && !salesOrderId) {
+        return res.status(400).json({
+            success: false,
+            message: 'salesorder_id or salesorder_number is required — add it as a URL parameter on the workflow rule'
+        })
+    }
+    if (!rawStatus) {
+        return res.status(400).json({
+            success: false,
+            message: 'status is required — add status=${SALESORDER.CF_SHIPMENT_STATUS} as a URL parameter'
+        })
+    }
+
+    const status = toObanaStatus(rawStatus)
+    if (!status) {
+        // Not an error: Zoho carries statuses Obana has no equivalent for, and
+        // a rule that fires on every edit will send them.
+        console.log(`[ZOHO STATUS] "${rawStatus}" has no Obana equivalent — ignoring`)
+        return res.status(200).json({ success: true, ignored: `unmapped status "${rawStatus}"` })
+    }
+
+    try {
+        // Find the shipment by whichever reference Zoho sent.
+        let shipment = null
+        if (salesOrderNumber) {
+            shipment = await db.shippings.findOne({ where: { order_reference: salesOrderNumber } })
+        }
+        if (!shipment && salesOrderId) {
+            const order = await zoho.getSalesOrder(salesOrderId)
+            shipment = await db.shippings.findOne({ where: { order_reference: order.salesorder_number } })
+        }
+
+        if (!shipment) {
+            return res.status(404).json({ success: false, message: 'No Obana shipment for that sales order' })
+        }
+
+        if (shipment.status === status) {
+            return res.status(200).json({ success: true, unchanged: true, status, shipment_reference: shipment.shipment_reference })
+        }
+
+        const captured = {}
+        const inner = {
+            status(code) { captured.status = code; return this },
+            json(body) { captured.body = body; return this },
+            send(body) { captured.body = body; return this }
+        }
+        await shipmentsController.updateShipmentStatus(
+            {
+                params: { shipment_id: String(shipment.id) },
+                body: { status, source: 'zoho', performed_by: 'zoho', description: `Marked ${rawStatus} in Zoho` },
+                user: null
+            },
+            inner
+        )
+
+        console.log(`[ZOHO STATUS] ${shipment.shipment_reference} → ${status} (from Zoho "${rawStatus}")`)
+        return res.status(captured.status ?? 200).json({
+            success: true,
+            shipment_reference: shipment.shipment_reference,
+            status,
+            from_zoho: rawStatus
+        })
+    } catch (error) {
+        console.error('[ZOHO STATUS] failed:', error?.zoho || error?.message || error)
+        return res.status(500).json({ success: false, error: error?.message ?? String(error) })
+    }
+}
+
 module.exports = {
     triggerFromSalesOrder,
+    statusFromZoho,
+    toObanaStatus,
     resolveAndFulfil,
     fulfil,
     syncStatusToSalesOrder,
