@@ -105,6 +105,14 @@ const getSalesOrder = async (salesOrderId) => {
     return order
 }
 
+/** Find a sales order by its human number (SO-00042) rather than its id. */
+const findSalesOrderByNumber = async (salesOrderNumber) => {
+    const body = await call('get', 'salesorders', { params: { salesorder_number: salesOrderNumber } })
+    const list = Array.isArray(body?.salesorders) ? body.salesorders : []
+    const hit = list.find((o) => String(o.salesorder_number) === String(salesOrderNumber)) || list[0]
+    return hit?.salesorder_id ? String(hit.salesorder_id) : null
+}
+
 /**
  * Weight in kilograms for each item, read from the cf_weight custom field.
  *
@@ -279,6 +287,7 @@ module.exports = {
     accessToken,
     call,
     getSalesOrder,
+    findSalesOrderByNumber,
     getItemWeights,
     getNairaRate,
     createPackage,
