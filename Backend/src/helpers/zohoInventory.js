@@ -105,6 +105,12 @@ const getSalesOrder = async (salesOrderId) => {
     return order
 }
 
+/** The customer record behind an order — where the phone usually actually is. */
+const getContact = async (contactId) => {
+    const body = await call('get', `contacts/${encodeURIComponent(contactId)}`)
+    return body?.contact ?? null
+}
+
 /** Find a sales order by its human number (SO-00042) rather than its id. */
 const findSalesOrderByNumber = async (salesOrderNumber) => {
     const body = await call('get', 'salesorders', { params: { salesorder_number: salesOrderNumber } })
@@ -333,6 +339,7 @@ module.exports = {
     accessToken,
     call,
     getSalesOrder,
+    getContact,
     findSalesOrderByNumber,
     getItemWeights,
     getNairaRate,

@@ -18,6 +18,10 @@ const shipmentsController = require('./shipmentsController')
 const TRIGGER_FIELD = process.env.ZOHO_SHIPMENT_TRIGGER_FIELD || 'cf_create_shipment'
 const TRIGGER_VALUE = process.env.ZOHO_SHIPMENT_TRIGGER_VALUE || 'Via Obana'
 
+// createShipment requires both, and only accepts these vocabularies.
+const TRANSPORT_MODE = process.env.ZOHO_TRANSPORT_MODE || 'road'
+const SERVICE_LEVEL = process.env.ZOHO_SERVICE_LEVEL || 'Standard'
+
 // Goods ship from the Obana warehouse. Vendor drop-ships do not come through
 // this door — an order raised from inside Zoho is one ops is packing here.
 const PICKUP = {
@@ -65,17 +69,31 @@ const wantsObana = (order) => {
 }
 
 /** Zoho's shipping_address plus the order's contact, in the shape we book with. */
-const deliveryAddressOf = (order) => {
+const deliveryAddressOf = (order, customer = null) => {
     const address = order.shipping_address || order.billing_address || {}
     const name = str(order.customer_name) || ''
     const [first, ...rest] = name.split(/\s+/)
     const contact = Array.isArray(order.contact_persons_details) ? order.contact_persons_details[0] : null
 
+    // A sales order routinely carries an address with no phone on it, while the
+    // customer record it belongs to has one. A courier will not take a delivery
+    // without a number, so fall through to the customer — still the customer on
+    // this order, fetched by its own customer_id, never a search.
+    const person = Array.isArray(customer?.contact_persons) ? customer.contact_persons[0] : null
+
     return {
         first_name: str(contact?.first_name) || str(first) || 'Customer',
         last_name: str(contact?.last_name) || str(rest.join(' ')) || '-',
-        email: str(contact?.email) || str(order.email) || null,
-        phone: str(contact?.phone) || str(contact?.mobile) || str(address.phone) || null,
+        email: str(contact?.email) || str(order.email) || str(customer?.email) || str(person?.email) || null,
+        phone:
+            str(contact?.phone) ||
+            str(contact?.mobile) ||
+            str(address.phone) ||
+            str(customer?.phone) ||
+            str(customer?.mobile) ||
+            str(person?.phone) ||
+            str(person?.mobile) ||
+            null,
         is_residential: true,
         line1: str(address.address) || str(address.street) || '',
         line2: str(address.street2) || '',
@@ -283,13 +301,34 @@ const fulfil = async (salesOrderId) => {
     const items = itemsOf(order, weights)
     if (!items.length) throw new Error(`Sales order ${order.salesorder_number} has no line items to ship`)
 
+    // The order's own address often has no phone; its customer record does.
+    const customer = order.customer_id
+        ? await zoho.getContact(order.customer_id).catch((err) => {
+              console.warn(`[ZOHO SHIPMENT] could not read customer ${order.customer_id}: ${err.message}`)
+              return null
+          })
+        : null
+
+    const delivery = deliveryAddressOf(order, customer)
+    if (!delivery.phone) {
+        throw new Error(
+            `No phone number for ${order.customer_name || 'the customer'} on ${order.salesorder_number} — ` +
+                'a courier cannot collect without one. Add it to the contact in Zoho.'
+        )
+    }
+
     const booked = await bookShipment(
         {
             order_id: order.salesorder_number,
             vendor_name: 'Obana Africa',
             carrier_slug: 'obana',
+            // createShipment validates both of these, and the quote option id
+            // ties the price charged to the service level recorded.
+            transport_mode: TRANSPORT_MODE,
+            service_level: SERVICE_LEVEL,
+            quote_option_id: `obana-${TRANSPORT_MODE}-${SERVICE_LEVEL.toLowerCase()}`,
             pickup_address: PICKUP,
-            delivery_address: deliveryAddressOf(order),
+            delivery_address: delivery,
             items,
             notes: `Zoho sales order ${order.salesorder_number}`,
             customer: {
