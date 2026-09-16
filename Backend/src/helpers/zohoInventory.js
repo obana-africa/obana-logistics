@@ -229,13 +229,20 @@ const getNairaRate = async (onDate) => {
 
 /* ────────────────────────────────── writes ───────────────────────────────── */
 
-/** The box: which sales-order lines, and how many of each. */
+/**
+ * The box: which sales-order lines, and how many of each.
+ *
+ * Zoho requires a package number — it does not generate one for you — and the
+ * org already numbers every package OBN-PA-<hex>, so keep to that. Random
+ * rather than derived from the shipment, because a retry after a half-failed
+ * write-back must not collide with a package the first attempt created.
+ */
 const createPackage = async ({ salesOrderId, lineItems, date, packageNumber }) => {
     const body = await call('post', 'packages', {
         params: { salesorder_id: salesOrderId },
         data: {
             date: date || new Date().toISOString().slice(0, 10),
-            ...(packageNumber ? { package_number: packageNumber } : {}),
+            package_number: packageNumber || `OBN-PA-${require('crypto').randomBytes(4).toString('hex')}`,
             line_items: lineItems.map((li) => ({
                 so_line_item_id: String(li.so_line_item_id),
                 quantity: num(li.quantity)
@@ -276,9 +283,14 @@ const createShipmentOrder = async ({
             ...(customFields?.length ? { shipmentorder_custom_fields: customFields } : {})
         }
     })
-    const shipment = body?.shipmentorder ?? body?.shipment_order
-    if (!shipment?.shipmentorder_id) throw new Error('Zoho created no shipment order')
-    return shipment
+    const shipment = body?.shipment_order ?? body?.shipmentorder
+    // Zoho answers with shipment_order.shipment_id here, not the
+    // shipmentorder_id its own documentation names. Reading only the documented
+    // field would throw on a shipment order it had just created successfully,
+    // and the write-back would look like a failure while Zoho held the record.
+    const id = shipment?.shipment_id ?? shipment?.shipmentorder_id
+    if (!id) throw new Error(`Zoho created no shipment order — got ${JSON.stringify(body).slice(0, 200)}`)
+    return { ...shipment, shipmentorder_id: String(id) }
 }
 
 /** Move a shipment order on. Zoho's own vocabulary: shipped, delivered. */
