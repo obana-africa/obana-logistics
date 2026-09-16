@@ -127,13 +127,20 @@ const zohoStore = async () => {
  * captured here rather than sent.
  */
 const bookShipment = async (payload, store) => {
+    // A store's own API call arrives with both req.user (the store's owner) and
+    // req.store set, and createShipment refuses anything with neither. So the
+    // owner is loaded here too — without it every booking is turned away as
+    // unauthenticated, and the shipment silently never exists.
+    const owner = await db.users.findByPk(store.owner_user_id)
+    if (!owner) throw new Error(`Store ${store.id} has no owner user ${store.owner_user_id}`)
+
     const captured = {}
     const res = {
         status(code) { captured.status = code; return this },
         json(body) { captured.body = body; return this },
         send(body) { captured.body = body; return this }
     }
-    await shipmentsController.createShipment({ body: payload, store, user: null, tenant: null }, res)
+    await shipmentsController.createShipment({ body: payload, store, user: owner, authMethod: 'store_key' }, res)
     return { status: captured.status ?? 200, body: captured.body ?? {} }
 }
 
