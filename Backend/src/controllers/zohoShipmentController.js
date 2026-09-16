@@ -153,20 +153,57 @@ const bookShipment = async (payload, store) => {
  * then invites someone to trigger it a second time.
  */
 const triggerFromSalesOrder = async (req, res) => {
+    // Zoho sends nothing on its own. A workflow-rule webhook carries only the
+    // URL parameters and body you configure on it, and its body format is XML,
+    // which express.json() leaves as an empty object — so in practice the id
+    // arrives as a query parameter. Both are accepted, and so is the human
+    // order number, because that is the field most people reach for first.
     const salesOrderId =
+        str(req.query?.salesorder_id) ||
         str(req.body?.salesorder_id) ||
-        str(req.body?.salesorder?.salesorder_id) ||
-        str(req.query?.salesorder_id)
+        str(req.body?.salesorder?.salesorder_id)
 
-    if (!salesOrderId) {
-        return res.status(400).json({ success: false, message: 'salesorder_id is required' })
+    const salesOrderNumber =
+        str(req.query?.salesorder_number) ||
+        str(req.body?.salesorder_number) ||
+        str(req.body?.salesorder?.salesorder_number)
+
+    if (!salesOrderId && !salesOrderNumber) {
+        // Say what did arrive. A bare "salesorder_id is required" tells whoever
+        // is configuring the rule nothing about which half is missing, and this
+        // is the one error they will hit while setting it up.
+        console.warn(
+            '[ZOHO SHIPMENT] trigger arrived with no sales order —',
+            `query=${JSON.stringify(req.query || {})}`,
+            `content-type=${req.headers?.['content-type'] || 'none'}`,
+            `body=${JSON.stringify(req.body || {}).slice(0, 300)}`
+        )
+        return res.status(400).json({
+            success: false,
+            message:
+                'salesorder_id is required. Zoho sends only what the webhook is configured to send: add ' +
+                'salesorder_id=${SALESORDER.SALESORDER_ID} as a URL parameter on the workflow rule.',
+            received: { query: req.query || {}, content_type: req.headers?.['content-type'] || null }
+        })
     }
 
-    res.status(202).json({ success: true, message: 'Shipment request accepted', salesorder_id: salesOrderId })
+    const reference = salesOrderId || salesOrderNumber
+    res.status(202).json({ success: true, message: 'Shipment request accepted', salesorder: reference })
 
-    fulfil(salesOrderId).catch((error) =>
-        console.error(`[ZOHO SHIPMENT] ${salesOrderId} failed:`, error?.zoho || error?.message || error)
+    resolveAndFulfil({ salesOrderId, salesOrderNumber }).catch((error) =>
+        console.error(`[ZOHO SHIPMENT] ${reference} failed:`, error?.zoho || error?.message || error)
     )
+}
+
+/** Turn whatever Zoho sent into an id, then run the flow. */
+const resolveAndFulfil = async ({ salesOrderId, salesOrderNumber }) => {
+    let id = salesOrderId
+    if (!id && salesOrderNumber) {
+        id = await zoho.findSalesOrderByNumber(salesOrderNumber)
+        if (!id) throw new Error(`No sales order in Zoho numbered ${salesOrderNumber}`)
+        console.log(`[ZOHO SHIPMENT] ${salesOrderNumber} resolved to sales order ${id}`)
+    }
+    return fulfil(id)
 }
 
 /**
@@ -304,4 +341,4 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted }) => {
     )
 }
 
-module.exports = { triggerFromSalesOrder, fulfil, wantsObana, deliveryAddressOf, itemsOf, PICKUP }
+module.exports = { triggerFromSalesOrder, resolveAndFulfil, fulfil, wantsObana, deliveryAddressOf, itemsOf, PICKUP }
