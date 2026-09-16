@@ -253,6 +253,29 @@ const triggerFromSalesOrder = async (req, res) => {
     }
 
     const reference = salesOrderId || salesOrderNumber
+
+    /* Zoho must be answered immediately — rating, booking and three write-backs
+       will not finish inside its webhook timeout, and a timeout makes it record
+       a failure for a shipment that in fact succeeded.
+    
+       `wait=1` runs it inline and returns the outcome instead. Not for Zoho: it
+       is for whoever is setting this up, so a failure can be read from the
+       response rather than hunted for in a log on another machine. */
+    if (String(req.query?.wait || '') === '1') {
+        try {
+            const result = await resolveAndFulfil({ salesOrderId, salesOrderNumber })
+            return res.status(200).json({ success: true, salesorder: reference, result })
+        } catch (error) {
+            console.error(`[ZOHO SHIPMENT] ${reference} failed:`, error?.zoho || error?.message || error)
+            return res.status(502).json({
+                success: false,
+                salesorder: reference,
+                error: error?.message || String(error),
+                zoho: error?.zoho ?? null
+            })
+        }
+    }
+
     res.status(202).json({ success: true, message: 'Shipment request accepted', salesorder: reference })
 
     resolveAndFulfil({ salesOrderId, salesOrderNumber }).catch((error) =>
