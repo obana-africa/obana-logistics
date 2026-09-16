@@ -8,6 +8,7 @@ const shipmentRoutes = require("./src/routes/shipments");
 const routesManagement = require("./src/routes/routes");
 const agentRoutes = require("./src/routes/agents");
 const locations = require("./src/routes/locations")
+const zohoRoutes = require("./src/routes/zoho");
 
 const PORT = process.env.PORT;
 const app = express();
@@ -127,6 +128,7 @@ app.use("/agents", agentRoutes);
 app.use("/locations", locations)
 app.use("/partners", require("./src/routes/partners"));
 app.use("/stores", require("./src/routes/stores"));
+app.use("/zoho", zohoRoutes);
  
 server.listen(PORT, () => {
 	console.log(`Obana Logistics is running on port ${PORT}`);
