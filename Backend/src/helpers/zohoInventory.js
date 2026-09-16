@@ -229,13 +229,20 @@ const getNairaRate = async (onDate) => {
 
 /* ────────────────────────────────── writes ───────────────────────────────── */
 
-/** The box: which sales-order lines, and how many of each. */
+/**
+ * The box: which sales-order lines, and how many of each.
+ *
+ * Zoho requires a package number — it does not generate one for you — and the
+ * org already numbers every package OBN-PA-<hex>, so keep to that. Random
+ * rather than derived from the shipment, because a retry after a half-failed
+ * write-back must not collide with a package the first attempt created.
+ */
 const createPackage = async ({ salesOrderId, lineItems, date, packageNumber }) => {
     const body = await call('post', 'packages', {
         params: { salesorder_id: salesOrderId },
         data: {
             date: date || new Date().toISOString().slice(0, 10),
-            ...(packageNumber ? { package_number: packageNumber } : {}),
+            package_number: packageNumber || `OBN-PA-${require('crypto').randomBytes(4).toString('hex')}`,
             line_items: lineItems.map((li) => ({
                 so_line_item_id: String(li.so_line_item_id),
                 quantity: num(li.quantity)
