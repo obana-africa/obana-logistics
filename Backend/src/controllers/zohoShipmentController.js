@@ -333,12 +333,13 @@ const fulfil = async (salesOrderId) => {
         // shipment and stops. Finish the half that did not happen instead.
         if (!existing.external_shipment_id) {
             step('resuming write-back', existing.shipment_reference)
+            const resume = await zoho.getItemWeights((order.line_items || []).map((li) => li.item_id))
             await writeBackToZoho({
                 order,
                 shipment: existing,
                 feeNgn: num(existing.shipping_fee),
-                // Recorded on the first run; not recomputed to resume.
-                defaulted: existing.metadata?.zoho?.weight_defaulted ?? []
+                defaulted: existing.metadata?.zoho?.weight_defaulted ?? resume.defaulted,
+                productTypes: resume.productTypes
             })
             step('resumed', existing.shipment_reference)
             return { resumed: true, shipment_reference: existing.shipment_reference }
@@ -348,7 +349,7 @@ const fulfil = async (salesOrderId) => {
         return { skipped: 'already_shipped', shipment_reference: existing.shipment_reference }
     }
 
-    const { weights, defaulted } = await zoho.getItemWeights(
+    const { weights, defaulted, productTypes } = await zoho.getItemWeights(
         (order.line_items || []).map((li) => li.item_id)
     )
     const items = itemsOf(order, weights)
@@ -412,7 +413,7 @@ const fulfil = async (salesOrderId) => {
     step('booked', `${shipment.shipment_reference} · ₦${feeNgn}`)
 
     step('writing back to zoho')
-    await writeBackToZoho({ order, shipment, feeNgn, defaulted })
+    await writeBackToZoho({ order, shipment, feeNgn, defaulted, productTypes })
 
     return { shipment_reference: shipment.shipment_reference, shipping_fee_ngn: feeNgn }
 }
@@ -425,17 +426,38 @@ const fulfil = async (salesOrderId) => {
  * from anywhere else — an env constant, a public feed — puts a number in the
  * books that the books do not agree with, and the order stops adding up.
  */
-const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted }) => {
+const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productTypes = new Map() }) => {
     const date = new Date().toISOString().slice(0, 10)
 
-    const pkg = await zoho.createPackage({
-        salesOrderId: order.salesorder_id,
-        date,
-        lineItems: (order.line_items || []).map((li) => ({
-            so_line_item_id: li.line_item_id,
-            quantity: num(li.quantity)
-        }))
-    })
+    // Only goods can go in a Zoho package — "Hang on, you cannot package
+    // services!" — and only the item master says which is which. A service line
+    // is dropped from the package rather than failing the whole write-back, and
+    // an order made entirely of services skips the package and shipment order
+    // altogether. The shipment is real either way, so the order still gets its
+    // charge, its shipment id and its tracking url.
+    const packable = (order.line_items || []).filter(
+        (li) => (productTypes.get(String(li.item_id)) ?? 'goods') !== 'service'
+    )
+    const serviceLines = (order.line_items || []).length - packable.length
+
+    let pkg = null
+    let shipmentOrder = null
+
+    if (packable.length) {
+        pkg = await zoho.createPackage({
+            salesOrderId: order.salesorder_id,
+            date,
+            lineItems: packable.map((li) => ({
+                so_line_item_id: li.line_item_id,
+                quantity: num(li.quantity)
+            }))
+        })
+    } else {
+        console.warn(
+            `[ZOHO SHIPMENT] ${order.salesorder_number} is entirely service items — ` +
+                'no Zoho package or shipment order can exist for it, recording on the order only'
+        )
+    }
 
     // The rate the order itself was priced at, when it carries one. Every other
     // figure on this order was converted with cf_exchange_rate; converting the
@@ -454,28 +476,33 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted }) => {
 
     const trackingUrl = `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
 
-    const shipmentOrder = await zoho.createShipmentOrder({
-        salesOrderId: order.salesorder_id,
-        packageIds: [pkg.package_id],
-        shipmentNumber: shipment.shipment_reference,
-        trackingNumber: shipment.shipment_reference,
-        deliveryMethod: 'Obana Logistics',
-        shippingCharge: feeInBase,
-        date,
-        notes: `Obana Logistics · ${trackingUrl}`
-    })
+    if (pkg) {
+        shipmentOrder = await zoho.createShipmentOrder({
+            salesOrderId: order.salesorder_id,
+            packageIds: [pkg.package_id],
+            shipmentNumber: shipment.shipment_reference,
+            trackingNumber: shipment.shipment_reference,
+            deliveryMethod: 'Obana Logistics',
+            shippingCharge: feeInBase,
+            date,
+            notes: `Obana Logistics · ${trackingUrl}`
+        })
+    }
 
     // external_shipment_id is what updateZohoShipmentStatus reads when the
     // shipment later moves, so the outbound sync needs nothing more than this.
     await shipment.update({
-        external_shipment_id: String(shipmentOrder.shipmentorder_id),
+        // Without a shipment order there is nothing for the status sync to
+        // update, so the field stays empty rather than holding a fake id.
+        ...(shipmentOrder ? { external_shipment_id: String(shipmentOrder.shipmentorder_id) } : {}),
         metadata: {
             ...(shipment.metadata || {}),
             zoho: {
                 salesorder_id: order.salesorder_id,
                 salesorder_number: order.salesorder_number,
-                package_id: pkg.package_id,
-                shipmentorder_id: shipmentOrder.shipmentorder_id,
+                package_id: pkg?.package_id ?? null,
+                shipmentorder_id: shipmentOrder?.shipmentorder_id ?? null,
+                service_lines_skipped: serviceLines,
                 shipping_charge_base: feeInBase,
                 base_currency: baseCurrency,
                 ngn_rate: rate,
@@ -510,4 +537,61 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted }) => {
     )
 }
 
-module.exports = { triggerFromSalesOrder, resolveAndFulfil, fulfil, wantsObana, deliveryAddressOf, itemsOf, PICKUP }
+/**
+ * Push an Obana status change onto the Zoho sales order.
+ *
+ * Zoho will not put a service item in a package, and a shipment order cannot
+ * exist without one — so for a marketplace whose catalogue is services there is
+ * no Zoho shipment record to move through statuses. The sales order's own
+ * fields are the only place the status can live, and they are where anyone
+ * working in Zoho looks anyway.
+ *
+ * Runs for every shipment that came from Zoho, alongside the shipment-order
+ * status call for the orders that do have one.
+ */
+const syncStatusToSalesOrder = async (shipment, status) => {
+    const salesOrderId = shipment?.metadata?.zoho?.salesorder_id
+    if (!salesOrderId) return { skipped: 'not_a_zoho_shipment' }
+
+    const label = {
+        pending: 'Pending',
+        confirmed: 'Shipment Created',
+        picked_up: 'Picked Up',
+        dispatched: 'Dispatched',
+        in_transit: 'In Transit',
+        delivered: 'Delivered',
+        failed: 'Failed',
+        cancelled: 'Cancelled',
+        returned: 'Returned'
+    }[String(status || '').toLowerCase()]
+
+    if (!label) return { skipped: `unmapped_status_${status}` }
+
+    try {
+        await zoho.updateSalesOrderShipment(salesOrderId, {
+            customFields: {
+                cf_shipment_status: label,
+                cf_shipment_id: shipment.shipment_reference,
+                cf_tracking_url: `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
+            }
+        })
+        console.log(`[ZOHO SHIPMENT] ${shipment.shipment_reference} → sales order ${salesOrderId} marked ${label}`)
+        return { updated: true, status: label }
+    } catch (error) {
+        // Never let a Zoho hiccup fail an Obana status change; the shipment is
+        // still moving and the order can be brought back into line on the next one.
+        console.error(`[ZOHO SHIPMENT] could not mark ${salesOrderId} as ${label}:`, error?.zoho || error?.message)
+        return { updated: false, error: error?.message ?? String(error) }
+    }
+}
+
+module.exports = {
+    triggerFromSalesOrder,
+    resolveAndFulfil,
+    fulfil,
+    syncStatusToSalesOrder,
+    wantsObana,
+    deliveryAddressOf,
+    itemsOf,
+    PICKUP
+}

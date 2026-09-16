@@ -150,13 +150,18 @@ const getItemWeights = async (itemIds) => {
     const ids = [...new Set((itemIds || []).map((id) => String(id || '').trim()).filter(Boolean))]
     const weights = new Map()
     const defaulted = []
-    if (!ids.length) return { weights, defaulted }
+    // Zoho refuses to package a service, and only the item master knows which
+    // is which — a sales-order line reports "goods" for an item recorded as a
+    // service, so the line cannot be trusted for this.
+    const productTypes = new Map()
+    if (!ids.length) return { weights, defaulted, productTypes }
 
     const body = await call('get', 'itemdetails', { params: { item_ids: ids.join(',') } })
     const items = Array.isArray(body?.items) ? body.items : []
 
     for (const item of items) {
         const id = String(item.item_id)
+        productTypes.set(id, String(item.product_type || 'goods').toLowerCase())
 
         const cf =
             item.custom_field_hash?.cf_weight ??
@@ -185,7 +190,7 @@ const getItemWeights = async (itemIds) => {
         }
     }
 
-    return { weights, defaulted }
+    return { weights, defaulted, productTypes }
 }
 
 /**
