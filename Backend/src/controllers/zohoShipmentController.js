@@ -291,7 +291,18 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted }) => {
         }))
     })
 
-    const { rate, effective_date, used_fallback } = await zoho.getNairaRate(date)
+    // The rate the order itself was priced at, when it carries one. Every other
+    // figure on this order was converted with cf_exchange_rate; converting the
+    // shipping charge with anything else makes the order stop adding up, however
+    // correct the other number is. Zoho's currency settings are the fallback for
+    // an order raised without it.
+    const orderRate = Number(zoho.customField(order, 'cf_exchange_rate'))
+    const rateSource = orderRate > 0 ? 'salesorder.cf_exchange_rate' : 'zoho_currency_settings'
+    const { rate, effective_date } =
+        orderRate > 0
+            ? { rate: orderRate, effective_date: order.date ?? null }
+            : await zoho.getNairaRate(date)
+
     const baseCurrency = String(order.currency_code || 'USD').toUpperCase()
     const feeInBase = baseCurrency === 'NGN' ? feeNgn : Number((feeNgn / rate).toFixed(2))
 
@@ -322,8 +333,8 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted }) => {
                 shipping_charge_base: feeInBase,
                 base_currency: baseCurrency,
                 ngn_rate: rate,
+                rate_source: rateSource,
                 rate_effective_date: effective_date,
-                rate_used_fallback: used_fallback,
                 // Which lines had no cf_weight and shipped at the default. Left
                 // here deliberately: it is the only trace of a price that was
                 // guessed rather than measured.
@@ -332,11 +343,23 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted }) => {
         }
     })
 
-    await zoho.setSalesOrderShippingCharge(order.salesorder_id, feeInBase)
+    // The order already carries fields waiting for this: Shipment Id, Tracking
+    // URL, Shipment Status. Filling them is what makes the shipment visible to
+    // whoever opens the order in Zoho, rather than only to us.
+    await zoho.updateSalesOrderShipment(order.salesorder_id, {
+        shippingCharge: feeInBase,
+        customFields: {
+            cf_shipment_id: shipment.shipment_reference,
+            cf_tracking_url: trackingUrl,
+            cf_shipment_status: 'Shipment Created',
+            cf_carrier_name: 'Obana Logistics'
+        }
+    })
 
     console.log(
         `[ZOHO SHIPMENT] ${order.salesorder_number} → ${shipment.shipment_reference} · ` +
-            `₦${feeNgn} = ${feeInBase} ${baseCurrency} @ ${rate} (${effective_date})` +
+            `₦${feeNgn} = ${feeInBase} ${baseCurrency} @ ${rate} (${rateSource})` +
+            ` · tracking ${trackingUrl}` +
             (defaulted.length ? ` · ${defaulted.length} line(s) used the default weight` : '')
     )
 }

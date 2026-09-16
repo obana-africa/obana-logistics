@@ -255,14 +255,27 @@ const setShipmentStatus = async (shipmentOrderId, action) => {
 const getShipmentOrder = async (shipmentOrderId) =>
     (await call('get', `shipmentorders/${encodeURIComponent(shipmentOrderId)}`))?.shipmentorder ?? null
 
+/** A custom field's value, whichever shape Zoho returned it in. */
+const customField = (record, apiName) => {
+    const hash = record?.custom_field_hash?.[apiName]
+    if (hash !== undefined && hash !== null && hash !== '') return hash
+    const list = Array.isArray(record?.custom_fields) ? record.custom_fields : []
+    const hit = list.find((f) => f.api_name === apiName)
+    return hit?.value ?? null
+}
+
 /**
- * Put the shipping charge on the sales order.
+ * Write the shipment back onto the sales order: the charge, and the fields the
+ * order already has waiting for it — shipment id, tracking url, status.
  *
  * Zoho replaces line_items on a sales-order update, so the order is read back
  * and sent whole. Changing only the charge would empty the order — the kind of
  * mistake that is quiet until someone opens the invoice.
+ *
+ * Only the custom fields being set are sent. Echoing all of them back risks
+ * rewriting values this flow has no business touching.
  */
-const setSalesOrderShippingCharge = async (salesOrderId, shippingCharge) => {
+const updateSalesOrderShipment = async (salesOrderId, { shippingCharge, customFields = {} } = {}) => {
     const order = await getSalesOrder(salesOrderId)
 
     const line_items = (Array.isArray(order.line_items) ? order.line_items : []).map((li) => ({
@@ -276,8 +289,16 @@ const setSalesOrderShippingCharge = async (salesOrderId, shippingCharge) => {
         ...(li.discount !== undefined && li.discount !== '' ? { discount: li.discount } : {})
     }))
 
+    const custom_fields = Object.entries(customFields)
+        .filter(([, value]) => value !== undefined && value !== null && value !== '')
+        .map(([api_name, value]) => ({ api_name, value: String(value) }))
+
     const body = await call('put', `salesorders/${encodeURIComponent(salesOrderId)}`, {
-        data: { line_items, shipping_charge: num(shippingCharge) }
+        data: {
+            line_items,
+            ...(shippingCharge === undefined ? {} : { shipping_charge: num(shippingCharge) }),
+            ...(custom_fields.length ? { custom_fields } : {})
+        }
     })
     return body?.salesorder ?? null
 }
@@ -294,5 +315,6 @@ module.exports = {
     createShipmentOrder,
     setShipmentStatus,
     getShipmentOrder,
-    setSalesOrderShippingCharge
+    customField,
+    updateSalesOrderShipment
 }
