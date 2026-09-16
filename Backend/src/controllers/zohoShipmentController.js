@@ -327,6 +327,23 @@ const fulfil = async (salesOrderId) => {
         where: { order_reference: order.salesorder_number, ...(store ? { tenant_id: store.id } : {}) }
     })
     if (existing) {
+        // A shipment with no Zoho linkage is a run that booked and then failed
+        // on the way back. Skipping it would strand the order permanently:
+        // Obana has the shipment, Zoho shows nothing, and every retry sees the
+        // shipment and stops. Finish the half that did not happen instead.
+        if (!existing.external_shipment_id) {
+            step('resuming write-back', existing.shipment_reference)
+            await writeBackToZoho({
+                order,
+                shipment: existing,
+                feeNgn: num(existing.shipping_fee),
+                // Recorded on the first run; not recomputed to resume.
+                defaulted: existing.metadata?.zoho?.weight_defaulted ?? []
+            })
+            step('resumed', existing.shipment_reference)
+            return { resumed: true, shipment_reference: existing.shipment_reference }
+        }
+
         step('already shipped', existing.shipment_reference)
         return { skipped: 'already_shipped', shipment_reference: existing.shipment_reference }
     }
