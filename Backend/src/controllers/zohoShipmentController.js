@@ -278,7 +278,14 @@ const resolveAndFulfil = async ({ salesOrderId, salesOrderNumber }) => {
  * was lost or whose write-back failed halfway.
  */
 const fulfil = async (salesOrderId) => {
+    // Each stage announces itself. Every failure so far has been invisible
+    // until someone read a log, and a 202 means the caller never sees any of
+    // it — so the log has to be able to answer "how far did it get?" on its own.
+    const step = (name, detail = '') => console.log(`[ZOHO SHIPMENT] ${salesOrderId} · ${name}${detail ? ' · ' + detail : ''}`)
+
+    step('reading sales order')
     const order = await zoho.getSalesOrder(salesOrderId)
+    step('read', `${order.salesorder_number} · ${order.customer_name} · ${(order.line_items || []).length} line(s)`)
 
     if (!wantsObana(order)) {
         console.log(`[ZOHO SHIPMENT] ${order.salesorder_number}: ${TRIGGER_FIELD} is not "${TRIGGER_VALUE}" — ignoring`)
@@ -287,19 +294,28 @@ const fulfil = async (salesOrderId) => {
 
     // One shipment per sales order. The rule fires on every edit, so without
     // this a second save books a second courier.
-    const existing = await db.shippings.findOne({ where: { order_reference: order.salesorder_number } })
+    const store = await zohoStore()
+    step('store', store ? `${store.name} (${store.id})` : 'none — shipment will be untagged')
+
+    // Scoped to the store: a sales order already shipped by another tenant is
+    // not this integration's shipment, and skipping on it would silently refuse
+    // an order Zoho has asked us to send.
+    const existing = await db.shippings.findOne({
+        where: { order_reference: order.salesorder_number, ...(store ? { tenant_id: store.id } : {}) }
+    })
     if (existing) {
-        console.log(`[ZOHO SHIPMENT] ${order.salesorder_number} already has ${existing.shipment_reference} — ignoring`)
+        step('already shipped', existing.shipment_reference)
         return { skipped: 'already_shipped', shipment_reference: existing.shipment_reference }
     }
-
-    const store = await zohoStore()
 
     const { weights, defaulted } = await zoho.getItemWeights(
         (order.line_items || []).map((li) => li.item_id)
     )
     const items = itemsOf(order, weights)
     if (!items.length) throw new Error(`Sales order ${order.salesorder_number} has no line items to ship`)
+
+    const totalKg = items.reduce((sum, i) => sum + (Number(i.weight) || 0) * (Number(i.quantity) || 1), 0)
+    step('weights', `${totalKg} kg across ${items.length} line(s)` + (defaulted.length ? ` · ${defaulted.length} defaulted` : ''))
 
     // The order's own address often has no phone; its customer record does.
     const customer = order.customer_id
@@ -310,6 +326,7 @@ const fulfil = async (salesOrderId) => {
         : null
 
     const delivery = deliveryAddressOf(order, customer)
+    step('delivery', `${delivery.city}, ${delivery.state} · phone ${delivery.phone || 'MISSING'}`)
     if (!delivery.phone) {
         throw new Error(
             `No phone number for ${order.customer_name || 'the customer'} on ${order.salesorder_number} — ` +
@@ -341,8 +358,10 @@ const fulfil = async (salesOrderId) => {
         store
     )
 
+    step('booking', `HTTP ${booked.status}`)
     if (!booked.body?.success) {
-        throw new Error(`Booking refused: ${booked.body?.message || 'unknown'}`)
+        const errors = Array.isArray(booked.body?.errors) ? ` — ${booked.body.errors.join('; ')}` : ''
+        throw new Error(`Booking refused: ${booked.body?.message || 'unknown'}${errors}`)
     }
     if (booked.body.duplicate) {
         return { skipped: 'already_shipped', shipment_reference: booked.body.data?.shipment_reference }
@@ -350,7 +369,9 @@ const fulfil = async (salesOrderId) => {
 
     const shipment = await db.shippings.findByPk(booked.body.data.shipment_id)
     const feeNgn = num(shipment.shipping_fee)
+    step('booked', `${shipment.shipment_reference} · ₦${feeNgn}`)
 
+    step('writing back to zoho')
     await writeBackToZoho({ order, shipment, feeNgn, defaulted })
 
     return { shipment_reference: shipment.shipment_reference, shipping_fee_ngn: feeNgn }
