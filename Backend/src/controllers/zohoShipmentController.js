@@ -549,7 +549,7 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
         customFields: {
             cf_shipment_id: shipment.shipment_reference,
             cf_tracking_url: trackingUrl,
-            cf_shipment_status: 'Shipment Created',
+            cf_shipment_status: ZOHO_LABEL.confirmed,
             cf_carrier_name: 'Obana Logistics'
         }
     })
@@ -578,17 +578,7 @@ const syncStatusToSalesOrder = async (shipment, status) => {
     const salesOrderId = shipment?.metadata?.zoho?.salesorder_id
     if (!salesOrderId) return { skipped: 'not_a_zoho_shipment' }
 
-    const label = {
-        pending: 'Pending',
-        confirmed: 'Shipment Created',
-        picked_up: 'Picked Up',
-        dispatched: 'Dispatched',
-        in_transit: 'In Transit',
-        delivered: 'Delivered',
-        failed: 'Failed',
-        cancelled: 'Cancelled',
-        returned: 'Returned'
-    }[String(status || '').toLowerCase()]
+    const label = ZOHO_LABEL[String(status || '').toLowerCase()]
 
     if (!label) return { skipped: `unmapped_status_${status}` }
 
@@ -610,6 +600,31 @@ const syncStatusToSalesOrder = async (shipment, status) => {
     }
 }
 
+/**
+ * What Obana's statuses are called on the sales order.
+ *
+ * Obana tracks a parcel in more detail than Zoho needs to show: picked up,
+ * dispatched and in transit are three things to a dispatcher and one thing to
+ * whoever is looking at the order. So they collapse onto the vocabulary both
+ * systems share — Shipment Created, In Transit, Fulfilled — and the finer
+ * detail stays where it is useful, on the shipment's own tracking history.
+ *
+ * The exceptions carry their own names: an order that failed, was cancelled or
+ * came back is not any of the three, and saying so plainly matters more than a
+ * tidy set.
+ */
+const ZOHO_LABEL = {
+    pending: 'Shipment Created',
+    confirmed: 'Shipment Created',
+    picked_up: 'In Transit',
+    dispatched: 'In Transit',
+    in_transit: 'In Transit',
+    delivered: 'Fulfilled',
+    failed: 'Failed',
+    cancelled: 'Cancelled',
+    returned: 'Returned'
+}
+
 /* ─────────────────── Zoho → Obana: a status set in Zoho ──────────────────── */
 
 /** What Zoho (or a person typing in it) might say, and what Obana calls it. */
@@ -627,6 +642,9 @@ const INBOUND_STATUS = {
     in_transit: 'in_transit',
     intransit: 'in_transit',
     delivered: 'delivered',
+    fulfilled: 'delivered',
+    fulfiled: 'delivered',
+    created: 'confirmed',
     failed: 'failed',
     cancelled: 'cancelled',
     canceled: 'cancelled',
