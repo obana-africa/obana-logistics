@@ -944,6 +944,8 @@ const statusFromZoho = async (req, res) => {
  * without printing any of it — the codes are credentials.
  */
 const notificationConfig = async (_req, res) => {
+    const { templateCodeFor } = require('./shipmentsController')
+
     const events = {
         created: ['KUDISMS_WA_CREATED_TEMPLATE', 'KUDISMS_WA_SALESPERSON_CREATED_TEMPLATE'],
         in_transit: ['KUDISMS_WA_INTRANSIT_TEMPLATE', 'KUDISMS_WA_SALESPERSON_INTRANSIT_TEMPLATE'],
@@ -953,19 +955,28 @@ const notificationConfig = async (_req, res) => {
     const report = {}
     const missing = []
     for (const [event, [customer, salesperson]] of Object.entries(events)) {
-        const has = (name) => Boolean(String(process.env[name] || '').trim())
+        // Through the same lookup the sender uses, so an alias counts as set.
+        const has = (name) => Boolean(templateCodeFor(name))
         report[event] = { customer: has(customer), salesperson: has(salesperson) }
         if (!has(customer)) missing.push(customer)
         if (!has(salesperson)) missing.push(salesperson)
     }
 
+    // A template is useless without the account behind it.
+    const account = {
+        KUDISMS_API_KEY: Boolean(String(process.env.KUDISMS_API_KEY || '').trim()),
+        KUDISMS_WHATSAPP_PHONE_NUMBER_ID: Boolean(String(process.env.KUDISMS_WHATSAPP_PHONE_NUMBER_ID || '').trim())
+    }
+    for (const [name, set] of Object.entries(account)) if (!set) missing.push(name)
+
     return res.status(200).json({
         success: true,
         configured: report,
+        account,
         missing,
         note: missing.length
-            ? 'Those variables are unset, so that audience is silently skipped for that event.'
-            : 'Every template is configured.'
+            ? 'Those are unset, so that audience is silently skipped for that event.'
+            : 'Every template and credential is configured.'
     })
 }
 

@@ -93,6 +93,31 @@ const WA_EVENTS = {
     delivered:  { customer: 'KUDISMS_WA_DELIVERED_TEMPLATE', salesperson: 'KUDISMS_WA_SALESPERSON_DELIVERED_TEMPLATE' }
 };
 
+/* INTRANSIT or IN_TRANSIT, DELIVERED or FULFILLED — whoever sets these has to
+   guess which spelling the code chose, and guessing wrong silences a whole
+   event with no error anywhere. Accept the obvious variants instead. */
+const TEMPLATE_ALIASES = {
+    KUDISMS_WA_INTRANSIT_TEMPLATE: ['KUDISMS_WA_IN_TRANSIT_TEMPLATE', 'KUDISMS_WA_SHIPPED_TEMPLATE'],
+    KUDISMS_WA_SALESPERSON_INTRANSIT_TEMPLATE: [
+        'KUDISMS_WA_SALESPERSON_IN_TRANSIT_TEMPLATE',
+        'KUDISMS_WA_SALESPERSON_SHIPPED_TEMPLATE'
+    ],
+    KUDISMS_WA_DELIVERED_TEMPLATE: ['KUDISMS_WA_FULFILLED_TEMPLATE'],
+    KUDISMS_WA_SALESPERSON_DELIVERED_TEMPLATE: ['KUDISMS_WA_SALESPERSON_FULFILLED_TEMPLATE']
+};
+
+/** The template code for a variable, trying its known aliases. */
+const templateCodeFor = (name) => {
+    for (const candidate of [name, ...(TEMPLATE_ALIASES[name] ?? [])]) {
+        const value = String(process.env[candidate] || '').trim();
+        if (value) {
+            if (candidate !== name) console.log(`[WA] using ${candidate} for ${name}`);
+            return value;
+        }
+    }
+    return '';
+};
+
 /**
  * Send the WhatsApp notification(s) for a shipment lifecycle event.
  * Fire-and-forget; never throws. Skips any audience whose template code isn't configured.
@@ -100,7 +125,11 @@ const WA_EVENTS = {
 const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
     try {
         const cfg = WA_EVENTS[event];
-        if (!cfg) return;
+        if (!cfg) return { event, skipped: 'no template config for this event' };
+
+        // What happened, per audience — returned so a caller can report it
+        // instead of everyone having to read the server log.
+        const outcome = { event, customer: null, salesperson: null };
 
         let address = deliveryAddress;
         if (!address && shipment.delivery_address_id) {
@@ -127,38 +156,54 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
         const buttonParameters = [shipment.shipment_reference];      // {{1}} in track URL
 
         // Customer: {{1}} Customer Name  {{2}} Shipment Weight  {{3}} Shipping Cost
-        const customerTemplate = (process.env[cfg.customer] || '').trim();
+        const customerTemplate = templateCodeFor(cfg.customer);
         if (customerTemplate && recipientPhone) {
-            await sendWhatsApp({
+            // KudiSMS answers 200 even when it refuses, so the result is the only
+            // thing that says whether a message was actually accepted. Logging
+            // "Sent" regardless is how a rejected template goes unnoticed.
+            const sent = await sendWhatsApp({
                 recipient: recipientPhone,
                 templateCode: customerTemplate,
                 parameters: [customerName, shipmentWeight, shippingCost],
                 buttonParameters
             });
-            console.log(`[WA ${event}] Sent to customer ${recipientPhone} for ${shipment.shipment_reference}`);
+            outcome.customer = sent.success ? 'sent' : `rejected: ${sent.error ?? 'unknown'}`;
+            if (sent.success) console.log(`[WA ${event}] Sent to customer ${recipientPhone} for ${shipment.shipment_reference}`);
+            else console.error(`[WA ${event}] KudiSMS refused the customer message for ${shipment.shipment_reference}:`, sent.error, sent.data ?? '');
         } else if (!customerTemplate) {
+            outcome.customer = `no template (${cfg.customer} unset)`;
             console.warn(`[WA ${event}] ${cfg.customer} not set; skipping customer notification`);
         } else {
+            outcome.customer = 'no phone';
             console.warn(`[WA ${event}] No customer phone for ${shipment.shipment_reference}`);
         }
 
         // Salesperson: {{1}} Salesperson Name  {{2}} Customer Name  {{3}} Shipment Weight  {{4}} Shipping Cost
         // Name/phone come from the Zoho salesorder (salesperson_name / cf_salesperson_phone).
         const salesperson = shipment.metadata?.salesperson || {};
-        const salespersonTemplate = (process.env[cfg.salesperson] || '').trim();
+        const salespersonTemplate = templateCodeFor(cfg.salesperson);
         if (salespersonTemplate && salesperson.phone) {
-            await sendWhatsApp({
+            const sent = await sendWhatsApp({
                 recipient: salesperson.phone,
                 templateCode: salespersonTemplate,
                 parameters: [salesperson.name || 'Salesperson', customerName, shipmentWeight, shippingCost],
                 buttonParameters
             });
-            console.log(`[WA ${event}] Sent to salesperson ${salesperson.phone} for ${shipment.shipment_reference}`);
-        } else if (salespersonTemplate && !salesperson.phone) {
+            outcome.salesperson = sent.success ? 'sent' : `rejected: ${sent.error ?? 'unknown'}`;
+            if (sent.success) console.log(`[WA ${event}] Sent to salesperson ${salesperson.phone} for ${shipment.shipment_reference}`);
+            else console.error(`[WA ${event}] KudiSMS refused the salesperson message:`, sent.error, sent.data ?? '');
+        } else if (!salespersonTemplate) {
+            outcome.salesperson = `no template (${cfg.salesperson} unset)`;
+            console.warn(`[WA ${event}] ${cfg.salesperson} not set; skipping salesperson notification`);
+        } else {
+            outcome.salesperson = 'no phone';
             console.log(`[WA ${event}] No salesperson phone on ${shipment.shipment_reference}; skipping salesperson notification`);
         }
+
+        return outcome;
     } catch (error) {
         console.error(`Error sending WhatsApp for event '${event}':`, error);
+        return { event, error: error.message };
     }
 };
 
@@ -2092,3 +2137,4 @@ const shipmentController = {
 module.exports = shipmentController;
 // Exposed for webhook flows that update status outside updateShipmentStatus (e.g. Zoho salesorder webhook).
 module.exports.notifyShipmentEvent = notifyShipmentEvent;
+module.exports.templateCodeFor = templateCodeFor;
