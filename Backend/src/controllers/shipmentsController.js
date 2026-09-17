@@ -173,8 +173,11 @@ const calculateShipmentTotals = (items) => {
             const value = parseFloat(item.total_price) || parseFloat(item.value) || parseFloat(item.price) || 0;
             const quantity = parseInt(item.quantity) || 1;
 
-            totalWeight += weight;
-            // totalWeight += weight * quantity;
+            // Per-unit weight times how many there are. Without the quantity a
+            // shipment of seventy shirts reports as one kilogram, which is what
+            // the dashboard was showing. Rating was never affected — it does its
+            // own sum — so only the recorded and displayed figure was wrong.
+            totalWeight += weight * quantity;
             totalValue += value;
             itemCount += quantity;
         });
@@ -1457,6 +1460,14 @@ const shipmentController = {
             }
 
             const plainShipment = shipment.get({ plain: true });
+            plainShipment.display_status = displayStatus(plainShipment.status);
+
+            // The Zoho order this came from, so a shipment can be tied back to
+            // it from the dashboard without opening Zoho.
+            const zoho = plainShipment.metadata?.zoho ?? {};
+            plainShipment.source = zoho.salesorder_number
+                ? { system: 'Zoho', order_number: zoho.salesorder_number, ordered_at: zoho.order_date ?? null }
+                : null;
 
             if (plainShipment.agent && plainShipment.agent.user) {
                 const attributes = await userController.getUserAttributes(plainShipment.agent.user.id);

@@ -6,6 +6,7 @@ import { Card, Badge, Loader, Button } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import Link from 'next/link';
 import { ArrowLeft, Package, Truck, MapPin, User, FileText, Clock, Calendar, Weight, Tag } from 'lucide-react';
+import { statusMeta } from "@/lib/shipments";
 
 interface Address {
   name: string;
@@ -54,6 +55,9 @@ interface ShipmentDetail {
   shipment_reference: string;
   order_reference: string;
   status: string;
+  display_status?: string;
+  /** Where the order came from, when it came from Zoho. */
+  source?: { system: string; order_number?: string | null; ordered_at?: string | null } | null;
   carrier_name: string;
   carrier_type: string;
   total_weight: string;
@@ -142,7 +146,7 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
             }
             className="capitalize"
           >
-            {shipment.status.replace('_', ' ')}
+            {statusMeta(shipment.status).label}
           </Badge>
         </div>
 
@@ -177,7 +181,13 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
               </h3>
               <div className="space-y-2 text-sm">
                 <p className="flex justify-between"><span><Tag className="inline w-4 h-4 mr-1" />Shipment Ref:</span> <span className="font-medium">{shipment.shipment_reference}</span></p>
-                <p className="flex justify-between"><span><Calendar className="inline w-4 h-4 mr-1" />Created:</span> <span className="font-medium">{new Date(shipment.createdAt).toLocaleDateString()}</span></p>
+                {shipment.source?.order_number && (
+                  <p className="flex justify-between"><span><Tag className="inline w-4 h-4 mr-1" />{shipment.source.system} Order:</span> <span className="font-medium">{shipment.source.order_number}</span></p>
+                )}
+                {shipment.source?.ordered_at && (
+                  <p className="flex justify-between"><span><Calendar className="inline w-4 h-4 mr-1" />Ordered:</span> <span className="font-medium">{new Date(shipment.source.ordered_at).toLocaleDateString()}</span></p>
+                )}
+                <p className="flex justify-between"><span><Calendar className="inline w-4 h-4 mr-1" />Created:</span> <span className="font-medium">{new Date(shipment.createdAt).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</span></p>
                 <p className="flex justify-between"><span><Weight className="inline w-4 h-4 mr-1" />Total Weight:</span> <span className="font-medium">{shipment.total_weight} kg</span></p>
                 <p className="flex justify-between"><span><Package className="inline w-4 h-4 mr-1" />Total Items:</span> <span className="font-medium">{shipment.total_items}</span></p>
                 <p className="flex justify-between"><span>Carrier:</span> <span className="font-medium">{shipment.carrier_name}</span></p>
