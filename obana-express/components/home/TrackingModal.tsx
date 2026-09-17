@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Loader2, MapPin, Package, Search, X } from "lucide-react";
 import { apiClient } from "@/lib/api";
-import { statusMeta } from "@/lib/shipments";
+import { statusMeta, whenText as when } from "@/lib/shipments";
 
 type TrackingEvent = { id: number | string; status: string; createdAt: string; description?: string; location?: string };
 type Address = { city?: string; state?: string };
@@ -48,7 +48,7 @@ function useIsTouch() {
 	return touch;
 }
 
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
 /** Public tracking lookup — works for guests and for links in emails and WhatsApp messages. */

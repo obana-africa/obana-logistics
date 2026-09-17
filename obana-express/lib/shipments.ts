@@ -58,6 +58,23 @@ export function statusMeta(status?: string | null) {
 	return STATUS_META[key] ?? { label: status ? status.replace(/_/g, " ") : "Unknown", tone: "neutral" as Tone };
 }
 
+/**
+ * Date and time, always with am/pm.
+ *
+ * Left to the browser's locale this renders 24-hour under en-GB, and "08:23"
+ * on its own does not tell you whether a parcel went out in the morning or the
+ * evening — which is the whole reason for showing the time.
+ */
+export const whenText = (iso: string | number | Date) =>
+	new Date(iso).toLocaleString(undefined, {
+		day: "numeric",
+		month: "short",
+		year: "numeric",
+		hour: "numeric",
+		minute: "2-digit",
+		hour12: true,
+	});
+
 export function formatMoney(amount: number | string | null | undefined, currency = "NGN") {
 	const value = typeof amount === "string" ? parseFloat(amount) : amount ?? 0;
 	if (!Number.isFinite(value)) return "—";
