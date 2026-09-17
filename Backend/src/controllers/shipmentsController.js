@@ -1798,20 +1798,21 @@ const shipmentController = {
                 }
             });
 
-            // Send WhatsApp notification (fire-and-forget to avoid blocking response).
-            let statusNotification;
+            /* Awaited rather than fired and forgotten, so the outcome can be
+               returned. A notification that silently fails is indistinguishable
+               from one nobody sent, and that has cost more time here than the
+               fraction of a second this adds. notifyShipmentEvent never throws. */
+            let notification = null;
             if (status === 'delivered') {
-                statusNotification = notifyShipmentEvent(shipment, 'delivered');
+                notification = await notifyShipmentEvent(shipment, 'delivered').catch((err) => ({ error: err.message }));
             } else if (status === 'in_transit' || status === 'dispatched' || status === 'picked_up') {
-                statusNotification = notifyShipmentEvent(shipment, 'in_transit');
+                notification = await notifyShipmentEvent(shipment, 'in_transit').catch((err) => ({ error: err.message }));
             }
-            Promise.resolve(statusNotification).catch(err => {
-                console.error('Error sending status WhatsApp notification:', err);
-            });
 
             return res.status(200).json({
                 success: true,
                 message: 'Shipment status updated',
+                notification,
                 data: {
                     shipment_id: shipment.id,
                     status: shipment.status,
