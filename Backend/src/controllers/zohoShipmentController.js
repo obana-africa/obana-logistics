@@ -466,7 +466,12 @@ const fulfil = async (salesOrderId) => {
     step('writing back to zoho')
     await writeBackToZoho({ order, shipment, feeNgn, defaulted, productTypes })
 
-    return { shipment_reference: shipment.shipment_reference, shipping_fee_ngn: feeNgn }
+    return {
+        shipment_reference: shipment.shipment_reference,
+        shipping_fee_ngn: feeNgn,
+        // Whether the create messages actually went, per audience.
+        notification: booked.body?.notification ?? null
+    }
 }
 
 /**
