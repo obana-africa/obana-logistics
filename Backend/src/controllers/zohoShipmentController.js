@@ -501,18 +501,11 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
 
     const trackingUrl = `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
 
-    if (pkg && !shipmentOrder) {
-        shipmentOrder = await zoho.createShipmentOrder({
-            salesOrderId: order.salesorder_id,
-            packageIds: [pkg.package_id],
-            shipmentNumber: shipment.shipment_reference,
-            trackingNumber: shipment.shipment_reference,
-            deliveryMethod: 'Obana Logistics',
-            shippingCharge: feeInBase,
-            date,
-            notes: `Obana Logistics · ${trackingUrl}`
-        })
-    }
+    // No shipment order yet. A package that exists and has not left is Zoho's
+    // "created", and it is the state the order is genuinely in between being
+    // boxed and being collected. Shipping it early would report a parcel as
+    // gone while it is still on the floor.
+
 
     // external_shipment_id is what updateZohoShipmentStatus reads when the
     // shipment later moves, so the outbound sync needs nothing more than this.
@@ -583,6 +576,19 @@ const syncStatusToSalesOrder = async (shipment, status) => {
     if (!label) return { skipped: `unmapped_status_${status}` }
 
     try {
+        // Move Zoho's own records in step, not just the label on the order.
+        if (label === 'Shipped' || label === 'Fulfilled') {
+            const shipmentOrderId = await shipInZoho(shipment).catch((err) => {
+                console.error(`[ZOHO SHIPMENT] could not ship ${shipment.shipment_reference} in Zoho:`, err?.zoho || err?.message)
+                return null
+            })
+            if (shipmentOrderId && label === 'Fulfilled') {
+                await zoho
+                    .setShipmentStatus(shipmentOrderId, 'delivered')
+                    .catch((err) => console.error('[ZOHO SHIPMENT] could not mark delivered:', err?.zoho || err?.message))
+            }
+        }
+
         await zoho.updateSalesOrderShipment(salesOrderId, {
             customFields: {
                 cf_shipment_status: label,
@@ -603,36 +609,78 @@ const syncStatusToSalesOrder = async (shipment, status) => {
 /**
  * What Obana's statuses are called on the sales order.
  *
- * Obana tracks a parcel in more detail than Zoho needs to show: picked up,
- * dispatched and in transit are three things to a dispatcher and one thing to
- * whoever is looking at the order. So they collapse onto the vocabulary both
- * systems share — Shipment Created, In Transit, Fulfilled — and the finer
- * detail stays where it is useful, on the shipment's own tracking history.
+ * Zoho's own lifecycle is packed, then shipped, then delivered — a package can
+ * sit created and unshipped, which is a real state and the one an order is in
+ * between being boxed and being collected. So both systems use its words:
+ * Created, Shipped, Fulfilled.
+ *
+ * Obana tracks a parcel more finely than that — picked up, dispatched and in
+ * transit are three things to a dispatcher and one thing to whoever opens the
+ * order — so they collapse onto Shipped, and the detail stays where it is
+ * useful, on the shipment's own tracking history.
  *
  * The exceptions carry their own names: an order that failed, was cancelled or
  * came back is not any of the three, and saying so plainly matters more than a
  * tidy set.
  */
 const ZOHO_LABEL = {
-    pending: 'Shipment Created',
-    confirmed: 'Shipment Created',
-    picked_up: 'In Transit',
-    dispatched: 'In Transit',
-    in_transit: 'In Transit',
+    pending: 'Created',
+    confirmed: 'Created',
+    picked_up: 'Shipped',
+    dispatched: 'Shipped',
+    in_transit: 'Shipped',
     delivered: 'Fulfilled',
     failed: 'Failed',
     cancelled: 'Cancelled',
     returned: 'Returned'
 }
 
+/**
+ * Raise the Zoho shipment order for a package already created.
+ *
+ * Called when the parcel actually leaves, not when it is booked, so Zoho's
+ * package moves from created to shipped at the moment the real one does.
+ */
+const shipInZoho = async (shipment) => {
+    const z = shipment?.metadata?.zoho ?? {}
+    if (!z.salesorder_id || !z.package_id) return null
+    if (z.shipmentorder_id) return String(z.shipmentorder_id)
+
+    const trackingUrl = `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
+    const order = await zoho.getSalesOrder(z.salesorder_id)
+    const today = new Date().toISOString().slice(0, 10)
+    const orderDate = String(order.date || '').slice(0, 10)
+
+    const created = await zoho.createShipmentOrder({
+        salesOrderId: z.salesorder_id,
+        packageIds: [z.package_id],
+        shipmentNumber: shipment.shipment_reference,
+        trackingNumber: shipment.shipment_reference,
+        deliveryMethod: 'Obana Logistics',
+        shippingCharge: z.shipping_charge_base,
+        date: orderDate && orderDate > today ? orderDate : today,
+        notes: `Obana Logistics · ${trackingUrl}`
+    })
+
+    await shipment.update({
+        external_shipment_id: String(created.shipmentorder_id),
+        metadata: { ...(shipment.metadata || {}), zoho: { ...z, shipmentorder_id: created.shipmentorder_id } }
+    })
+    console.log(`[ZOHO SHIPMENT] ${shipment.shipment_reference} shipped in Zoho as ${created.shipmentorder_id}`)
+    return String(created.shipmentorder_id)
+}
+
 /* ─────────────────── Zoho → Obana: a status set in Zoho ──────────────────── */
 
 /** What Zoho (or a person typing in it) might say, and what Obana calls it. */
 const INBOUND_STATUS = {
+    created: 'confirmed',
     'shipment created': 'confirmed',
     confirmed: 'confirmed',
     pending: 'pending',
     packed: 'confirmed',
+    'not shipped': 'confirmed',
+    not_shipped: 'confirmed',
     'picked up': 'picked_up',
     picked_up: 'picked_up',
     pickedup: 'picked_up',
@@ -738,6 +786,8 @@ const statusFromZoho = async (req, res) => {
 module.exports = {
     triggerFromSalesOrder,
     statusFromZoho,
+    shipInZoho,
+    ZOHO_LABEL,
     toObanaStatus,
     resolveAndFulfil,
     fulfil,
