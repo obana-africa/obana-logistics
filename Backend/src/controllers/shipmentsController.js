@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const crypto = require('crypto');
 const axios = require('axios');
+const { displayStatus } = require('../helpers/shipmentStatus');
 const db = require('../models/db');
 const mailer = require('../mailer/kudisms');
 const { sendWhatsApp } = require('../notifications/whatsapp');
@@ -1340,7 +1341,10 @@ const shipmentController = {
             return res.status(200).json({
                 success: true,
                 data: {
-                    shipments: shipments.rows,
+                    shipments: shipments.rows.map((row) => {
+                        const plain = typeof row.get === 'function' ? row.get({ plain: true }) : row;
+                        return { ...plain, display_status: displayStatus(plain.status) };
+                    }),
                     pagination: {
                         total: shipments.count,
                         page: parseInt(page),
@@ -1513,9 +1517,8 @@ const shipmentController = {
 
             // The same three words the sales order shows, so a parcel is not
             // "dispatched" in one system and "Shipped" in the other.
-            const { ZOHO_LABEL } = require('./zohoShipmentController');
             const plain = shipment.get({ plain: true });
-            plain.display_status = ZOHO_LABEL[plain.status] ?? plain.status;
+            plain.display_status = displayStatus(plain.status);
 
             return res.status(200).json({ success: true, data: plain });
         } catch (error) {
@@ -1886,7 +1889,10 @@ const shipmentController = {
             return res.status(200).json({
                 success: true,
                 data: {
-                    shipments: shipments.rows,
+                    shipments: shipments.rows.map((row) => {
+                        const plain = typeof row.get === 'function' ? row.get({ plain: true }) : row;
+                        return { ...plain, display_status: displayStatus(plain.status) };
+                    }),
                     pagination: {
                         total: shipments.count,
                         page: parseInt(page),
