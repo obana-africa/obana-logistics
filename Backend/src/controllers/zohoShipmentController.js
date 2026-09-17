@@ -1,6 +1,7 @@
 const db = require('../models/db')
 const zoho = require('../helpers/zohoInventory')
 const shipmentsController = require('./shipmentsController')
+const { trackingUrl: trackLink } = require('../helpers/shipmentStatus')
 
 // Zoho → Obana: raising a shipment from a sales order.
 //
@@ -525,7 +526,7 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
     const baseCurrency = String(order.currency_code || 'USD').toUpperCase()
     const feeInBase = baseCurrency === 'NGN' ? feeNgn : Number((feeNgn / rate).toFixed(2))
 
-    const trackingUrl = `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
+    const trackingUrl = trackLink(shipment.shipment_reference)
 
     // No shipment order yet. A package that exists and has not left is Zoho's
     // "created", and it is the state the order is genuinely in between being
@@ -633,7 +634,7 @@ const syncStatusToSalesOrder = async (shipment, status) => {
             customFields: {
                 cf_shipment_status: label,
                 cf_shipment_id: shipment.shipment_reference,
-                cf_tracking_url: `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
+                cf_tracking_url: trackLink(shipment.shipment_reference)
             }
         })
         // Keep the label on the shipment too, so the Obana side can show the
@@ -692,7 +693,7 @@ const shipInZoho = async (shipment) => {
     if (!z.salesorder_id || !z.package_id) return null
     if (z.shipmentorder_id) return String(z.shipmentorder_id)
 
-    const trackingUrl = `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
+    const trackingUrl = trackLink(shipment.shipment_reference)
     const order = await zoho.getSalesOrder(z.salesorder_id)
     const today = new Date().toISOString().slice(0, 10)
     const orderDate = String(order.date || '').slice(0, 10)
