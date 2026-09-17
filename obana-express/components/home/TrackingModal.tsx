@@ -11,8 +11,13 @@ type Address = { city?: string; state?: string };
 export type TrackedShipment = {
 	shipment_reference: string;
 	status: string;
-	/** Created / In Transit / Fulfilled — what the sales order says too. */
+	/** Package Created / In Transit / Fulfilled — what the sales order says too. */
 	display_status?: string;
+	/** Where the order came from, when it came from Zoho. */
+	source?: { system: string; order_number?: string | null; ordered_at?: string | null } | null;
+	/** The three stages, each with the moment it was reached. */
+	timeline?: { label: string; at: string | null; done: boolean; current: boolean }[];
+	createdAt?: string;
 	pickup_address?: Address;
 	delivery_address?: Address;
 	service_level?: string;
@@ -35,6 +40,7 @@ const STATUS_STYLE: Record<string, string> = {
 const pretty = (s = "") => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const place = (a?: Address) => [a?.city, a?.state].filter(Boolean).join(", ") || "—";
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
 /** Public tracking lookup — works for guests and for links in emails and WhatsApp messages. */
 async function lookup(reference: string): Promise<Lookup> {
@@ -195,6 +201,12 @@ function Result({ shipment, onReset }: { shipment: TrackedShipment; onReset: () 
 					<p className="truncate font-mono text-sm font-bold" style={{ color: "#1b3b5f" }}>
 						{shipment.shipment_reference}
 					</p>
+					{shipment.source?.order_number && (
+						<p className="mt-1 truncate text-xs text-slate-500">
+							Order {shipment.source.order_number}
+							{shipment.source.ordered_at ? ` · placed ${day(shipment.source.ordered_at)}` : ""}
+						</p>
+					)}
 				</div>
 				<span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${STATUS_STYLE[status] ?? "bg-slate-100 text-slate-700 ring-slate-500/20"}`}>
 					{shipment.display_status || statusMeta(shipment.status).label}
@@ -217,6 +229,35 @@ function Result({ shipment, onReset }: { shipment: TrackedShipment; onReset: () 
 						</span>
 					))}
 			</div>
+
+			{/* The three stages and when each was reached. A list of events says
+			    what happened; this says where the parcel is, which is what
+			    someone tracking actually came to find out. */}
+			{shipment.timeline && shipment.timeline.length > 0 && (
+				<ol className="flex items-start gap-1 border-y border-slate-100 py-4">
+					{shipment.timeline.map((stage, i) => (
+						<li key={stage.label} className="flex flex-1 flex-col items-center text-center">
+							<div className="flex w-full items-center">
+								<span className={`h-0.5 flex-1 ${i === 0 ? "bg-transparent" : stage.done ? "bg-[#1b3b5f]" : "bg-slate-200"}`} aria-hidden />
+								<span
+									className={`h-3 w-3 shrink-0 rounded-full ${
+										stage.current ? "bg-[#1b3b5f] ring-4 ring-[#1b3b5f]/15" : stage.done ? "bg-[#1b3b5f]" : "bg-slate-200"
+									}`}
+									aria-hidden
+								/>
+								<span
+									className={`h-0.5 flex-1 ${
+										i === shipment.timeline!.length - 1 ? "bg-transparent" : shipment.timeline![i + 1].done ? "bg-[#1b3b5f]" : "bg-slate-200"
+									}`}
+									aria-hidden
+								/>
+							</div>
+							<p className={`mt-2 text-xs font-semibold ${stage.done ? "text-slate-900" : "text-slate-400"}`}>{stage.label}</p>
+							<p className="text-[11px] text-slate-500">{stage.at ? when(stage.at) : "—"}</p>
+						</li>
+					))}
+				</ol>
+			)}
 
 			{events.length > 0 && (
 				<ol className="max-h-60 overflow-y-auto pr-1">

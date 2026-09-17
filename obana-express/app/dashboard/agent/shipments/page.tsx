@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/authContext';
 import Link from 'next/link';
 import { Eye } from 'lucide-react';
 import { Pager } from '@/components/dashboard/kit';
+import { statusMeta } from "@/lib/shipments";
 
 // The server sends shipments a page at a time (without paging, only the latest 20 ever showed).
 const PAGE_SIZE = 20;
@@ -75,7 +76,7 @@ export default function AgentShipmentsPage() {
                         {shipment.pickup_address?.city} → {shipment.delivery_address?.city}
                       </td>
                       <td className="px-6 py-4">
-                        <Badge variant={shipment.status === 'delivered' ? 'success' : 'info'}>{shipment.status}</Badge>
+                        <Badge variant={shipment.status === 'delivered' ? 'success' : 'info'}>{statusMeta(shipment.status).label}</Badge>
                       </td>
                       <td className="px-6 py-4">
                         {shipment.driver ? shipment.driver.driver_code : <span className="text-gray-400 italic">Unassigned</span>}

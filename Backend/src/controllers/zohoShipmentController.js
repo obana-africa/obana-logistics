@@ -136,6 +136,31 @@ const itemsOf = (order, weights) =>
  * is not a reason to drop a shipment someone in Zoho has asked for — it should
  * arrive, be visible to admin, and be re-tagged later.
  */
+/**
+ * The salesperson on the order, for the WhatsApp they get when a shipment is
+ * raised and each time it moves.
+ *
+ * notifyShipmentEvent reads this from the shipment's metadata and skips the
+ * message when there is no phone — silently, which is why nobody noticed. The
+ * number lives on the sales order in cf_salesperson_phone and simply was not
+ * being carried across.
+ */
+const salespersonOf = (order) => {
+    const phone = str(zoho.customField(order, 'cf_salesperson_phone'))
+    const name =
+        str(order.salesperson_name) ||
+        str(zoho.customField(order, 'cf_salesperson')) ||
+        str(zoho.customField(order, 'cf_salesperson_name'))
+
+    if (!phone && !name) return null
+    return {
+        name: name || 'Salesperson',
+        // KudiSMS wants digits; Zoho may hold +234…, 234… or 0803…
+        phone: phone ? phone.replace(/[^0-9]/g, '').replace(/^0/, '234') : null,
+        email: str(zoho.customField(order, 'cf_email')) || str(zoho.customField(order, 'cf_agent_email'))
+    }
+}
+
 const zohoStore = async () => {
     const id = Number(process.env.ZOHO_STORE_ID)
     if (id) {
@@ -389,6 +414,7 @@ const fulfil = async (salesOrderId) => {
             delivery_address: delivery,
             items,
             notes: `Zoho sales order ${order.salesorder_number}`,
+            salesperson: salespersonOf(order),
             customer: {
                 id: order.customer_id,
                 name: order.customer_name,
@@ -518,6 +544,7 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
             zoho: {
                 salesorder_id: order.salesorder_id,
                 salesorder_number: order.salesorder_number,
+                order_date: order.date ?? null,
                 package_id: pkg?.package_id ?? null,
                 shipmentorder_id: shipmentOrder?.shipmentorder_id ?? null,
                 service_lines_skipped: serviceLines,
@@ -808,6 +835,7 @@ module.exports = {
     triggerFromSalesOrder,
     statusFromZoho,
     shipInZoho,
+    salespersonOf,
     ZOHO_LABEL,
     toObanaStatus,
     resolveAndFulfil,

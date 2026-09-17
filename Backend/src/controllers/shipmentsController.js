@@ -1520,6 +1520,33 @@ const shipmentController = {
             const plain = shipment.get({ plain: true });
             plain.display_status = displayStatus(plain.status);
 
+            // Where the order came from, so someone tracking a parcel can tie
+            // it back to the sales order without asking anyone.
+            const zohoMeta = shipment.metadata?.zoho ?? {};
+            plain.source = zohoMeta.salesorder_number
+                ? { system: 'Zoho', order_number: zohoMeta.salesorder_number, ordered_at: zohoMeta.order_date ?? null }
+                : null;
+
+            /* The stages a parcel goes through, each with the moment it got
+               there. A list of events tells you what happened; this tells you
+               where it is, which is the question someone tracking is asking. */
+            const events = plain.tracking_events ?? [];
+            const at = (...statuses) => {
+                const hit = [...events].reverse().find((e) => statuses.includes(String(e.status).toLowerCase()));
+                return hit?.createdAt ?? null;
+            };
+            const reached = {
+                'Package Created': at('created', 'pending', 'confirmed') ?? plain.createdAt,
+                'In Transit': at('picked_up', 'dispatched', 'in_transit'),
+                Fulfilled: at('delivered') ?? plain.actual_delivery_at
+            };
+            plain.timeline = Object.entries(reached).map(([label, time]) => ({
+                label,
+                at: time,
+                done: Boolean(time),
+                current: plain.display_status === label
+            }));
+
             return res.status(200).json({ success: true, data: plain });
         } catch (error) {
             console.error('Error in public tracking:', error);

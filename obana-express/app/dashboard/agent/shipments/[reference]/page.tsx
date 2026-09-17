@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/authContext';
 import { apiClient } from '@/lib/api';
 import { ArrowLeft, MapPin, User, Truck } from 'lucide-react';
 import Link from 'next/link';
+import { statusMeta } from "@/lib/shipments";
 
 export default function AgentShipmentDetailsPage() {
   const params = useParams();
@@ -183,7 +184,7 @@ export default function AgentShipmentDetailsPage() {
             {shipment.agent_id === (user?.agent_profile?.id ?? null) && (
               <Card title="Update Status">
                 <div className="flex flex-col gap-2">
-                  <span>Current status: <strong className="capitalize">{shipment.status}</strong></span>
+                  <span>Current status: <strong>{statusMeta(shipment.status).label}</strong></span>
                   <Button variant="primary" onClick={handleUpdateClick}>
                     Change Status
                   </Button>
