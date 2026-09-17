@@ -897,7 +897,30 @@ const statusFromZoho = async (req, res) => {
         }
 
         if (!shipment) {
-            return res.status(404).json({ success: false, message: 'No Obana shipment for that sales order' })
+            /* A placeholder Zoho did not resolve arrives as its own literal
+               text. The lookup then fails on a sales order that does not exist,
+               and Zoho reports the webhook as sent — so the rule looks fine, the
+               log looks quiet, and nothing happens. Name it. */
+            const unresolved = [salesOrderNumber, salesOrderId].find((v) => v && v.includes('${'))
+            if (unresolved) {
+                console.error(`[ZOHO STATUS] the workflow rule sent an unresolved placeholder: ${unresolved}`)
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        `Zoho sent "${unresolved}" literally — that placeholder did not resolve. ` +
+                        'Use salesorder_id=${SALESORDER.SALESORDER_ID}, which is the one the create rule uses.'
+                })
+            }
+
+            console.warn(
+                `[ZOHO STATUS] no Obana shipment for ${salesOrderNumber || salesOrderId} — ` +
+                    'it may never have been created, or belong to another store'
+            )
+            return res.status(404).json({
+                success: false,
+                message: `No Obana shipment for ${salesOrderNumber || salesOrderId}`,
+                received: { salesorder_number: salesOrderNumber, salesorder_id: salesOrderId, status: rawStatus }
+            })
         }
 
         if (shipment.status === status) {
