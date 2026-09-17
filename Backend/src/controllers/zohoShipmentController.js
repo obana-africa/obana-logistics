@@ -521,6 +521,7 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
                 package_id: pkg?.package_id ?? null,
                 shipmentorder_id: shipmentOrder?.shipmentorder_id ?? null,
                 service_lines_skipped: serviceLines,
+                status_label: ZOHO_LABEL.confirmed,
                 shipping_charge_base: feeInBase,
                 base_currency: baseCurrency,
                 ngn_rate: rate,
@@ -546,6 +547,18 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
             cf_carrier_name: 'Obana Logistics'
         }
     })
+
+    if (pkg) {
+        await db.shipment_tracking
+            .create({
+                shipment_id: shipment.id,
+                status: 'created',
+                description: `Package ${pkg.package_number ?? pkg.package_id} created in Zoho for ${order.salesorder_number}`,
+                source: 'zoho',
+                performed_by: 'zoho'
+            })
+            .catch((err) => console.warn('[ZOHO SHIPMENT] tracking event failed:', err.message))
+    }
 
     console.log(
         `[ZOHO SHIPMENT] ${order.salesorder_number} → ${shipment.shipment_reference} · ` +
@@ -596,6 +609,12 @@ const syncStatusToSalesOrder = async (shipment, status) => {
                 cf_tracking_url: `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
             }
         })
+        // Keep the label on the shipment too, so the Obana side can show the
+        // same word without every screen having to know the mapping.
+        await shipment
+            .update({ metadata: { ...(shipment.metadata || {}), zoho: { ...(shipment.metadata?.zoho ?? {}), status_label: label } } })
+            .catch(() => {})
+
         console.log(`[ZOHO SHIPMENT] ${shipment.shipment_reference} → sales order ${salesOrderId} marked ${label}`)
         return { updated: true, status: label }
     } catch (error) {
