@@ -689,7 +689,14 @@ const shipmentController = {
                 group: ['status']
             });
 
-            const stats = { total: 0, pending: 0, in_transit: 0, delivered: 0, failed: 0, cancelled: 0, returned: 0 };
+            /* Also counted by the three stages the dashboard shows. Counting
+               only the raw statuses left every card on zero while the total
+               climbed: a shipment sits at "confirmed" for most of its life and
+               that is not pending, in transit or delivered. */
+            const stats = {
+                total: 0, pending: 0, in_transit: 0, delivered: 0, failed: 0, cancelled: 0, returned: 0,
+                package_created: 0, shipped: 0, fulfilled: 0, issues: 0
+            };
 
             statusCounts.forEach(item => {
                 const status = item.dataValues.status;
@@ -698,6 +705,11 @@ const shipmentController = {
                     stats[status] = count;
                 }
                 stats.total += count;
+
+                if (['pending', 'confirmed'].includes(status)) stats.package_created += count;
+                else if (['picked_up', 'dispatched', 'in_transit'].includes(status)) stats.shipped += count;
+                else if (status === 'delivered') stats.fulfilled += count;
+                else if (['failed', 'cancelled', 'returned'].includes(status)) stats.issues += count;
             });
 
             return res.status(200).json({ success: true, data: stats });
@@ -1346,7 +1358,14 @@ const shipmentController = {
                 data: {
                     shipments: shipments.rows.map((row) => {
                         const plain = typeof row.get === 'function' ? row.get({ plain: true }) : row;
-                        return { ...plain, display_status: displayStatus(plain.status) };
+                        const zoho = plain.metadata?.zoho ?? {};
+                        return {
+                            ...plain,
+                            display_status: displayStatus(plain.status),
+                            source: zoho.salesorder_number
+                                ? { system: 'Zoho', order_number: zoho.salesorder_number, ordered_at: zoho.order_date ?? null }
+                                : null
+                        };
                     }),
                     pagination: {
                         total: shipments.count,
@@ -1934,7 +1953,14 @@ const shipmentController = {
                 data: {
                     shipments: shipments.rows.map((row) => {
                         const plain = typeof row.get === 'function' ? row.get({ plain: true }) : row;
-                        return { ...plain, display_status: displayStatus(plain.status) };
+                        const zoho = plain.metadata?.zoho ?? {};
+                        return {
+                            ...plain,
+                            display_status: displayStatus(plain.status),
+                            source: zoho.salesorder_number
+                                ? { system: 'Zoho', order_number: zoho.salesorder_number, ordered_at: zoho.order_date ?? null }
+                                : null
+                        };
                     }),
                     pagination: {
                         total: shipments.count,
