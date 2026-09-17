@@ -12,4 +12,8 @@ router.post('/shipment-trigger', requireWebhookSecret, controller.triggerFromSal
 // Obana shipment so the two never disagree about where a parcel is.
 router.post('/shipment-status', requireWebhookSecret, controller.statusFromZoho)
 
+// Which WhatsApp templates are configured. Booleans only — the codes are
+// credentials and are never returned.
+router.get('/notification-config', requireWebhookSecret, controller.notificationConfig)
+
 module.exports = router

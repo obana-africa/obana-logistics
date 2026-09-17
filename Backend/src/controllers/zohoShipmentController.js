@@ -935,8 +935,43 @@ const statusFromZoho = async (req, res) => {
     }
 }
 
+/**
+ * Which WhatsApp templates are configured, and which are not.
+ *
+ * A missing template is the quietest failure in the system: notifyShipmentEvent
+ * skips that audience with a console warning and returns as if it had sent, so
+ * the only symptom is a message nobody receives. This reports what is set
+ * without printing any of it — the codes are credentials.
+ */
+const notificationConfig = async (_req, res) => {
+    const events = {
+        created: ['KUDISMS_WA_CREATED_TEMPLATE', 'KUDISMS_WA_SALESPERSON_CREATED_TEMPLATE'],
+        in_transit: ['KUDISMS_WA_INTRANSIT_TEMPLATE', 'KUDISMS_WA_SALESPERSON_INTRANSIT_TEMPLATE'],
+        delivered: ['KUDISMS_WA_DELIVERED_TEMPLATE', 'KUDISMS_WA_SALESPERSON_DELIVERED_TEMPLATE']
+    }
+
+    const report = {}
+    const missing = []
+    for (const [event, [customer, salesperson]] of Object.entries(events)) {
+        const has = (name) => Boolean(String(process.env[name] || '').trim())
+        report[event] = { customer: has(customer), salesperson: has(salesperson) }
+        if (!has(customer)) missing.push(customer)
+        if (!has(salesperson)) missing.push(salesperson)
+    }
+
+    return res.status(200).json({
+        success: true,
+        configured: report,
+        missing,
+        note: missing.length
+            ? 'Those variables are unset, so that audience is silently skipped for that event.'
+            : 'Every template is configured.'
+    })
+}
+
 module.exports = {
     triggerFromSalesOrder,
+    notificationConfig,
     reconcileFromZoho,
     statusFromZoho,
     shipInZoho,
