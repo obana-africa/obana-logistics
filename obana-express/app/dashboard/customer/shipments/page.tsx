@@ -8,6 +8,7 @@ import { apiClient } from '@/lib/api';
 import Link from 'next/link';
 import { useAuthStore } from '@/lib/authStore';
 import { Pager } from '@/components/dashboard/kit';
+import { statusMeta } from "@/lib/shipments";
 
 // The server sends shipments a page at a time (without paging, only the latest 20 ever showed).
 const PAGE_SIZE = 20;
@@ -151,7 +152,7 @@ export default function CustomerShipmentsPage() {
                     <Badge
                       variant={getStatusVariant(shipment.status)}
                     >
-                      {shipment.status}
+                      {statusMeta(shipment.status).label}
                     </Badge>
                     <Link href={`/dashboard/customer/shipments/${shipment.shipment_reference}`} className="block mt-3">
                       <Button variant="ghost" size="sm">
