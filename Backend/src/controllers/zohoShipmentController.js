@@ -877,6 +877,33 @@ const statusFromZoho = async (req, res) => {
         })
     }
 
+    /* Everything above is a check on the request itself and costs nothing, so
+       it still answers properly — a misconfigured rule deserves to be told.
+
+       Everything below talks to Zoho, the database and WhatsApp: about seven
+       seconds warm, far longer when Render has to wake the service first. Zoho's
+       webhook gives up well before that and records a failure, so the rule looks
+       broken while the work it asked for completes perfectly a moment later.
+
+       The trigger endpoint has always answered first for exactly this reason.
+       This one did not, which is why creating a shipment worked and moving one
+       never appeared to.
+
+       wait=1 keeps the synchronous behaviour for anyone testing by hand, who
+       wants the outcome rather than an acknowledgement. */
+    if (String(req.query?.wait || '') !== '1') {
+        res.status(202).json({ success: true, message: 'Status update accepted', status: rawStatus })
+
+        const discard = {
+            status() { return this },
+            json() { return this },
+            send() { return this }
+        }
+        return statusFromZoho({ ...req, query: { ...(req.query || {}), wait: '1' } }, discard).catch((error) =>
+            console.error('[ZOHO STATUS] background update failed:', error?.zoho || error?.message || error)
+        )
+    }
+
     const status = toObanaStatus(rawStatus)
     if (!status) {
         // Not an error: Zoho carries statuses Obana has no equivalent for, and
