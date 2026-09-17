@@ -76,3 +76,30 @@ h6 {
 		transition-duration: 0.01ms !important;
 	}
 }
+
+/* iOS Safari zooms the page in whenever a focused field's text is smaller than
+   16px, and it does not zoom back out afterwards — the user is left on a page
+   that has grown, scrolled sideways, with the rest of the form off-screen.
+   Everything here is set in Tailwind's text-sm (14px), so every field triggers
+   it.
+
+   Raising the font to 16px on touch screens is the only fix that does not take
+   pinch-zoom away from people who need it; maximum-scale=1 on the viewport also
+   stops the zoom, by disabling zooming altogether. Pointer: coarse keeps this
+   to touch devices, so the desktop type scale is untouched. */
+@media (pointer: coarse) {
+	input:not([type="checkbox"]):not([type="radio"]),
+	select,
+	textarea {
+		font-size: 16px;
+	}
+}
+
+/* A focused field on a phone is often behind the keyboard by the time it has
+   scrolled. Keeping a little room above it lands the label on screen too. */
+input,
+select,
+textarea {
+	scroll-margin-top: 6rem;
+	scroll-margin-bottom: 6rem;
+}

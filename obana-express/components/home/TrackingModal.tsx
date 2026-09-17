@@ -39,6 +39,15 @@ const STATUS_STYLE: Record<string, string> = {
 
 const pretty = (s = "") => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const place = (a?: Address) => [a?.city, a?.state].filter(Boolean).join(", ") || "—";
+/** True on a touch device. Read once, after mount, so SSR and the first paint agree. */
+function useIsTouch() {
+	const [touch, setTouch] = useState(false);
+	useEffect(() => {
+		setTouch(typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches);
+	}, []);
+	return touch;
+}
+
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
@@ -61,6 +70,7 @@ async function lookup(reference: string): Promise<Lookup> {
  * A bottom sheet on phones, a centred dialog on larger screens.
  */
 export default function TrackingModal({ open, onClose, reference }: { open: boolean; onClose: () => void; reference?: string }) {
+	const isTouch = useIsTouch();
 	const [input, setInput] = useState(reference ?? "");
 	const [asked, setAsked] = useState(reference ?? "");
 	const [result, setResult] = useState<{ ref: string; lookup: Lookup } | null>(null);
@@ -148,8 +158,13 @@ export default function TrackingModal({ open, onClose, reference }: { open: bool
 						placeholder="e.g. OBN-20260430-IYU2FXS7"
 						autoComplete="off"
 						spellCheck={false}
-						autoFocus={!reference}
-						className="h-12 min-w-0 flex-1 rounded-xl border border-slate-300 px-4 font-mono text-[15px] text-slate-900 outline-none focus:border-[#1b3b5f] focus:ring-4 focus:ring-[#1b3b5f]/10"
+						autoCorrect="off"
+						autoCapitalize="characters"
+						/* Desktop only. On a phone this throws the keyboard open the
+						   moment the modal appears, which covers the field it just
+						   focused and scrolls the page out from under the reader. */
+						autoFocus={!reference && !isTouch}
+						className="h-12 min-w-0 flex-1 rounded-xl border border-slate-300 px-4 font-mono text-base text-slate-900 outline-none focus:border-[#1b3b5f] focus:ring-4 focus:ring-[#1b3b5f]/10"
 					/>
 					<button
 						type="submit"
