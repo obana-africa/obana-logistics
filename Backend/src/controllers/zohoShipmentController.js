@@ -881,6 +881,32 @@ const statusFromZoho = async (req, res) => {
             return res.status(200).json({ success: true, unchanged: true, status, shipment_reference: shipment.shipment_reference })
         }
 
+        /* Never walk a shipment backwards.
+        
+           A rule that fires on every edit re-sends whatever the field happens to
+           say, so a delivered parcel gets "Shipped" again the next time anyone
+           touches the order — and a driver marks delivered long before the books
+           catch up. Moving it back would un-deliver a parcel that has arrived,
+           re-notify the customer, and leave the dashboard lying.
+        
+           The exceptions are not part of the sequence: failed, cancelled and
+           returned can happen from anywhere and are never a step back. */
+        const PROGRESSION = ['pending', 'confirmed', 'picked_up', 'dispatched', 'in_transit', 'delivered']
+        const from = PROGRESSION.indexOf(shipment.status)
+        const to = PROGRESSION.indexOf(status)
+        if (to !== -1 && from !== -1 && to < from) {
+            console.log(
+                `[ZOHO STATUS] ${shipment.shipment_reference} is already ${shipment.status}; ` +
+                    `ignoring "${rawStatus}" from Zoho rather than moving it back to ${status}`
+            )
+            return res.status(200).json({
+                success: true,
+                ignored: 'would move the shipment backwards',
+                status: shipment.status,
+                shipment_reference: shipment.shipment_reference
+            })
+        }
+
         const captured = {}
         const inner = {
             status(code) { captured.status = code; return this },
