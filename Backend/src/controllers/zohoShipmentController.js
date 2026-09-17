@@ -680,26 +680,30 @@ const syncStatusToSalesOrder = async (shipment, status) => {
 /**
  * What Obana's statuses are called on the sales order.
  *
- * Zoho's own lifecycle is packed, then shipped, then delivered — a package can
- * sit created and unshipped, which is a real state and the one an order is in
- * between being boxed and being collected. So both systems use its words:
- * Created, Shipped, Fulfilled.
+ * Deliberately Zoho's words, not ours. The workflow rules key off this field —
+ * "Shipment Status is Shipped" — so writing anything else overwrites the value
+ * the rule matched on, and whoever set it watches their own choice change to a
+ * word Zoho never offered.
  *
- * Obana tracks a parcel more finely than that — picked up, dispatched and in
- * transit are three things to a dispatcher and one thing to whoever opens the
- * order — so they collapse onto Shipped, and the detail stays where it is
- * useful, on the shipment's own tracking history.
+ * The customer-facing wording is a separate decision and lives in
+ * helpers/shipmentStatus: the dashboards and the tracking page say In Transit,
+ * because that is what a person waiting for a parcel understands. Zoho says
+ * Shipped because that is what its own lifecycle calls it. Two audiences, two
+ * vocabularies, one underlying status.
  *
- * The exceptions carry their own names: an order that failed, was cancelled or
- * came back is not any of the three, and saying so plainly matters more than a
- * tidy set.
+ * Obana tracks a parcel more finely than either — picked up, dispatched and in
+ * transit are three things to a dispatcher and one thing to everyone else — so
+ * they collapse, and the detail stays on the shipment's tracking history.
+ *
+ * Failed, cancelled and returned keep their own names: none of them is a stage
+ * in the sequence, and saying so plainly matters more than a tidy set.
  */
 const ZOHO_LABEL = {
     pending: 'Package Created',
     confirmed: 'Package Created',
-    picked_up: 'In Transit',
-    dispatched: 'In Transit',
-    in_transit: 'In Transit',
+    picked_up: 'Shipped',
+    dispatched: 'Shipped',
+    in_transit: 'Shipped',
     delivered: 'Fulfilled',
     failed: 'Failed',
     cancelled: 'Cancelled',
