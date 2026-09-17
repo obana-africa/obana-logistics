@@ -11,11 +11,11 @@
  * keep running on it; this is only what gets displayed.
  */
 const DISPLAY = {
-    pending: 'Created',
-    confirmed: 'Created',
-    picked_up: 'Shipped',
-    dispatched: 'Shipped',
-    in_transit: 'Shipped',
+    pending: 'Package Created',
+    confirmed: 'Package Created',
+    picked_up: 'In Transit',
+    dispatched: 'In Transit',
+    in_transit: 'In Transit',
     delivered: 'Fulfilled',
     failed: 'Failed',
     cancelled: 'Cancelled',

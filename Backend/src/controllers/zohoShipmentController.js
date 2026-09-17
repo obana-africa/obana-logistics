@@ -643,11 +643,11 @@ const syncStatusToSalesOrder = async (shipment, status) => {
  * tidy set.
  */
 const ZOHO_LABEL = {
-    pending: 'Created',
-    confirmed: 'Created',
-    picked_up: 'Shipped',
-    dispatched: 'Shipped',
-    in_transit: 'Shipped',
+    pending: 'Package Created',
+    confirmed: 'Package Created',
+    picked_up: 'In Transit',
+    dispatched: 'In Transit',
+    in_transit: 'In Transit',
     delivered: 'Fulfilled',
     failed: 'Failed',
     cancelled: 'Cancelled',
@@ -693,7 +693,9 @@ const shipInZoho = async (shipment) => {
 
 /** What Zoho (or a person typing in it) might say, and what Obana calls it. */
 const INBOUND_STATUS = {
+    'package created': 'confirmed',
     created: 'confirmed',
+    shipped: 'dispatched',
     'shipment created': 'confirmed',
     confirmed: 'confirmed',
     pending: 'pending',

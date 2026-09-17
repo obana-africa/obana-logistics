@@ -14,19 +14,41 @@ export type ShipmentStatus =
 export type Tone = "neutral" | "info" | "progress" | "success" | "danger" | "warning";
 
 // Mirrors the status ENUM in Backend/src/models/shipmentsModel.js.
+//
+// The labels are deliberately coarser than the statuses. A dispatcher needs to
+// know whether a parcel is picked up or already dispatched; a customer only
+// wants to know it is on its way, and the sales order it came from says the
+// same three things. So everything between the box being made and the parcel
+// arriving reads as In Transit, and the underlying status still drives the
+// board, the filters and the driver's screen.
 export const STATUS_META: Record<ShipmentStatus, { label: string; tone: Tone }> = {
-	pending: { label: "Pending", tone: "warning" },
-	confirmed: { label: "Confirmed", tone: "info" },
-	picked_up: { label: "Picked up", tone: "progress" },
-	dispatched: { label: "Dispatched", tone: "progress" },
-	in_transit: { label: "In transit", tone: "progress" },
-	delivered: { label: "Delivered", tone: "success" },
+	pending: { label: "Package Created", tone: "info" },
+	confirmed: { label: "Package Created", tone: "info" },
+	picked_up: { label: "In Transit", tone: "progress" },
+	dispatched: { label: "In Transit", tone: "progress" },
+	in_transit: { label: "In Transit", tone: "progress" },
+	delivered: { label: "Fulfilled", tone: "success" },
 	failed: { label: "Failed", tone: "danger" },
 	cancelled: { label: "Cancelled", tone: "neutral" },
 	returned: { label: "Returned", tone: "danger" },
 };
 
-export const STATUS_OPTIONS = (Object.keys(STATUS_META) as ShipmentStatus[]).map((value) => ({ value, label: STATUS_META[value].label }));
+// Three statuses now share a label, so the filter would read "In Transit"
+// three times. Keep the precise wording where someone is choosing what to
+// filter by, and the customer wording where they are being told what happened.
+const FILTER_LABEL: Record<ShipmentStatus, string> = {
+	pending: "Pending",
+	confirmed: "Confirmed",
+	picked_up: "Picked up",
+	dispatched: "Dispatched",
+	in_transit: "In transit",
+	delivered: "Delivered",
+	failed: "Failed",
+	cancelled: "Cancelled",
+	returned: "Returned",
+};
+
+export const STATUS_OPTIONS = (Object.keys(STATUS_META) as ShipmentStatus[]).map((value) => ({ value, label: FILTER_LABEL[value] }));
 
 /** Statuses after which a shipment no longer moves. */
 export const CLOSED_STATUSES: ShipmentStatus[] = ["delivered", "failed", "cancelled", "returned"];
