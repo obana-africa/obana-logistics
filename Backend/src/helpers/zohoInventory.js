@@ -340,6 +340,23 @@ const updateSalesOrderShipment = async (salesOrderId, { shippingCharge, customFi
         .filter(([, value]) => value !== undefined && value !== null && value !== '')
         .map(([api_name, value]) => ({ api_name, value: String(value) }))
 
+    /* Never write an order that already says this.
+
+       A workflow rule firing on every edit turns any needless write into a
+       loop: we update the order, that counts as an edit, the rule calls us
+       back, and we update it again. One redundant PUT is cheap; a thousand of
+       them is an organisation's daily API quota.
+
+       So compare first and return the order untouched when nothing differs. */
+    const sameCharge =
+        shippingCharge === undefined || Math.abs(num(order.shipping_charge) - num(shippingCharge)) < 0.005
+    const sameFields = custom_fields.every((f) => String(customField(order, f.api_name) ?? '') === f.value)
+
+    if (sameCharge && sameFields) {
+        console.log(`[zoho] ${order.salesorder_number} already holds these values — not rewriting it`)
+        return order
+    }
+
     const body = await call('put', `salesorders/${encodeURIComponent(salesOrderId)}`, {
         data: {
             line_items,
