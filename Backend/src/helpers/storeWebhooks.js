@@ -6,6 +6,8 @@ const axios = require('axios')
 // Webhooks to connected stores. Every event is stored, signed and retried with backoff.
 //   Headers: Obana-Event, Obana-Delivery (id), Obana-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>" with the store's webhook secret>
 
+const { displayStatus } = require('./shipmentStatus')
+
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://logistics.obana.africa'
 const RETRY_DELAYS_MS = [60e3, 5 * 60e3, 30 * 60e3, 2 * 3600e3, 6 * 3600e3] // then give up
 const TIMEOUT_MS = 8000
@@ -51,6 +53,7 @@ const shipmentForStore = (s) => {
         reference: s.shipment_reference,
         order_id: s.order_reference,
         status: s.status,
+        display_status: displayStatus(s.status),
         customer: meta.store_customer || null,
         carrier: s.carrier_type === 'external' ? { type: 'partner', name: s.carrier_name || null, tracking_number: s.external_carrier_reference || null } : { type: 'obana', name: 'Obana Logistics' },
         shipping_fee: s.shipping_fee !== undefined && s.shipping_fee !== null ? Number(s.shipping_fee) : null,

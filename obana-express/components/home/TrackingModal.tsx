@@ -4,12 +4,15 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Loader2, MapPin, Package, Search, X } from "lucide-react";
 import { apiClient } from "@/lib/api";
+import { statusMeta } from "@/lib/shipments";
 
 type TrackingEvent = { id: number | string; status: string; createdAt: string; description?: string; location?: string };
 type Address = { city?: string; state?: string };
 export type TrackedShipment = {
 	shipment_reference: string;
 	status: string;
+	/** Created / In Transit / Fulfilled — what the sales order says too. */
+	display_status?: string;
 	pickup_address?: Address;
 	delivery_address?: Address;
 	service_level?: string;
@@ -194,7 +197,7 @@ function Result({ shipment, onReset }: { shipment: TrackedShipment; onReset: () 
 					</p>
 				</div>
 				<span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${STATUS_STYLE[status] ?? "bg-slate-100 text-slate-700 ring-slate-500/20"}`}>
-					{pretty(shipment.status)}
+					{shipment.display_status || statusMeta(shipment.status).label}
 				</span>
 			</div>
 
