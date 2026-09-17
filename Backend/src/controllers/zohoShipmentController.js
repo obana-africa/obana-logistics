@@ -56,6 +56,34 @@ const str = (value) => {
     return text === '' ? null : text
 }
 
+/**
+ * Pull a named value out of whatever Zoho sent.
+ *
+ * Query string first, since that is the part a workflow rule can reliably
+ * populate. Then a JSON body. Then an XML one — Zoho's webhooks are XML, and a
+ * rule configured to send its parameters in the body rather than the URL
+ * arrives as a string neither body parser understands, so the value has to be
+ * read out of the markup by hand.
+ */
+const param = (req, name) => {
+    const fromQuery = str(req?.query?.[name])
+    if (fromQuery) return fromQuery
+
+    const body = req?.body
+    if (body && typeof body === 'object') {
+        const direct = str(body[name]) || str(body.salesorder?.[name])
+        if (direct) return direct
+    }
+
+    if (typeof body === 'string' && body.includes(name)) {
+        const tag = body.match(new RegExp(`<${name}[^>]*>([^<]*)</${name}>`, 'i'))
+        if (tag) return str(tag[1])
+        const field = body.match(new RegExp(`name=["']${name}["'][^>]*>\\s*<value>([^<]*)</value>`, 'i'))
+        if (field) return str(field[1])
+    }
+    return null
+}
+
 const num = (value) => {
     const n = Number(value)
     return Number.isFinite(n) ? n : 0
@@ -259,15 +287,8 @@ const triggerFromSalesOrder = async (req, res) => {
     // which express.json() leaves as an empty object — so in practice the id
     // arrives as a query parameter. Both are accepted, and so is the human
     // order number, because that is the field most people reach for first.
-    const salesOrderId =
-        str(req.query?.salesorder_id) ||
-        str(req.body?.salesorder_id) ||
-        str(req.body?.salesorder?.salesorder_id)
-
-    const salesOrderNumber =
-        str(req.query?.salesorder_number) ||
-        str(req.body?.salesorder_number) ||
-        str(req.body?.salesorder?.salesorder_number)
+    const salesOrderId = param(req, 'salesorder_id')
+    const salesOrderNumber = param(req, 'salesorder_number')
 
     if (!salesOrderId && !salesOrderNumber) {
         // Say what did arrive. A bare "salesorder_id is required" tells whoever
@@ -865,9 +886,9 @@ const toObanaStatus = (value) => INBOUND_STATUS[String(value || '').trim().toLow
  * other status change would raise.
  */
 const statusFromZoho = async (req, res) => {
-    const salesOrderNumber = str(req.query?.salesorder_number) || str(req.body?.salesorder_number)
-    const salesOrderId = str(req.query?.salesorder_id) || str(req.body?.salesorder_id)
-    const rawStatus = str(req.query?.status) || str(req.body?.status) || str(req.query?.shipment_status)
+    const salesOrderNumber = param(req, 'salesorder_number')
+    const salesOrderId = param(req, 'salesorder_id')
+    const rawStatus = param(req, 'status') || param(req, 'shipment_status') || param(req, 'cf_shipment_status')
 
     if (!salesOrderNumber && !salesOrderId) {
         return res.status(400).json({
