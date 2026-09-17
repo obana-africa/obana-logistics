@@ -1712,7 +1712,18 @@ const shipmentController = {
 
         try {
             const { shipment_id } = req.params;
-            const { status, external_shipment_id, description, location, notes, source = 'system', performed_by } = req.body;
+            const {
+                status,
+                external_shipment_id,
+                description,
+                location,
+                notes,
+                source = 'system',
+                performed_by,
+                // Set when Zoho is the one reporting the change, so we do not
+                // spend three or four API calls telling it what it just told us.
+                from_zoho = false
+            } = req.body;
             if (external_shipment_id) {
                 const updateExtId = { external_shipment_id: external_shipment_id.toString() };
                 let shipment;
@@ -1775,8 +1786,12 @@ const shipmentController = {
 
             await shipment.update(updateData);
 
-            // Sync with Zoho Inventory if it's a Zoho-linked shipment and status is actually changing
-            if (isStatusChanging) {
+            /* Sync to Zoho when the shipment moves — unless Zoho is the one that
+               told us. Reporting it back costs three or four API calls to say
+               something Zoho already knows, and those calls were most of the
+               seven seconds its webhook sat waiting through. They are also the
+               edit that fires the workflow rule again. */
+            if (isStatusChanging && !from_zoho) {
                 await shipmentController.updateZohoShipmentStatus(shipment, status);
             }
 

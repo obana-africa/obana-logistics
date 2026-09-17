@@ -877,33 +877,18 @@ const statusFromZoho = async (req, res) => {
         })
     }
 
-    /* Everything above is a check on the request itself and costs nothing, so
-       it still answers properly — a misconfigured rule deserves to be told.
+    /* Deliberately synchronous.
 
-       Everything below talks to Zoho, the database and WhatsApp: about seven
-       seconds warm, far longer when Render has to wake the service first. Zoho's
-       webhook gives up well before that and records a failure, so the rule looks
-       broken while the work it asked for completes perfectly a moment later.
+       It was taking about seven seconds, most of it spent reporting the change
+       back to Zoho — three or four API calls to tell Zoho something Zoho had
+       just told us. With from_zoho set, that work is skipped and what remains
+       is a lookup, a row update and the two WhatsApp sends.
 
-       The trigger endpoint has always answered first for exactly this reason.
-       This one did not, which is why creating a shipment worked and moving one
-       never appeared to.
-
-       wait=1 keeps the synchronous behaviour for anyone testing by hand, who
-       wants the outcome rather than an acknowledgement. */
-    if (String(req.query?.wait || '') !== '1') {
-        res.status(202).json({ success: true, message: 'Status update accepted', status: rawStatus })
-
-        const discard = {
-            status() { return this },
-            json() { return this },
-            send() { return this }
-        }
-        return statusFromZoho({ ...req, query: { ...(req.query || {}), wait: '1' } }, discard).catch((error) =>
-            console.error('[ZOHO STATUS] background update failed:', error?.zoho || error?.message || error)
-        )
-    }
-
+       Answering early would have been the easy fix, but it moves the work into
+       a background task nobody can see: if the process is recycled or the
+       instance spins down after replying, the status never moves and no log
+       says why. Doing it in the request is slower to admit failure and far
+       harder to lose. */
     const status = toObanaStatus(rawStatus)
     if (!status) {
         // Not an error: Zoho carries statuses Obana has no equivalent for, and
@@ -989,7 +974,14 @@ const statusFromZoho = async (req, res) => {
         await shipmentsController.updateShipmentStatus(
             {
                 params: { shipment_id: String(shipment.id) },
-                body: { status, source: TRACKING_SOURCE, performed_by: 'zoho', description: `Marked ${rawStatus} in Zoho` },
+                body: {
+                    status,
+                    source: TRACKING_SOURCE,
+                    performed_by: 'zoho',
+                    description: `Marked ${rawStatus} in Zoho`,
+                    // Zoho told us this. Do not spend API calls telling it back.
+                    from_zoho: true
+                },
                 user: null
             },
             inner
