@@ -363,11 +363,20 @@ const fulfil = async (salesOrderId) => {
         where: { order_reference: order.salesorder_number, ...(store ? { tenant_id: store.id } : {}) }
     })
     if (existing) {
-        // A shipment with no Zoho linkage is a run that booked and then failed
-        // on the way back. Skipping it would strand the order permanently:
-        // Obana has the shipment, Zoho shows nothing, and every retry sees the
-        // shipment and stops. Finish the half that did not happen instead.
-        if (!existing.external_shipment_id) {
+        /* Whether the write-back has happened is a question about the sales
+           order, not about the shipment.
+
+           It used to be read off external_shipment_id, which stays empty until
+           the parcel actually ships — so on a rule that fires on every edit,
+           every trigger decided the write-back was unfinished, rewrote the
+           order, and that edit fired the rule again. A loop, six Zoho calls a
+           pass, and an organisation's daily quota gone in an afternoon.
+
+           The order says plainly whether it has been written: cf_shipment_id
+           holds this shipment's reference once it has. */
+        const written = String(zoho.customField(order, 'cf_shipment_id') ?? '') === existing.shipment_reference
+
+        if (!written) {
             step('resuming write-back', existing.shipment_reference)
             const resume = await zoho.getItemWeights((order.line_items || []).map((li) => li.item_id))
             await writeBackToZoho({
