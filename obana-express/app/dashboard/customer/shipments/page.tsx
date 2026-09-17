@@ -17,18 +17,18 @@ interface Shipment {
   id: number;
   shipment_reference: string;
   status: string;
+  display_status?: string;
   total_weight: string;
+  total_items?: number;
   createdAt: string;
-  delivery_address: {
-    line1: string;
-    city: string;
-    state: string;
-  };
-  pickup_address: {
-    city: string;
-    state: string;
-  };
+  source?: { system: string; order_number?: string | null; ordered_at?: string | null } | null;
+  delivery_address: { line1: string; city: string; state: string };
+  pickup_address: { city: string; state: string };
 }
+
+/** Date and time — two parcels raised the same morning are otherwise identical. */
+const when = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 export default function CustomerShipmentsPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
@@ -73,12 +73,14 @@ export default function CustomerShipmentsPage() {
     }
   };
 
+  // The same three stages the badges and the sales order show, so the cards and
+  // the list below cannot disagree about where anything is.
   const statCards = stats ? [
-    { label: 'Total Shipments', value: stats.total, icon: Package, color: 'bg-gray-100 text-gray-600' },
-    { label: 'Pending', value: stats.pending, icon: Clock, color: 'bg-yellow-100 text-yellow-600' },
-    { label: 'In Transit', value: stats.in_transit, icon: Truck, color: 'bg-blue-100 text-blue-600' },
-    { label: 'Delivered', value: stats.delivered, icon: CheckCircle, color: 'bg-green-100 text-green-600' },
-    { label: 'Issues', value: stats.cancelled + stats.failed + stats.returned, icon: XCircle, color: 'bg-red-100 text-red-600' },
+    { label: 'Total', value: stats.total, icon: Package, color: 'bg-slate-100 text-slate-600' },
+    { label: 'Package Created', value: stats.package_created ?? stats.pending, icon: Clock, color: 'bg-amber-100 text-amber-700' },
+    { label: 'In Transit', value: stats.shipped ?? stats.in_transit, icon: Truck, color: 'bg-blue-100 text-blue-700' },
+    { label: 'Fulfilled', value: stats.fulfilled ?? stats.delivered, icon: CheckCircle, color: 'bg-emerald-100 text-emerald-700' },
+    { label: 'Issues', value: stats.issues ?? (stats.cancelled + stats.failed + stats.returned), icon: XCircle, color: 'bg-rose-100 text-rose-700' },
   ] : [];
 
   const getStatusVariant = (status: string) => {
@@ -96,26 +98,29 @@ export default function CustomerShipmentsPage() {
   return (
     <DashboardLayout role="customer">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-900">My Shipments</h1>
-          <Link href="/dashboard/customer/shipments/new">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">My Shipments</h1>
+            {total > 0 && <p className="mt-1 text-sm text-gray-500">{total} shipment{total === 1 ? '' : 's'}</p>}
+          </div>
+          <Link href="/dashboard/customer/shipments/new" className="shrink-0">
             <Button variant="primary">+ Create Shipment</Button>
           </Link>
         </div>
 
         {/* Stats Cards */}
         {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 sm:gap-4">
             {statCards.map((stat) => {
               const Icon = stat.icon;
               return (
                 <Card key={stat.label}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-600 text-sm font-medium">{stat.label}</p>
-                      <p className="text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-gray-600 sm:text-sm">{stat.label}</p>
+                      <p className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl">{stat.value ?? 0}</p>
                     </div>
-                    <div className={`p-2 rounded-lg ${stat.color}`}><Icon className="w-5 h-5" /></div>
+                    <div className={`shrink-0 rounded-lg p-2 ${stat.color}`}><Icon className="h-5 w-5" /></div>
                   </div>
                 </Card>
               );
@@ -130,36 +135,55 @@ export default function CustomerShipmentsPage() {
         ) : shipments.length > 0 ? (
           <div className="space-y-4">
             {shipments.map((shipment) => (
-              <Card key={shipment.id} className="hover:shadow-md transition-shadow p-0">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900">
-                      {shipment.pickup_address?.city || 'Origin'} → {shipment.delivery_address?.city || 'Destination'}
-                    </h3>
-                    <p className="text-sm text-gray-600 mt-1">{shipment.delivery_address?.line1}</p>
-                    <div className="flex gap-4 mt-3 text-sm">
-                      <div>
-                        <p className="text-gray-600">Weight</p>
-                        <p className="font-medium text-gray-900">{shipment.total_weight} kg</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Created</p>
-                        <p className="font-medium text-gray-900">{new Date(shipment.createdAt).toLocaleDateString()}</p>
-                      </div>
+              <Card key={shipment.id} className="transition-shadow hover:shadow-md">
+                {/* Stacks on a phone and sits side by side from tablet up — the
+                    status and the action must never be pushed off the edge. */}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-semibold text-gray-900">
+                        {shipment.pickup_address?.city || 'Origin'} → {shipment.delivery_address?.city || 'Destination'}
+                      </h3>
+                      <Badge variant={getStatusVariant(shipment.status)}>
+                        {shipment.display_status || statusMeta(shipment.status).label}
+                      </Badge>
                     </div>
+
+                    <p className="mt-1 truncate text-sm text-gray-600">
+                      {[shipment.delivery_address?.line1, shipment.delivery_address?.state].filter(Boolean).join(', ')}
+                    </p>
+
+                    <p className="mt-2 font-mono text-xs text-gray-500">
+                      {shipment.shipment_reference}
+                      {shipment.source?.order_number ? ` · ${shipment.source.system} ${shipment.source.order_number}` : ''}
+                    </p>
+
+                    <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+                      <div>
+                        <dt className="text-xs text-gray-500">Weight</dt>
+                        <dd className="font-medium text-gray-900">{Number(shipment.total_weight || 0).toFixed(2)} kg</dd>
+                      </div>
+                      {shipment.total_items != null && (
+                        <div>
+                          <dt className="text-xs text-gray-500">Items</dt>
+                          <dd className="font-medium text-gray-900">{shipment.total_items}</dd>
+                        </div>
+                      )}
+                      <div className="col-span-2 sm:col-span-1">
+                        <dt className="text-xs text-gray-500">Created</dt>
+                        <dd className="font-medium text-gray-900">{when(shipment.createdAt)}</dd>
+                      </div>
+                    </dl>
                   </div>
-                  <div className="text-right">
-                    <Badge
-                      variant={getStatusVariant(shipment.status)}
-                    >
-                      {statusMeta(shipment.status).label}
-                    </Badge>
-                    <Link href={`/dashboard/customer/shipments/${shipment.shipment_reference}`} className="block mt-3">
-                      <Button variant="ghost" size="sm">
-                        Track Shipment
-                      </Button>
-                    </Link>
-                  </div>
+
+                  <Link
+                    href={`/dashboard/customer/shipments/${shipment.shipment_reference}`}
+                    className="shrink-0 sm:self-center"
+                  >
+                    <Button variant="ghost" size="sm" className="w-full sm:w-auto">
+                      Track Shipment
+                    </Button>
+                  </Link>
                 </div>
               </Card>
             ))}
