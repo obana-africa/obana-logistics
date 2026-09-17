@@ -1044,14 +1044,21 @@ const shipmentController = {
                 await transaction.commit();
 
 
-                // Notify partner that the shipment was created via WhatsApp (fire-and-forget)
-                notifyShipmentEvent(shipment, 'created', deliveryAddress);
+                /* Awaited, so the outcome can be reported rather than guessed
+                   at. This was fire-and-forget, which meant a create that sent
+                   nothing looked exactly like one that sent both messages, and
+                   the only difference was a line in a log on the server.
+                   notifyShipmentEvent never throws. */
+                const notification = await notifyShipmentEvent(shipment, 'created', deliveryAddress).catch((err) => ({
+                    error: err.message
+                }));
 
                 triggerPostCreationProcesses(shipment.id, isInternal);
 
                 return res.status(201).json({
                     success: true,
                     message: 'Shipment created successfully',
+                    notification,
                     data: {
                         shipment_id: shipment.id,
                         shipment_reference: shipment.shipment_reference,
