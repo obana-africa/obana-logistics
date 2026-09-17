@@ -173,8 +173,11 @@ const calculateShipmentTotals = (items) => {
             const value = parseFloat(item.total_price) || parseFloat(item.value) || parseFloat(item.price) || 0;
             const quantity = parseInt(item.quantity) || 1;
 
-            totalWeight += weight;
-            // totalWeight += weight * quantity;
+            // Per-unit weight times how many there are. Without the quantity a
+            // shipment of seventy shirts reports as one kilogram, which is what
+            // the dashboard was showing. Rating was never affected — it does its
+            // own sum — so only the recorded and displayed figure was wrong.
+            totalWeight += weight * quantity;
             totalValue += value;
             itemCount += quantity;
         });
@@ -1457,6 +1460,14 @@ const shipmentController = {
             }
 
             const plainShipment = shipment.get({ plain: true });
+            plainShipment.display_status = displayStatus(plainShipment.status);
+
+            // The Zoho order this came from, so a shipment can be tied back to
+            // it from the dashboard without opening Zoho.
+            const zoho = plainShipment.metadata?.zoho ?? {};
+            plainShipment.source = zoho.salesorder_number
+                ? { system: 'Zoho', order_number: zoho.salesorder_number, ordered_at: zoho.order_date ?? null }
+                : null;
 
             if (plainShipment.agent && plainShipment.agent.user) {
                 const attributes = await userController.getUserAttributes(plainShipment.agent.user.id);
@@ -1507,7 +1518,11 @@ const shipmentController = {
                     'transport_mode',
                     'total_items',
                     'createdAt',
-                    'actual_delivery_at'
+                    'actual_delivery_at',
+                    // Selected for the Zoho reference below and removed again
+                    // before the response — it holds the original checkout
+                    // payload, which is nobody's business on a public page.
+                    'metadata'
                 ]
             });
 
@@ -1522,10 +1537,11 @@ const shipmentController = {
 
             // Where the order came from, so someone tracking a parcel can tie
             // it back to the sales order without asking anyone.
-            const zohoMeta = shipment.metadata?.zoho ?? {};
+            const zohoMeta = plain.metadata?.zoho ?? {};
             plain.source = zohoMeta.salesorder_number
                 ? { system: 'Zoho', order_number: zohoMeta.salesorder_number, ordered_at: zohoMeta.order_date ?? null }
                 : null;
+            delete plain.metadata;
 
             /* The stages a parcel goes through, each with the moment it got
                there. A list of events tells you what happened; this tells you
