@@ -927,7 +927,9 @@ const statusFromZoho = async (req, res) => {
             success: true,
             shipment_reference: shipment.shipment_reference,
             status,
-            from_zoho: rawStatus
+            from_zoho: rawStatus,
+            // What the WhatsApp actually did, per audience.
+            notification: captured.body?.notification ?? null
         })
     } catch (error) {
         console.error('[ZOHO STATUS] failed:', error?.zoho || error?.message || error)
