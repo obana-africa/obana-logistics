@@ -501,18 +501,11 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
 
     const trackingUrl = `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
 
-    if (pkg && !shipmentOrder) {
-        shipmentOrder = await zoho.createShipmentOrder({
-            salesOrderId: order.salesorder_id,
-            packageIds: [pkg.package_id],
-            shipmentNumber: shipment.shipment_reference,
-            trackingNumber: shipment.shipment_reference,
-            deliveryMethod: 'Obana Logistics',
-            shippingCharge: feeInBase,
-            date,
-            notes: `Obana Logistics · ${trackingUrl}`
-        })
-    }
+    // No shipment order yet. A package that exists and has not left is Zoho's
+    // "created", and it is the state the order is genuinely in between being
+    // boxed and being collected. Shipping it early would report a parcel as
+    // gone while it is still on the floor.
+
 
     // external_shipment_id is what updateZohoShipmentStatus reads when the
     // shipment later moves, so the outbound sync needs nothing more than this.
@@ -528,6 +521,7 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
                 package_id: pkg?.package_id ?? null,
                 shipmentorder_id: shipmentOrder?.shipmentorder_id ?? null,
                 service_lines_skipped: serviceLines,
+                status_label: ZOHO_LABEL.confirmed,
                 shipping_charge_base: feeInBase,
                 base_currency: baseCurrency,
                 ngn_rate: rate,
@@ -549,10 +543,22 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
         customFields: {
             cf_shipment_id: shipment.shipment_reference,
             cf_tracking_url: trackingUrl,
-            cf_shipment_status: 'Shipment Created',
+            cf_shipment_status: ZOHO_LABEL.confirmed,
             cf_carrier_name: 'Obana Logistics'
         }
     })
+
+    if (pkg) {
+        await db.shipment_tracking
+            .create({
+                shipment_id: shipment.id,
+                status: 'created',
+                description: `Package ${pkg.package_number ?? pkg.package_id} created in Zoho for ${order.salesorder_number}`,
+                source: 'zoho',
+                performed_by: 'zoho'
+            })
+            .catch((err) => console.warn('[ZOHO SHIPMENT] tracking event failed:', err.message))
+    }
 
     console.log(
         `[ZOHO SHIPMENT] ${order.salesorder_number} → ${shipment.shipment_reference} · ` +
@@ -578,21 +584,24 @@ const syncStatusToSalesOrder = async (shipment, status) => {
     const salesOrderId = shipment?.metadata?.zoho?.salesorder_id
     if (!salesOrderId) return { skipped: 'not_a_zoho_shipment' }
 
-    const label = {
-        pending: 'Pending',
-        confirmed: 'Shipment Created',
-        picked_up: 'Picked Up',
-        dispatched: 'Dispatched',
-        in_transit: 'In Transit',
-        delivered: 'Delivered',
-        failed: 'Failed',
-        cancelled: 'Cancelled',
-        returned: 'Returned'
-    }[String(status || '').toLowerCase()]
+    const label = ZOHO_LABEL[String(status || '').toLowerCase()]
 
     if (!label) return { skipped: `unmapped_status_${status}` }
 
     try {
+        // Move Zoho's own records in step, not just the label on the order.
+        if (label === 'Shipped' || label === 'Fulfilled') {
+            const shipmentOrderId = await shipInZoho(shipment).catch((err) => {
+                console.error(`[ZOHO SHIPMENT] could not ship ${shipment.shipment_reference} in Zoho:`, err?.zoho || err?.message)
+                return null
+            })
+            if (shipmentOrderId && label === 'Fulfilled') {
+                await zoho
+                    .setShipmentStatus(shipmentOrderId, 'delivered')
+                    .catch((err) => console.error('[ZOHO SHIPMENT] could not mark delivered:', err?.zoho || err?.message))
+            }
+        }
+
         await zoho.updateSalesOrderShipment(salesOrderId, {
             customFields: {
                 cf_shipment_status: label,
@@ -600,6 +609,12 @@ const syncStatusToSalesOrder = async (shipment, status) => {
                 cf_tracking_url: `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
             }
         })
+        // Keep the label on the shipment too, so the Obana side can show the
+        // same word without every screen having to know the mapping.
+        await shipment
+            .update({ metadata: { ...(shipment.metadata || {}), zoho: { ...(shipment.metadata?.zoho ?? {}), status_label: label } } })
+            .catch(() => {})
+
         console.log(`[ZOHO SHIPMENT] ${shipment.shipment_reference} → sales order ${salesOrderId} marked ${label}`)
         return { updated: true, status: label }
     } catch (error) {
@@ -610,8 +625,189 @@ const syncStatusToSalesOrder = async (shipment, status) => {
     }
 }
 
+/**
+ * What Obana's statuses are called on the sales order.
+ *
+ * Zoho's own lifecycle is packed, then shipped, then delivered — a package can
+ * sit created and unshipped, which is a real state and the one an order is in
+ * between being boxed and being collected. So both systems use its words:
+ * Created, Shipped, Fulfilled.
+ *
+ * Obana tracks a parcel more finely than that — picked up, dispatched and in
+ * transit are three things to a dispatcher and one thing to whoever opens the
+ * order — so they collapse onto Shipped, and the detail stays where it is
+ * useful, on the shipment's own tracking history.
+ *
+ * The exceptions carry their own names: an order that failed, was cancelled or
+ * came back is not any of the three, and saying so plainly matters more than a
+ * tidy set.
+ */
+const ZOHO_LABEL = {
+    pending: 'Created',
+    confirmed: 'Created',
+    picked_up: 'Shipped',
+    dispatched: 'Shipped',
+    in_transit: 'Shipped',
+    delivered: 'Fulfilled',
+    failed: 'Failed',
+    cancelled: 'Cancelled',
+    returned: 'Returned'
+}
+
+/**
+ * Raise the Zoho shipment order for a package already created.
+ *
+ * Called when the parcel actually leaves, not when it is booked, so Zoho's
+ * package moves from created to shipped at the moment the real one does.
+ */
+const shipInZoho = async (shipment) => {
+    const z = shipment?.metadata?.zoho ?? {}
+    if (!z.salesorder_id || !z.package_id) return null
+    if (z.shipmentorder_id) return String(z.shipmentorder_id)
+
+    const trackingUrl = `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/track/${shipment.shipment_reference}`
+    const order = await zoho.getSalesOrder(z.salesorder_id)
+    const today = new Date().toISOString().slice(0, 10)
+    const orderDate = String(order.date || '').slice(0, 10)
+
+    const created = await zoho.createShipmentOrder({
+        salesOrderId: z.salesorder_id,
+        packageIds: [z.package_id],
+        shipmentNumber: shipment.shipment_reference,
+        trackingNumber: shipment.shipment_reference,
+        deliveryMethod: 'Obana Logistics',
+        shippingCharge: z.shipping_charge_base,
+        date: orderDate && orderDate > today ? orderDate : today,
+        notes: `Obana Logistics · ${trackingUrl}`
+    })
+
+    await shipment.update({
+        external_shipment_id: String(created.shipmentorder_id),
+        metadata: { ...(shipment.metadata || {}), zoho: { ...z, shipmentorder_id: created.shipmentorder_id } }
+    })
+    console.log(`[ZOHO SHIPMENT] ${shipment.shipment_reference} shipped in Zoho as ${created.shipmentorder_id}`)
+    return String(created.shipmentorder_id)
+}
+
+/* ─────────────────── Zoho → Obana: a status set in Zoho ──────────────────── */
+
+/** What Zoho (or a person typing in it) might say, and what Obana calls it. */
+const INBOUND_STATUS = {
+    created: 'confirmed',
+    'shipment created': 'confirmed',
+    confirmed: 'confirmed',
+    pending: 'pending',
+    packed: 'confirmed',
+    'not shipped': 'confirmed',
+    not_shipped: 'confirmed',
+    'picked up': 'picked_up',
+    picked_up: 'picked_up',
+    pickedup: 'picked_up',
+    dispatched: 'dispatched',
+    shipped: 'dispatched',
+    'in transit': 'in_transit',
+    in_transit: 'in_transit',
+    intransit: 'in_transit',
+    delivered: 'delivered',
+    fulfilled: 'delivered',
+    fulfiled: 'delivered',
+    created: 'confirmed',
+    failed: 'failed',
+    cancelled: 'cancelled',
+    canceled: 'cancelled',
+    returned: 'returned'
+}
+
+const toObanaStatus = (value) => INBOUND_STATUS[String(value || '').trim().toLowerCase()] ?? null
+
+/**
+ * The endpoint Zoho calls when someone changes a shipment's status there.
+ *
+ * The two systems have to agree in both directions: a shipment marked
+ * delivered in Zoho is delivered, and Obana should say so without anyone
+ * re-typing it. Runs through updateShipmentStatus rather than writing the row,
+ * so the change lands with a tracking event and the same notifications any
+ * other status change would raise.
+ */
+const statusFromZoho = async (req, res) => {
+    const salesOrderNumber = str(req.query?.salesorder_number) || str(req.body?.salesorder_number)
+    const salesOrderId = str(req.query?.salesorder_id) || str(req.body?.salesorder_id)
+    const rawStatus = str(req.query?.status) || str(req.body?.status) || str(req.query?.shipment_status)
+
+    if (!salesOrderNumber && !salesOrderId) {
+        return res.status(400).json({
+            success: false,
+            message: 'salesorder_id or salesorder_number is required — add it as a URL parameter on the workflow rule'
+        })
+    }
+    if (!rawStatus) {
+        return res.status(400).json({
+            success: false,
+            message: 'status is required — add status=${SALESORDER.CF_SHIPMENT_STATUS} as a URL parameter'
+        })
+    }
+
+    const status = toObanaStatus(rawStatus)
+    if (!status) {
+        // Not an error: Zoho carries statuses Obana has no equivalent for, and
+        // a rule that fires on every edit will send them.
+        console.log(`[ZOHO STATUS] "${rawStatus}" has no Obana equivalent — ignoring`)
+        return res.status(200).json({ success: true, ignored: `unmapped status "${rawStatus}"` })
+    }
+
+    try {
+        // Find the shipment by whichever reference Zoho sent.
+        let shipment = null
+        if (salesOrderNumber) {
+            shipment = await db.shippings.findOne({ where: { order_reference: salesOrderNumber } })
+        }
+        if (!shipment && salesOrderId) {
+            const order = await zoho.getSalesOrder(salesOrderId)
+            shipment = await db.shippings.findOne({ where: { order_reference: order.salesorder_number } })
+        }
+
+        if (!shipment) {
+            return res.status(404).json({ success: false, message: 'No Obana shipment for that sales order' })
+        }
+
+        if (shipment.status === status) {
+            return res.status(200).json({ success: true, unchanged: true, status, shipment_reference: shipment.shipment_reference })
+        }
+
+        const captured = {}
+        const inner = {
+            status(code) { captured.status = code; return this },
+            json(body) { captured.body = body; return this },
+            send(body) { captured.body = body; return this }
+        }
+        await shipmentsController.updateShipmentStatus(
+            {
+                params: { shipment_id: String(shipment.id) },
+                body: { status, source: 'zoho', performed_by: 'zoho', description: `Marked ${rawStatus} in Zoho` },
+                user: null
+            },
+            inner
+        )
+
+        console.log(`[ZOHO STATUS] ${shipment.shipment_reference} → ${status} (from Zoho "${rawStatus}")`)
+        return res.status(captured.status ?? 200).json({
+            success: true,
+            shipment_reference: shipment.shipment_reference,
+            status,
+            from_zoho: rawStatus
+        })
+    } catch (error) {
+        console.error('[ZOHO STATUS] failed:', error?.zoho || error?.message || error)
+        return res.status(500).json({ success: false, error: error?.message ?? String(error) })
+    }
+}
+
 module.exports = {
     triggerFromSalesOrder,
+    statusFromZoho,
+    shipInZoho,
+    ZOHO_LABEL,
+    toObanaStatus,
     resolveAndFulfil,
     fulfil,
     syncStatusToSalesOrder,

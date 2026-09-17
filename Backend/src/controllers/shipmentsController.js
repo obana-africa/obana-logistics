@@ -1511,7 +1511,13 @@ const shipmentController = {
                 return res.status(404).json({ success: false, message: 'Shipment not found' });
             }
 
-            return res.status(200).json({ success: true, data: shipment.get({ plain: true }) });
+            // The same three words the sales order shows, so a parcel is not
+            // "dispatched" in one system and "Shipped" in the other.
+            const { ZOHO_LABEL } = require('./zohoShipmentController');
+            const plain = shipment.get({ plain: true });
+            plain.display_status = ZOHO_LABEL[plain.status] ?? plain.status;
+
+            return res.status(200).json({ success: true, data: plain });
         } catch (error) {
             console.error('Error in public tracking:', error);
             return res.status(500).json({ success: false, message: 'Error fetching shipment' });
