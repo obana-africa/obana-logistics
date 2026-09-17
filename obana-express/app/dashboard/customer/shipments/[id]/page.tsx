@@ -6,7 +6,7 @@ import { Card, Badge, Loader, Button } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import Link from 'next/link';
 import { ArrowLeft, Package, Truck, MapPin, User, FileText, Clock, Calendar, Weight, Tag } from 'lucide-react';
-import { statusMeta } from "@/lib/shipments";
+import { statusMeta, whenText } from "@/lib/shipments";
 
 interface Address {
   name: string;
@@ -163,7 +163,7 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
                   <div key={event.id} className="mb-8 ml-4">
                     <div className={`absolute -left-2.25 mt-1.5 w-4 h-4 rounded-full ${index === 0 ? 'bg-primary' : 'bg-gray-300'}`}></div>
                     <p className={`font-semibold ${index === 0 ? 'text-primary' : 'text-gray-800'}`}>{event.description}</p>
-                    <p className="text-sm text-gray-500">{new Date(event.createdAt).toLocaleString()}</p>
+                    <p className="text-sm text-gray-500">{whenText(event.createdAt)}</p>
                     {event.location && <p className="text-sm text-gray-500">Location: {event.location}</p>}
                     <p className="text-xs text-gray-400 mt-1">Source: {event.performed_by}</p>
                   </div>
@@ -187,7 +187,7 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
                 {shipment.source?.ordered_at && (
                   <p className="flex justify-between"><span><Calendar className="inline w-4 h-4 mr-1" />Ordered:</span> <span className="font-medium">{new Date(shipment.source.ordered_at).toLocaleDateString()}</span></p>
                 )}
-                <p className="flex justify-between"><span><Calendar className="inline w-4 h-4 mr-1" />Created:</span> <span className="font-medium">{new Date(shipment.createdAt).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</span></p>
+                <p className="flex justify-between"><span><Calendar className="inline w-4 h-4 mr-1" />Created:</span> <span className="font-medium">{whenText(shipment.createdAt)}</span></p>
                 <p className="flex justify-between"><span><Weight className="inline w-4 h-4 mr-1" />Total Weight:</span> <span className="font-medium">{shipment.total_weight} kg</span></p>
                 <p className="flex justify-between"><span><Package className="inline w-4 h-4 mr-1" />Total Items:</span> <span className="font-medium">{shipment.total_items}</span></p>
                 <p className="flex justify-between"><span>Carrier:</span> <span className="font-medium">{shipment.carrier_name}</span></p>

@@ -371,8 +371,13 @@ const fulfil = async (salesOrderId) => {
             return { resumed: true, shipment_reference: existing.shipment_reference }
         }
 
-        step('already shipped', existing.shipment_reference)
-        return { skipped: 'already_shipped', shipment_reference: existing.shipment_reference }
+        // Already in both systems: the useful thing left is to check they agree.
+        const sync = await reconcileFromZoho(order, existing).catch((err) => {
+            console.error('[ZOHO SHIPMENT] reconcile failed:', err?.zoho || err?.message)
+            return { reconciled: false }
+        })
+        step('already shipped', `${existing.shipment_reference}${sync.reconciled ? ` · moved to ${sync.status}` : ''}`)
+        return { skipped: 'already_shipped', shipment_reference: existing.shipment_reference, ...sync }
     }
 
     const { weights, defaulted, productTypes } = await zoho.getItemWeights(
@@ -717,6 +722,78 @@ const shipInZoho = async (shipment) => {
     return String(created.shipmentorder_id)
 }
 
+/**
+ * Bring the Obana shipment into line with what Zoho actually holds.
+ *
+ * Someone shipping a package inside Zoho does not touch cf_shipment_status —
+ * Zoho moves the package to "shipped" and raises a shipment order, and the
+ * custom field still says Package Created. So a status webhook has nothing to
+ * fire on, and the two systems drift apart while both look fine on their own
+ * screen.
+ *
+ * Read the package and the shipment order instead. They are what Zoho means,
+ * whatever any field says.
+ *
+ * Goes through updateShipmentStatus rather than writing the row, so the move
+ * raises the tracking event and the notifications any other status change
+ * would — a customer whose parcel was shipped from inside Zoho hears about it
+ * exactly as one shipped from Obana does.
+ */
+const reconcileFromZoho = async (order, shipment) => {
+    const pkg = (Array.isArray(order.packages) ? order.packages : [])[0]
+    if (!pkg) return { reconciled: false, reason: 'no package in zoho' }
+
+    let want = null
+    if (String(pkg.status).toLowerCase() === 'shipped' && pkg.shipment_id) {
+        const so = await zoho.getShipmentOrder(pkg.shipment_id).catch(() => null)
+        const delivered =
+            String(so?.status ?? '').toLowerCase() === 'delivered' ||
+            String(so?.shipment_status ?? '').toLowerCase() === 'delivered' ||
+            Boolean(so?.delivery_date)
+        want = delivered ? 'delivered' : 'dispatched'
+    } else if (String(pkg.status).toLowerCase() === 'delivered') {
+        want = 'delivered'
+    }
+
+    if (!want || want === shipment.status) return { reconciled: false, status: shipment.status }
+
+    // Obana may already be further along than Zoho — a driver marks delivered
+    // before anyone updates the books. Never walk a shipment backwards.
+    const ORDER = ['pending', 'confirmed', 'picked_up', 'dispatched', 'in_transit', 'delivered']
+    if (ORDER.indexOf(want) <= ORDER.indexOf(shipment.status)) {
+        return { reconciled: false, reason: 'obana is already further along', status: shipment.status }
+    }
+
+    // Record the Zoho shipment order if this is the first we have seen of it.
+    if (pkg.shipment_id && !shipment.external_shipment_id) {
+        await shipment.update({
+            external_shipment_id: String(pkg.shipment_id),
+            metadata: {
+                ...(shipment.metadata || {}),
+                zoho: { ...(shipment.metadata?.zoho ?? {}), package_id: pkg.package_id, shipmentorder_id: pkg.shipment_id }
+            }
+        })
+    }
+
+    const captured = {}
+    const res = {
+        status(code) { captured.status = code; return this },
+        json(body) { captured.body = body; return this },
+        send(body) { captured.body = body; return this }
+    }
+    await shipmentsController.updateShipmentStatus(
+        {
+            params: { shipment_id: String(shipment.id) },
+            body: { status: want, source: 'zoho', performed_by: 'zoho', description: `Shipped in Zoho (${pkg.package_number})` },
+            user: null
+        },
+        res
+    )
+
+    console.log(`[ZOHO SHIPMENT] ${shipment.shipment_reference} moved to ${want} to match Zoho`)
+    return { reconciled: true, status: want }
+}
+
 /* ─────────────────── Zoho → Obana: a status set in Zoho ──────────────────── */
 
 /** What Zoho (or a person typing in it) might say, and what Obana calls it. */
@@ -834,6 +911,7 @@ const statusFromZoho = async (req, res) => {
 
 module.exports = {
     triggerFromSalesOrder,
+    reconcileFromZoho,
     statusFromZoho,
     shipInZoho,
     salespersonOf,

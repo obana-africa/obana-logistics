@@ -8,7 +8,7 @@ import { apiClient } from '@/lib/api';
 import Link from 'next/link';
 import { useAuthStore } from '@/lib/authStore';
 import { Pager } from '@/components/dashboard/kit';
-import { statusMeta } from "@/lib/shipments";
+import { statusMeta, whenText as when } from "@/lib/shipments";
 
 // The server sends shipments a page at a time (without paging, only the latest 20 ever showed).
 const PAGE_SIZE = 20;
@@ -26,9 +26,7 @@ interface Shipment {
   pickup_address: { city: string; state: string };
 }
 
-/** Date and time — two parcels raised the same morning are otherwise identical. */
-const when = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+
 
 export default function CustomerShipmentsPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
