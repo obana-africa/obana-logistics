@@ -28,4 +28,15 @@ const displayStatus = (status) => {
     return DISPLAY[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || null
 }
 
-module.exports = { DISPLAY, displayStatus }
+/**
+ * The link a customer follows to track a parcel.
+ *
+ * There is no /track/<ref> page — the site reads ?track= on the home page and
+ * opens tracking from there, which is what the emails and WhatsApp messages
+ * have always sent. A path-style link 404s, and it had been going into Zoho on
+ * every order.
+ */
+const trackingUrl = (reference) =>
+    `${process.env.FRONTEND_URL || 'https://logistics.obana.africa'}/?track=${encodeURIComponent(reference)}`
+
+module.exports = { DISPLAY, displayStatus, trackingUrl }
