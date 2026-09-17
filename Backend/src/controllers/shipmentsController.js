@@ -1507,7 +1507,11 @@ const shipmentController = {
                     'transport_mode',
                     'total_items',
                     'createdAt',
-                    'actual_delivery_at'
+                    'actual_delivery_at',
+                    // Selected for the Zoho reference below and removed again
+                    // before the response — it holds the original checkout
+                    // payload, which is nobody's business on a public page.
+                    'metadata'
                 ]
             });
 
@@ -1522,10 +1526,11 @@ const shipmentController = {
 
             // Where the order came from, so someone tracking a parcel can tie
             // it back to the sales order without asking anyone.
-            const zohoMeta = shipment.metadata?.zoho ?? {};
+            const zohoMeta = plain.metadata?.zoho ?? {};
             plain.source = zohoMeta.salesorder_number
                 ? { system: 'Zoho', order_number: zohoMeta.salesorder_number, ordered_at: zohoMeta.order_date ?? null }
                 : null;
+            delete plain.metadata;
 
             /* The stages a parcel goes through, each with the moment it got
                there. A list of events tells you what happened; this tells you
