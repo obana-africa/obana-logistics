@@ -20,6 +20,16 @@ const TRIGGER_FIELD = process.env.ZOHO_SHIPMENT_TRIGGER_FIELD || 'cf_create_ship
 const TRIGGER_VALUE = process.env.ZOHO_SHIPMENT_TRIGGER_VALUE || 'Via Obana'
 
 // createShipment requires both, and only accepts these vocabularies.
+/* shipment_trackings.source is an enum — system, driver, admin, carrier_api,
+   customer. Writing 'zoho' throws, and the tracking event is created before the
+   WhatsApp is sent, so every status change coming from Zoho died on that line
+   and no notification was ever reached. The status itself had already been
+   saved, which is why everything looked like it had worked.
+
+   carrier_api is the value that means "an external system told us", which is
+   exactly what this is. performed_by still records that it was Zoho. */
+const TRACKING_SOURCE = 'carrier_api'
+
 const TRANSPORT_MODE = process.env.ZOHO_TRANSPORT_MODE || 'road'
 const SERVICE_LEVEL = process.env.ZOHO_SERVICE_LEVEL || 'Standard'
 
@@ -587,7 +597,7 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
                 shipment_id: shipment.id,
                 status: 'created',
                 description: `Package ${pkg.package_number ?? pkg.package_id} created in Zoho for ${order.salesorder_number}`,
-                source: 'zoho',
+                source: TRACKING_SOURCE,
                 performed_by: 'zoho'
             })
             .catch((err) => console.warn('[ZOHO SHIPMENT] tracking event failed:', err.message))
@@ -784,7 +794,7 @@ const reconcileFromZoho = async (order, shipment) => {
     await shipmentsController.updateShipmentStatus(
         {
             params: { shipment_id: String(shipment.id) },
-            body: { status: want, source: 'zoho', performed_by: 'zoho', description: `Shipped in Zoho (${pkg.package_number})` },
+            body: { status: want, source: TRACKING_SOURCE, performed_by: 'zoho', description: `Shipped in Zoho (${pkg.package_number})` },
             user: null
         },
         res
@@ -916,7 +926,7 @@ const statusFromZoho = async (req, res) => {
         await shipmentsController.updateShipmentStatus(
             {
                 params: { shipment_id: String(shipment.id) },
-                body: { status, source: 'zoho', performed_by: 'zoho', description: `Marked ${rawStatus} in Zoho` },
+                body: { status, source: TRACKING_SOURCE, performed_by: 'zoho', description: `Marked ${rawStatus} in Zoho` },
                 user: null
             },
             inner

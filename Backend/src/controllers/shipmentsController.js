@@ -1783,20 +1783,27 @@ const shipmentController = {
             // Map 'pending' to 'created' for tracking events as 'pending' is not usually a tracking event status
             const trackingStatus = status === 'pending' ? 'created' : status;
 
-            // Create tracking event
-            await db.shipment_tracking.create({
-                shipment_id: shipment.id,
-                status: trackingStatus,
-                location: location || '',
-                description: description || `Status updated to ${status}`,
-                notes: notes || '',
-                source,
-                performed_by: performed_by || (req.user ? `user_${req.user.id}` : 'system'),
-                metadata: {
-                    updated_by: performed_by || 'system',
-                    previous_status: shipment.status
-                }
-            });
+            /* A tracking event is a record of the change, not the point of the
+               request. It was awaited bare, so an unknown source value threw
+               here and everything below — including the WhatsApp the customer
+               actually sees — was skipped, while the status had already been
+               saved. That is how a status change came to look successful with
+               nobody notified. Never let the note-keeping cost the message. */
+            await db.shipment_tracking
+                .create({
+                    shipment_id: shipment.id,
+                    status: trackingStatus,
+                    location: location || '',
+                    description: description || `Status updated to ${status}`,
+                    notes: notes || '',
+                    source,
+                    performed_by: performed_by || (req.user ? `user_${req.user.id}` : 'system'),
+                    metadata: {
+                        updated_by: performed_by || 'system',
+                        previous_status: shipment.status
+                    }
+                })
+                .catch((err) => console.error('[tracking] could not record the status change:', err.message));
 
             /* Awaited rather than fired and forgotten, so the outcome can be
                returned. A notification that silently fails is indistinguishable
