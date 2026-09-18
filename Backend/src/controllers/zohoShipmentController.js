@@ -741,9 +741,9 @@ const syncStatusToSalesOrder = async (shipment, status) => {
 const ZOHO_LABEL = {
     pending: 'Package Created',
     confirmed: 'Package Created',
-    picked_up: 'Shipped',
-    dispatched: 'Shipped',
-    in_transit: 'Shipped',
+    picked_up: 'In Transit',
+    dispatched: 'In Transit',
+    in_transit: 'In Transit',
     delivered: 'Fulfilled',
     failed: 'Failed',
     cancelled: 'Cancelled',
