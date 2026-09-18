@@ -16,6 +16,14 @@ const { trackingUrl: trackLink } = require('../helpers/shipmentStatus')
 // tracked and dispatched by exactly the code that already does that — this file
 // only translates between a Zoho sales order and the payload it expects.
 
+/* The field that now drives everything: Package Created raises the shipment,
+   In Transit moves it, Fulfilled closes it. */
+const STATUS_FIELD = process.env.ZOHO_SHIPMENT_STATUS_FIELD || 'cf_shipment_status'
+
+/* The original flag. Kept because a rule somewhere may still set it, and
+   because an order that carries it is unambiguously asking for a shipment.
+   Nothing breaks when the field is deleted from Zoho — it simply never
+   matches, and the status field answers instead. */
 const TRIGGER_FIELD = process.env.ZOHO_SHIPMENT_TRIGGER_FIELD || 'cf_create_shipment'
 const TRIGGER_VALUE = process.env.ZOHO_SHIPMENT_TRIGGER_VALUE || 'Via Obana'
 
@@ -111,10 +119,24 @@ const triggerValueOf = (order) => {
     return str(match?.value)
 }
 
+/**
+ * Whether this order is asking for a shipment.
+ *
+ * Two fields can say so, because two generations of workflow rule exist. The
+ * original sets cf_create_shipment to "Via Obana". The current one drives
+ * everything from cf_shipment_status, where "Package Created" is the request.
+ *
+ * Accepting both matters more than picking one: a rule pointed at this endpoint
+ * while the order carries only a status answered 202 and silently did nothing,
+ * which is the worst way for a configuration mismatch to present itself.
+ */
 const wantsObana = (order) => {
-    const value = triggerValueOf(order)
-    if (!value) return false
-    return value.trim().toLowerCase() === TRIGGER_VALUE.trim().toLowerCase()
+    const flag = triggerValueOf(order)
+    if (flag && flag.trim().toLowerCase() === TRIGGER_VALUE.trim().toLowerCase()) return true
+
+    // The status field, asking for the first stage.
+    const status = str(zoho.customField(order, STATUS_FIELD))
+    return Boolean(status) && toObanaStatus(status) === 'confirmed'
 }
 
 /** Zoho's shipping_address plus the order's contact, in the shape we book with. */
@@ -382,7 +404,10 @@ const fulfil = async (salesOrderId, { requireTriggerField = true } = {}) => {
        older cf_create_shipment flag. Orders arriving through the original
        trigger still do. */
     if (requireTriggerField && !wantsObana(order)) {
-        console.log(`[ZOHO SHIPMENT] ${order.salesorder_number}: ${TRIGGER_FIELD} is not "${TRIGGER_VALUE}" — ignoring`)
+        console.log(
+            `[ZOHO SHIPMENT] ${order.salesorder_number}: neither ${STATUS_FIELD} ("${str(zoho.customField(order, STATUS_FIELD)) ?? 'empty'}") ` +
+                `nor ${TRIGGER_FIELD} is asking for a shipment — ignoring`
+        )
         return { skipped: 'not_flagged' }
     }
 
