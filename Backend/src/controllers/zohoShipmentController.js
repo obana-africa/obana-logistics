@@ -203,18 +203,34 @@ const itemsOf = (order, weights) => {
     const toNgn = display === 'NGN' && base !== 'NGN' && rate > 0 ? (v) => Math.round(num(v) * rate * 100) / 100 : (v) => num(v)
     const currency = display === 'NGN' && base !== 'NGN' && rate > 0 ? 'NGN' : base
 
-    return (Array.isArray(order.line_items) ? order.line_items : []).map((li) => ({
-        so_line_item_id: li.line_item_id,
-        item_id: li.item_id,
-        name: li.name || li.description || 'Item',
-        description: str(li.description) || '',
-        quantity: num(li.quantity) || 1,
-        price: toNgn(li.rate),
-        value: toNgn(li.item_total ?? li.rate),
-        total_price: toNgn(li.item_total),
-        weight: weights.get(String(li.item_id)) ?? zoho.DEFAULT_ITEM_WEIGHT_KG,
-        currency
-    }))
+    return (Array.isArray(order.line_items) ? order.line_items : []).map((li) => {
+        /* rate times quantity, not item_total.
+
+           Zoho stores item_total net of VAT — 272 at 7.5% is recorded as
+           253.02 — while rate is the price the customer actually pays. A
+           shipment declares what the goods are worth to whoever is carrying
+           them, and that is the inclusive figure: ₦400,000, not ₦372,088.
+
+           It also stopped the two halves of a line agreeing: the unit price was
+           taken from rate and the line total from item_total, so one was
+           inclusive and the other was not. */
+        const quantity = num(li.quantity) || 1
+        const unit = num(li.rate)
+        const line = unit * quantity
+
+        return {
+            so_line_item_id: li.line_item_id,
+            item_id: li.item_id,
+            name: li.name || li.description || 'Item',
+            description: str(li.description) || '',
+            quantity,
+            price: toNgn(unit),
+            value: toNgn(line),
+            total_price: toNgn(line),
+            weight: weights.get(String(li.item_id)) ?? zoho.DEFAULT_ITEM_WEIGHT_KG,
+            currency
+        }
+    })
 }
 
 /**
@@ -468,6 +484,13 @@ const fulfil = async (salesOrderId, { requireTriggerField = true } = {}) => {
             step('resumed', existing.shipment_reference)
             return { resumed: true, shipment_reference: existing.shipment_reference }
         }
+
+        // Items written before the currency was corrected still hold dollars
+        // against a naira shipment. A trigger on an order already shipped is
+        // the natural moment to put that right.
+        await repairItemCurrency(order, existing).catch((err) =>
+            console.error('[ZOHO SHIPMENT] item re-pricing failed:', err.message)
+        )
 
         // Already in both systems: the useful thing left is to check they agree.
         const sync = await reconcileFromZoho(order, existing).catch((err) => {
@@ -830,6 +853,60 @@ const shipInZoho = async (shipment) => {
 }
 
 /**
+ * Re-price the stored items of a shipment raised before the currency was fixed.
+ *
+ * Those shipments hold dollar figures recorded against a naira shipment, so one
+ * screen shows US$253 an item beside a goods value in naira that is really
+ * dollars. Nothing recalculates them on its own — the items were written once at
+ * booking — so a trigger on an order already shipped repairs them in passing.
+ *
+ * Only ever corrects: if the items already agree with the shipment's currency
+ * there is nothing to do, and a run that cannot work out the rate leaves them
+ * exactly as they are.
+ */
+const repairItemCurrency = async (order, shipment) => {
+    const items = await db.shipment_items.findAll({ where: { shipment_id: shipment.id } })
+    if (!items.length) return { repaired: 0 }
+
+    const want = String(shipment.currency || 'NGN').toUpperCase()
+    const stale = items.filter((i) => String(i.currency || '').toUpperCase() !== want)
+    if (!stale.length) return { repaired: 0 }
+
+    const rate = num(zoho.customField(order, 'cf_exchange_rate'))
+    const base = String(order.currency_code || 'USD').toUpperCase()
+    if (!(rate > 0) || base === want) {
+        console.warn(`[ZOHO SHIPMENT] ${shipment.shipment_reference}: cannot re-price items without a rate — left alone`)
+        return { repaired: 0, reason: 'no rate' }
+    }
+
+    /* Rebuilt from the order rather than scaled from what is stored. Those
+       figures are wrong in two ways at once — the wrong currency, and a line
+       total taken from item_total, which Zoho records net of VAT. Multiplying
+       them by the rate would fix the first and preserve the second. */
+    const byName = new Map((order.line_items || []).map((li) => [String(li.name || '').trim(), li]))
+
+    let total = 0
+    for (const item of stale) {
+        const line = byName.get(String(item.name || '').trim())
+        const quantity = num(item.quantity) || num(line?.quantity) || 1
+        const unitBase = line ? num(line.rate) : num(item.unit_price)
+
+        const unit = Math.round(unitBase * rate * 100) / 100
+        const lineTotal = Math.round(unitBase * quantity * rate * 100) / 100
+        await item.update({ unit_price: unit, total_price: lineTotal, currency: want })
+        total += lineTotal
+    }
+
+    // product_value was summed from the same dollar figures.
+    await shipment.update({ product_value: Math.round(total * 100) / 100 })
+
+    console.log(
+        `[ZOHO SHIPMENT] ${shipment.shipment_reference}: re-priced ${stale.length} item(s) from ${base} to ${want} at ${rate}`
+    )
+    return { repaired: stale.length, currency: want, product_value: total }
+}
+
+/**
  * Bring the Obana shipment into line with what Zoho actually holds.
  *
  * Someone shipping a package inside Zoho does not touch cf_shipment_status —
@@ -1153,6 +1230,7 @@ const notificationConfig = async (_req, res) => {
 
 module.exports = {
     triggerFromSalesOrder,
+    repairItemCurrency,
     notificationConfig,
     reconcileFromZoho,
     statusFromZoho,
