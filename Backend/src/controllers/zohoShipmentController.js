@@ -203,18 +203,34 @@ const itemsOf = (order, weights) => {
     const toNgn = display === 'NGN' && base !== 'NGN' && rate > 0 ? (v) => Math.round(num(v) * rate * 100) / 100 : (v) => num(v)
     const currency = display === 'NGN' && base !== 'NGN' && rate > 0 ? 'NGN' : base
 
-    return (Array.isArray(order.line_items) ? order.line_items : []).map((li) => ({
-        so_line_item_id: li.line_item_id,
-        item_id: li.item_id,
-        name: li.name || li.description || 'Item',
-        description: str(li.description) || '',
-        quantity: num(li.quantity) || 1,
-        price: toNgn(li.rate),
-        value: toNgn(li.item_total ?? li.rate),
-        total_price: toNgn(li.item_total),
-        weight: weights.get(String(li.item_id)) ?? zoho.DEFAULT_ITEM_WEIGHT_KG,
-        currency
-    }))
+    return (Array.isArray(order.line_items) ? order.line_items : []).map((li) => {
+        /* rate times quantity, not item_total.
+
+           Zoho stores item_total net of VAT — 272 at 7.5% is recorded as
+           253.02 — while rate is the price the customer actually pays. A
+           shipment declares what the goods are worth to whoever is carrying
+           them, and that is the inclusive figure: ₦400,000, not ₦372,088.
+
+           It also stopped the two halves of a line agreeing: the unit price was
+           taken from rate and the line total from item_total, so one was
+           inclusive and the other was not. */
+        const quantity = num(li.quantity) || 1
+        const unit = num(li.rate)
+        const line = unit * quantity
+
+        return {
+            so_line_item_id: li.line_item_id,
+            item_id: li.item_id,
+            name: li.name || li.description || 'Item',
+            description: str(li.description) || '',
+            quantity,
+            price: toNgn(unit),
+            value: toNgn(line),
+            total_price: toNgn(line),
+            weight: weights.get(String(li.item_id)) ?? zoho.DEFAULT_ITEM_WEIGHT_KG,
+            currency
+        }
+    })
 }
 
 /**
@@ -863,12 +879,22 @@ const repairItemCurrency = async (order, shipment) => {
         return { repaired: 0, reason: 'no rate' }
     }
 
+    /* Rebuilt from the order rather than scaled from what is stored. Those
+       figures are wrong in two ways at once — the wrong currency, and a line
+       total taken from item_total, which Zoho records net of VAT. Multiplying
+       them by the rate would fix the first and preserve the second. */
+    const byName = new Map((order.line_items || []).map((li) => [String(li.name || '').trim(), li]))
+
     let total = 0
     for (const item of stale) {
-        const unit = Math.round(num(item.unit_price) * rate * 100) / 100
-        const line = Math.round(num(item.total_price) * rate * 100) / 100
-        await item.update({ unit_price: unit, total_price: line, currency: want })
-        total += line
+        const line = byName.get(String(item.name || '').trim())
+        const quantity = num(item.quantity) || num(line?.quantity) || 1
+        const unitBase = line ? num(line.rate) : num(item.unit_price)
+
+        const unit = Math.round(unitBase * rate * 100) / 100
+        const lineTotal = Math.round(unitBase * quantity * rate * 100) / 100
+        await item.update({ unit_price: unit, total_price: lineTotal, currency: want })
+        total += lineTotal
     }
 
     // product_value was summed from the same dollar figures.
