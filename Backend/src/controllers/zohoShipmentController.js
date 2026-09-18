@@ -111,10 +111,24 @@ const triggerValueOf = (order) => {
     return str(match?.value)
 }
 
+/**
+ * Whether this order is asking for a shipment.
+ *
+ * Two fields can say so, because two generations of workflow rule exist. The
+ * original sets cf_create_shipment to "Via Obana". The current one drives
+ * everything from cf_shipment_status, where "Package Created" is the request.
+ *
+ * Accepting both matters more than picking one: a rule pointed at this endpoint
+ * while the order carries only a status answered 202 and silently did nothing,
+ * which is the worst way for a configuration mismatch to present itself.
+ */
 const wantsObana = (order) => {
-    const value = triggerValueOf(order)
-    if (!value) return false
-    return value.trim().toLowerCase() === TRIGGER_VALUE.trim().toLowerCase()
+    const flag = triggerValueOf(order)
+    if (flag && flag.trim().toLowerCase() === TRIGGER_VALUE.trim().toLowerCase()) return true
+
+    // The status field, asking for the first stage.
+    const status = str(zoho.customField(order, 'cf_shipment_status'))
+    return Boolean(status) && toObanaStatus(status) === 'confirmed'
 }
 
 /** Zoho's shipping_address plus the order's contact, in the shape we book with. */
