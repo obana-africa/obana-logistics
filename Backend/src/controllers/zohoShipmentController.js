@@ -33,6 +33,16 @@ const TRACKING_SOURCE = 'carrier_api'
 const TRANSPORT_MODE = process.env.ZOHO_TRANSPORT_MODE || 'road'
 const SERVICE_LEVEL = process.env.ZOHO_SERVICE_LEVEL || 'Standard'
 
+/* Zoho will not put a service item in a package, and a shipment order cannot
+   exist without one. This catalogue is deliberately services — the marketplace
+   does not hold inventory — so those records are off by default and the sales
+   order's own fields carry the shipment instead: the charge, the reference, the
+   tracking link and the status.
+
+   Set ZOHO_CREATE_PACKAGES=true for an organisation whose items are goods and
+   which wants Zoho's own packing records as well. */
+const CREATE_PACKAGES = String(process.env.ZOHO_CREATE_PACKAGES || '').toLowerCase() === 'true'
+
 // Goods ship from the Obana warehouse. Vendor drop-ships do not come through
 // this door — an order raised from inside Zoho is one ops is packing here.
 const PICKUP = {
@@ -357,7 +367,7 @@ const resolveAndFulfil = async ({ salesOrderId, salesOrderNumber }) => {
  * Exported so the same path can be replayed by hand for an order whose webhook
  * was lost or whose write-back failed halfway.
  */
-const fulfil = async (salesOrderId) => {
+const fulfil = async (salesOrderId, { requireTriggerField = true } = {}) => {
     // Each stage announces itself. Every failure so far has been invisible
     // until someone read a log, and a 202 means the caller never sees any of
     // it — so the log has to be able to answer "how far did it get?" on its own.
@@ -367,7 +377,11 @@ const fulfil = async (salesOrderId) => {
     const order = await zoho.getSalesOrder(salesOrderId)
     step('read', `${order.salesorder_number} · ${order.customer_name} · ${(order.line_items || []).length} line(s)`)
 
-    if (!wantsObana(order)) {
+    /* The shipment-status rule has already decided this order is being raised —
+       it asked for Package Created — so it does not also have to carry the
+       older cf_create_shipment flag. Orders arriving through the original
+       trigger still do. */
+    if (requireTriggerField && !wantsObana(order)) {
         console.log(`[ZOHO SHIPMENT] ${order.salesorder_number}: ${TRIGGER_FIELD} is not "${TRIGGER_VALUE}" — ignoring`)
         return { skipped: 'not_flagged' }
     }
@@ -521,9 +535,9 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
     // an order made entirely of services skips the package and shipment order
     // altogether. The shipment is real either way, so the order still gets its
     // charge, its shipment id and its tracking url.
-    const packable = (order.line_items || []).filter(
-        (li) => (productTypes.get(String(li.item_id)) ?? 'goods') !== 'service'
-    )
+    const packable = CREATE_PACKAGES
+        ? (order.line_items || []).filter((li) => (productTypes.get(String(li.item_id)) ?? 'goods') !== 'service')
+        : []
     const serviceLines = (order.line_items || []).length - packable.length
 
     let pkg = null
@@ -950,9 +964,29 @@ const statusFromZoho = async (req, res) => {
                 })
             }
 
+            /* No shipment yet, and Zoho is reporting the first stage — so this
+               is the order being raised, not a status moving. One field then
+               drives the whole flow: Package Created makes the shipment, In
+               Transit moves it, Fulfilled closes it.
+
+               That matters because the catalogue is services. Zoho will not
+               pack a service, so its own package and shipment-order records can
+               never exist here, and cf_shipment_status is the only place the
+               lifecycle can live. */
+            if (status === 'confirmed') {
+                const id = salesOrderId || (await zoho.findSalesOrderByNumber(salesOrderNumber))
+                if (!id) {
+                    return res.status(404).json({ success: false, message: `No sales order ${salesOrderNumber} in Zoho` })
+                }
+
+                console.log(`[ZOHO STATUS] no shipment for ${salesOrderNumber || id} yet — raising it from "${rawStatus}"`)
+                const created = await fulfil(id, { requireTriggerField: false })
+                return res.status(200).json({ success: true, created: true, from_zoho: rawStatus, ...created })
+            }
+
             console.warn(
                 `[ZOHO STATUS] no Obana shipment for ${salesOrderNumber || salesOrderId} — ` +
-                    'it may never have been created, or belong to another store'
+                    `"${rawStatus}" cannot move a shipment that was never raised`
             )
             return res.status(404).json({
                 success: false,
