@@ -184,19 +184,38 @@ const deliveryAddressOf = (order, customer = null) => {
  * that it guessed — an unnoticed default is how a heavy item quietly ships at a
  * light item's price, for months.
  */
-const itemsOf = (order, weights) =>
-    (Array.isArray(order.line_items) ? order.line_items : []).map((li) => ({
+const itemsOf = (order, weights) => {
+    /* A shipment keeps its money in one currency — the shipping fee is priced
+       in naira from the route templates, so the goods have to be naira too.
+       Zoho prices these orders in the organisation's base currency, USD, and
+       carries the customer's own currency and the day's rate alongside.
+
+       Without converting, the same figure appears twice on one screen wearing
+       two different symbols: US$253 an item, and a goods value of ₦1,265 that
+       is really 1,265 dollars. */
+    const base = String(order.currency_code || 'USD').toUpperCase()
+    const display = String(zoho.customField(order, 'cf_currency_code') || 'NGN').toUpperCase()
+    const rate = num(zoho.customField(order, 'cf_exchange_rate'))
+
+    // Only convert when there is a rate to convert with, and something to
+    // convert to. A missing rate leaves the figures as Zoho stated them, which
+    // is wrong by a factor but not invented.
+    const toNgn = display === 'NGN' && base !== 'NGN' && rate > 0 ? (v) => Math.round(num(v) * rate * 100) / 100 : (v) => num(v)
+    const currency = display === 'NGN' && base !== 'NGN' && rate > 0 ? 'NGN' : base
+
+    return (Array.isArray(order.line_items) ? order.line_items : []).map((li) => ({
         so_line_item_id: li.line_item_id,
         item_id: li.item_id,
         name: li.name || li.description || 'Item',
         description: str(li.description) || '',
         quantity: num(li.quantity) || 1,
-        price: num(li.rate),
-        value: num(li.item_total ?? li.rate),
-        total_price: num(li.item_total),
+        price: toNgn(li.rate),
+        value: toNgn(li.item_total ?? li.rate),
+        total_price: toNgn(li.item_total),
         weight: weights.get(String(li.item_id)) ?? zoho.DEFAULT_ITEM_WEIGHT_KG,
-        currency: order.currency_code || 'USD'
+        currency
     }))
+}
 
 /**
  * The store row Zoho shipments are tagged to, so they sit alongside the ones
