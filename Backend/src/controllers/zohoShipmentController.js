@@ -469,6 +469,13 @@ const fulfil = async (salesOrderId, { requireTriggerField = true } = {}) => {
             return { resumed: true, shipment_reference: existing.shipment_reference }
         }
 
+        // Items written before the currency was corrected still hold dollars
+        // against a naira shipment. A trigger on an order already shipped is
+        // the natural moment to put that right.
+        await repairItemCurrency(order, existing).catch((err) =>
+            console.error('[ZOHO SHIPMENT] item re-pricing failed:', err.message)
+        )
+
         // Already in both systems: the useful thing left is to check they agree.
         const sync = await reconcileFromZoho(order, existing).catch((err) => {
             console.error('[ZOHO SHIPMENT] reconcile failed:', err?.zoho || err?.message)
@@ -830,6 +837,50 @@ const shipInZoho = async (shipment) => {
 }
 
 /**
+ * Re-price the stored items of a shipment raised before the currency was fixed.
+ *
+ * Those shipments hold dollar figures recorded against a naira shipment, so one
+ * screen shows US$253 an item beside a goods value in naira that is really
+ * dollars. Nothing recalculates them on its own — the items were written once at
+ * booking — so a trigger on an order already shipped repairs them in passing.
+ *
+ * Only ever corrects: if the items already agree with the shipment's currency
+ * there is nothing to do, and a run that cannot work out the rate leaves them
+ * exactly as they are.
+ */
+const repairItemCurrency = async (order, shipment) => {
+    const items = await db.shipment_items.findAll({ where: { shipment_id: shipment.id } })
+    if (!items.length) return { repaired: 0 }
+
+    const want = String(shipment.currency || 'NGN').toUpperCase()
+    const stale = items.filter((i) => String(i.currency || '').toUpperCase() !== want)
+    if (!stale.length) return { repaired: 0 }
+
+    const rate = num(zoho.customField(order, 'cf_exchange_rate'))
+    const base = String(order.currency_code || 'USD').toUpperCase()
+    if (!(rate > 0) || base === want) {
+        console.warn(`[ZOHO SHIPMENT] ${shipment.shipment_reference}: cannot re-price items without a rate — left alone`)
+        return { repaired: 0, reason: 'no rate' }
+    }
+
+    let total = 0
+    for (const item of stale) {
+        const unit = Math.round(num(item.unit_price) * rate * 100) / 100
+        const line = Math.round(num(item.total_price) * rate * 100) / 100
+        await item.update({ unit_price: unit, total_price: line, currency: want })
+        total += line
+    }
+
+    // product_value was summed from the same dollar figures.
+    await shipment.update({ product_value: Math.round(total * 100) / 100 })
+
+    console.log(
+        `[ZOHO SHIPMENT] ${shipment.shipment_reference}: re-priced ${stale.length} item(s) from ${base} to ${want} at ${rate}`
+    )
+    return { repaired: stale.length, currency: want, product_value: total }
+}
+
+/**
  * Bring the Obana shipment into line with what Zoho actually holds.
  *
  * Someone shipping a package inside Zoho does not touch cf_shipment_status —
@@ -1153,6 +1204,7 @@ const notificationConfig = async (_req, res) => {
 
 module.exports = {
     triggerFromSalesOrder,
+    repairItemCurrency,
     notificationConfig,
     reconcileFromZoho,
     statusFromZoho,
