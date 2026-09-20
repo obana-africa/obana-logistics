@@ -81,7 +81,20 @@ const setStatus = async (req, res) => {
     }
 
     try {
-        const shipment = await db.shippings.findOne({ where: { order_reference: salesOrderNumber } })
+        /* One order can hold several shipments — the shop and sales-partner
+           flows raise one per vendor. Update this vendor's own leg, and never
+           somebody else's: taking the first row matched meant a vendor on a
+           five-vendor order could move a parcel that was not theirs. */
+        const candidates = await db.shippings.findAll({
+            where: { order_reference: salesOrderNumber },
+            order: [['updatedAt', 'DESC']]
+        })
+        const isVendorId = (value) => /^\d{6,}$/.test(String(value ?? '').trim())
+        const shipment = vendorId
+            ? (candidates.find((c) => String(c.vendor_name ?? '').trim() === vendorId) ??
+              candidates.find((c) => !isVendorId(c.vendor_name)) ??
+              null)
+            : (candidates[0] ?? null)
 
         /* No shipment means ops has not flagged the order for Obana yet. Say so
            plainly rather than raising one: the vendor did not choose the
@@ -202,27 +215,70 @@ const lookup = async (req, res) => {
         return res.status(400).json({ success: false, message: 'At most 500 sales orders per lookup' })
     }
 
+    const vendorId = str(req.body?.vendor_id)
+
     try {
         const shipments = await db.shippings.findAll({
             where: { order_reference: [...new Set(numbers)] },
             // Deliberately narrow. The vendor dashboard shows no customer
             // information, so none is selected here — it cannot leak what it
-            // never reads.
-            attributes: ['order_reference', 'shipment_reference', 'status', 'updatedAt']
+            // never reads. vendor_name is the exception: it is what decides
+            // whose shipment this is.
+            attributes: ['order_reference', 'shipment_reference', 'status', 'vendor_name', 'updatedAt'],
+            order: [['updatedAt', 'DESC']]
         })
 
-        const shipmentsByOrder = {}
+        /* An order can hold more than one shipment. The shop and sales-partner
+           flows raise one per vendor — a five-vendor order is five shipments,
+           each tagged with that vendor's id — while the Zoho flow raises a
+           single one for the whole order, tagged 'Obana Africa'.
+
+           Keying only by order number kept whichever row came last, so on a
+           multi-vendor order a vendor could be shown, and then update, another
+           vendor's leg. */
+        const byOrder = new Map()
         for (const s of shipments) {
-            shipmentsByOrder[s.order_reference] = {
+            if (!byOrder.has(s.order_reference)) byOrder.set(s.order_reference, [])
+            byOrder.get(s.order_reference).push(s)
+        }
+
+        // A vendor id is the long numeric Zoho id. Anything else — 'Obana
+        // Africa', 'Unknown Vendor' — marks a shipment covering the whole
+        // order rather than one vendor's part of it.
+        const isVendorId = (value) => /^\d{6,}$/.test(String(value ?? '').trim())
+
+        const pick = (rows) => {
+            if (!vendorId) return rows[0]
+            // This vendor's own leg, when there is one.
+            const mine = rows.find((r) => String(r.vendor_name ?? '').trim() === vendorId)
+            if (mine) return mine
+            // Otherwise an order-level shipment, which belongs to everyone on
+            // the order. Never another vendor's leg.
+            return rows.find((r) => !isVendorId(r.vendor_name))
+        }
+
+        const shipmentsByOrder = {}
+        for (const [orderRef, rows] of byOrder) {
+            const s = pick(rows)
+            if (!s) continue
+            shipmentsByOrder[orderRef] = {
                 shipment_reference: s.shipment_reference,
                 status: s.status,
                 zoho_status: zohoShipment.ZOHO_LABEL[s.status] ?? null,
                 tracking_url: trackingUrl(s.shipment_reference),
+                // So a shared shipment can be told apart from a vendor's own
+                // leg, and so this is debuggable from the response itself.
+                vendor_scoped: isVendorId(s.vendor_name),
                 updated_at: s.updatedAt
             }
         }
 
-        return res.status(200).json({ success: true, count: shipments.length, shipments: shipmentsByOrder })
+        return res.status(200).json({
+            success: true,
+            count: shipments.length,
+            matched: Object.keys(shipmentsByOrder).length,
+            shipments: shipmentsByOrder
+        })
     } catch (error) {
         console.error('[VENDOR SHIPMENT] lookup failed:', error?.message || error)
         return res.status(500).json({ success: false, message: error?.message ?? String(error) })
