@@ -42,6 +42,50 @@ const laneName = (origin, destination) => {
     return `${part(origin)} → ${part(destination)}`;
 };
 
+/**
+ * Every route template, held briefly in memory.
+ *
+ * Matching walks the whole table — a lane is decided by comparing metadata, not
+ * by a column a query could filter on — so every rate request read every row,
+ * each with its driver and that driver's user. That was tolerable while the
+ * table was Lagos-only; full Nigerian coverage is roughly two thousand rows,
+ * and checkout asks for rates on nearly every page.
+ *
+ * Thirty seconds is short enough that an admin editing a price sees it almost
+ * at once, and long enough that a burst of checkouts reads the table once.
+ */
+const TEMPLATE_TTL_MS = 30 * 1000;
+let templateCache = { at: 0, rows: null, loading: null };
+
+const loadRouteTemplates = async () => {
+    if (templateCache.rows && Date.now() - templateCache.at < TEMPLATE_TTL_MS) return templateCache.rows;
+    // Share one query between requests that arrive together, rather than
+    // letting each of them start its own on a cold cache.
+    if (!templateCache.loading) {
+        templateCache.loading = RouteTemplates.findAll({
+            include: [{
+                model: db.drivers,
+                as: 'preferred_driver',
+                include: [{ model: db.users, as: 'user', attributes: ['email'] }]
+            }]
+        })
+            .then((rows) => {
+                templateCache = { at: Date.now(), rows, loading: null };
+                return rows;
+            })
+            .catch((error) => {
+                templateCache.loading = null;
+                throw error;
+            });
+    }
+    return templateCache.loading;
+};
+
+/** Drop the cache when routes change, so an edit shows up without waiting. */
+const invalidateRouteTemplates = () => {
+    templateCache = { at: 0, rows: null, loading: null };
+};
+
 
 const RouteTemplates = db.route_templates
 
@@ -349,6 +393,7 @@ const createTemplate = async (req, res) => {
     try {
         // 1. Create route template in DB
         const t = await RouteTemplates.create(body);
+        invalidateRouteTemplates();
 
         // 2. Find driver email
         const driverEmail = await getRouteTemplateDriverEmail(t);
@@ -377,6 +422,7 @@ const updateTemplate = async (req, res) => {
     // The admin form sends only location metadata; keep the rest (bidirectional, seed marker, provider).
     if (body && body.metadata && typeof body.metadata === 'object') body.metadata = { ...(t.metadata || {}), ...body.metadata }
     const updatedTemplate = await t.update(body)
+    invalidateRouteTemplates();
 
     try {
         const accessToken = await util.getZohoInventoryToken();
@@ -395,6 +441,7 @@ const deleteTemplate = async (req, res) => {
     if (!t) return res.status(404).send(utils.responseError('Not found'))
 
     await t.destroy()
+    invalidateRouteTemplates();
 
     try {
         const accessToken = await util.getZohoInventoryToken();
@@ -671,13 +718,7 @@ const matchTemplate = async (req, res) => {
         groupedItems[key] = { pickup_address: pickup_address || {}, items: normalizedItems }
     }
 
-    const routeTemplates = await RouteTemplates.findAll({
-        include: [{
-            model: db.drivers,
-            as: 'preferred_driver',
-            include: [{ model: db.users, as: 'user', attributes: ['email'] }]
-        }]
-    })
+    const routeTemplates = await loadRouteTemplates()
 
     const externalGroups = []
     for (const group of Object.values(groupedItems)) {
@@ -995,7 +1036,7 @@ const buildQuoteOptions = async ({ origin, destination, originCode, destCode, we
     const options = []
 
     // 1. Obana fleet: one option per mode/service on this lane, from its best-fitting template (no Lagos fallback for quotes).
-    const templates = await RouteTemplates.findAll()
+    const templates = await loadRouteTemplates()
     for (const o of laneOptions(templates, origin.state, originCode, destination.state, destCode, weight)) {
         options.push({
             id: o.id,
