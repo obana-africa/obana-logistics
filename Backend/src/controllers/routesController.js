@@ -21,6 +21,27 @@ const taClient = axios.create({
     headers: { 'Authorization': `Bearer ${TERMINAL_AFRICA_SECRET_KEY}`, 'Content-Type': 'application/json' }
 });
 
+/**
+ * Whether a lane with no Obana route may be quoted by an outside carrier.
+ *
+ * The marketplace is meant to see one carrier — Obana. A partner's price
+ * reaching a customer as a partner's price is a decision for when the partner
+ * side is built properly, with its own branding, margin and settlement; until
+ * then this stays off, and a lane we do not run says so plainly.
+ *
+ * Off also removes a whole class of confusion. An expired partner key and a
+ * lane nobody has priced were arriving as the same sentence, so the first
+ * guess was always the credential and the real answer was always the route
+ * table.
+ */
+const EXTERNAL_FALLBACK = String(process.env.ROUTES_EXTERNAL_FALLBACK ?? 'false').trim().toLowerCase() === 'true';
+
+/** Names the lane in a message, so a gap in the route table is actionable. */
+const laneName = (origin, destination) => {
+    const part = (a) => [a?.state, a?.city].map((v) => String(v ?? '').trim()).filter(Boolean).join(' / ') || 'unknown';
+    return `${part(origin)} → ${part(destination)}`;
+};
+
 
 const RouteTemplates = db.route_templates
 
@@ -728,6 +749,20 @@ const matchTemplate = async (req, res) => {
         return res.status(200).send(utils.responseSuccess(shipmentResults))
     }
 
+    /* No Obana route for this lane, and partners are not being offered. Say
+       which lane, because the fix is a route template and nobody could act on
+       "no routes available" — it reads as an outage when it is a gap. */
+    if (!EXTERNAL_FALLBACK) {
+        const lanes = externalGroups.map((g) => laneName(g.pickup_address, delivery_address))
+        console.log(`[routes] no Obana route for ${lanes.join('; ')} — external fallback is off`)
+        return res.status(404).send(
+            utils.responseError(
+                `No Obana route for ${lanes.join('; ')}. Add a route for this lane, ` +
+                    'or a Nigeria-wide route with any_state set on both ends.'
+            )
+        )
+    }
+
     try {
         for (const group of externalGroups) {
             const payload = buildTerminalPayload(group.pickup_address, delivery_address, group.items)
@@ -774,11 +809,19 @@ const matchTemplate = async (req, res) => {
         if (shipmentResults.length > 0) {
             return res.status(200).send(utils.responseSuccess(shipmentResults))
         }
-        console.log("reachhhh")
-        return res.status(404).send(utils.responseError('No routes available for this shipment'))
+        const lanes = externalGroups.map((g) => laneName(g.pickup_address, delivery_address))
+        console.log(`[routes] no Obana route and no partner rate for ${lanes.join('; ')}`)
+        return res.status(404).send(utils.responseError(`No route available for ${lanes.join('; ')}`))
     } catch (error) {
-        console.error('External route match failed:', error?.response?.data || error.message)
-        return res.status(404).send(utils.responseError('No routes available for this shipment'))
+        /* A carrier that refused us is not the same as a lane nobody runs, and
+           reporting both as "no routes available" sent every investigation at
+           the route table when the cause was a credential, and at the
+           credential when the cause was the route table. */
+        const detail = error?.response?.data?.message || error?.message || String(error)
+        console.error('[routes] partner carrier lookup failed:', error?.response?.data || detail)
+        return res.status(502).send(
+            utils.responseError(`Could not reach the partner carrier for a rate: ${detail}`)
+        )
     }
 }
 
@@ -966,8 +1009,9 @@ const buildQuoteOptions = async ({ origin, destination, originCode, destCode, we
         })
     }
 
-    // 2. Partner carriers for international lanes, or when our fleet doesn't cover the route.
-    if (originCode !== 'NG' || destCode !== 'NG' || !options.length) {
+    // 2. Partner carriers for international lanes, or when our fleet doesn't
+    //    cover the route — only while partners are being offered at all.
+    if (EXTERNAL_FALLBACK && (originCode !== 'NG' || destCode !== 'NG' || !options.length)) {
         try {
             const payload = {
                 pickup_address: quoteAddress(origin, originCode),
@@ -1038,7 +1082,10 @@ const publicQuote = async (req, res) => {
             if (quoteCache.size > 500) quoteCache.delete(quoteCache.keys().next().value)
         }
         if (!cached.options.length) {
-            return res.status(404).send(utils.responseError('No routes available for this shipment'))
+            // Name the lane. "No routes available" reads as an outage; this is
+            // a gap in the route table, and saying so is what makes it fixable.
+            console.log(`[routes] quote: no Obana route for ${laneName(origin, destination)}`)
+            return res.status(404).send(utils.responseError(`No Obana route for ${laneName(origin, destination)}`))
         }
 
         const fx = await ngnRate(wanted)
