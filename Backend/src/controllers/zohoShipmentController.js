@@ -141,7 +141,23 @@ const wantsObana = (order) => {
 
 /** Zoho's shipping_address plus the order's contact, in the shape we book with. */
 const deliveryAddressOf = (order, customer = null) => {
-    const address = order.shipping_address || order.billing_address || {}
+    /* An order's own address wins, but production orders routinely carry a
+       blank one while the customer record behind them is filled in — the
+       address was entered against the customer, not retyped onto every order.
+       Falling through to the customer's address is the difference between a
+       shipment and a refusal on an order that has everywhere to go.
+
+       Judged on whether there is a street line, not on the object existing:
+       Zoho returns the shape with empty strings rather than omitting it, so a
+       blank address is truthy and would otherwise win over a real one. */
+    const hasStreet = (a) => Boolean(str(a?.address) || str(a?.street))
+    const address =
+        [order.shipping_address, order.billing_address, customer?.shipping_address, customer?.billing_address].find(
+            hasStreet
+        ) ||
+        order.shipping_address ||
+        order.billing_address ||
+        {}
     const name = str(order.customer_name) || ''
     const [first, ...rest] = name.split(/\s+/)
     const contact = Array.isArray(order.contact_persons_details) ? order.contact_persons_details[0] : null
