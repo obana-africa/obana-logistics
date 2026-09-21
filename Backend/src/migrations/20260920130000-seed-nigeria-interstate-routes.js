@@ -8,8 +8,10 @@
  * Abia → Delta, got nothing, and the checkout reported "no routes available" —
  * which reads as an outage and is really a gap in this table.
  *
- * Every ordered pair is written, so both directions are covered and each state
- * also gets its own intra-state lane (Aba → Umuahia is still a delivery).
+ * One row per unordered pair, flagged bidirectional, plus each state's own
+ * intra-state lane (Aba → Umuahia is still a delivery). Writing each direction
+ * as its own row would double the table and reproduce exactly the duplication
+ * the pass before this one exists to remove.
  *
  * Prices are NGN for a parcel up to 10 kg, heavier charged pro rata (see
  * priceTemplate). They follow the six geopolitical zones, which is how Nigerian
@@ -102,24 +104,31 @@ const TIER = {
 const place = ([state, stateCode, city]) => ({ city, state, stateCode, country: 'Nigeria', countryCode: 'NG' });
 
 /**
- * Both directions are written as their own rows rather than one row flagged
- * bidirectional.
+ * One row per pair, serving both directions.
  *
- * The Lagos seed already holds one-way rows, and insertMissingRoutes skips a
- * lane that exists. A bidirectional Lagos → Ogun row would therefore be
- * skipped on account of the old one-way row, and Ogun → Lagos would stay
- * uncovered — the exact gap this migration exists to close, reintroduced by
- * the thing meant to prevent it. Explicit rows cannot fail that way: whichever
- * direction is missing is the one that gets inserted.
+ * insertMissingRoutes skips a lane that already exists, which on its own would
+ * leave an old one-way Lagos → Ogun row blocking this row and Ogun → Lagos
+ * still uncovered. The pass before this one closes that: it has already made
+ * every existing lane bidirectional, so a lane that is skipped here is a lane
+ * that already works in both directions.
  */
 const buildRoutes = () => {
     const routes = [];
     for (let i = 0; i < NIGERIA.length; i += 1) {
-        for (let j = 0; j < NIGERIA.length; j += 1) {
+        // j starts at i so each state also gets its own intra-state lane.
+        for (let j = i; j < NIGERIA.length; j += 1) {
             const from = NIGERIA[i];
             const to = NIGERIA[j];
             const services = i === j ? TIER.same : TIER[gap(from[3], to[3])];
-            routes.push(...routeRows({ from: place(from), to: place(to), services, seed: SEED }));
+            routes.push(
+                ...routeRows({
+                    from: place(from),
+                    to: place(to),
+                    services,
+                    seed: SEED,
+                    extra: i === j ? {} : { bidirectional: true },
+                })
+            );
         }
     }
     return routes;
