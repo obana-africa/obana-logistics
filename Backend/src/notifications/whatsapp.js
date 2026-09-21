@@ -13,6 +13,13 @@ const normalizePhone = (phone, defaultCountryCode = '234') => {
     if (p.startsWith('+')) p = p.slice(1);
     if (p.startsWith('00')) p = p.slice(2);
     if (p.startsWith('0')) p = defaultCountryCode + p.slice(1);
+    /* A country code pasted in front of a number that still has its national
+       trunk zero: Zoho stores "08090335245" back as "+234-08090335245", which
+       is 234 followed by the whole local number. It is 14 digits, so it passes
+       a length check and is quietly rejected by the carrier instead — the
+       failure surfaces as "No Phone Number provided" on a field that plainly
+       has a phone number in it. */
+    if (p.startsWith(`${defaultCountryCode}0`)) p = defaultCountryCode + p.slice(defaultCountryCode.length + 1);
     // Bare local number (e.g. 8012345678) with no country code
     if (!p.startsWith(defaultCountryCode) && p.length === 10) p = defaultCountryCode + p;
     if (!/^\d{10,15}$/.test(p)) return null;
