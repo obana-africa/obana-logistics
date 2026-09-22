@@ -21,6 +21,13 @@ export const TOC = [
 		],
 	},
 	{
+		group: "Platforms",
+		items: [
+			{ id: "thaja", label: "Thaja" },
+			{ id: "shopify", label: "Shopify" },
+		],
+	},
+	{
 		group: "Zoho",
 		items: [
 			{ id: "zoho-overview", label: "Overview" },
