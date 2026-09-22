@@ -303,4 +303,4 @@ const invoiceShipment = async (shipment) => {
     }
 }
 
-module.exports = { invoiceShipment, isDirectShipment, ENABLED }
+module.exports = { invoiceShipment, isDirectShipment, contactFor, phoneVariants, ENABLED }
