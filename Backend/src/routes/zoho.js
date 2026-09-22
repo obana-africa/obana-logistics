@@ -29,6 +29,11 @@ router.post('/shipment-trigger', requireWebhookSecret, controller.triggerFromSal
 // Obana shipment so the two never disagree about where a parcel is.
 router.post('/shipment-status', requireWebhookSecret, controller.statusFromZoho)
 
+// Which Books contact a phone or email resolves to. Read-only: it creates
+// nothing, and it is the only way to see why a customer who exists was not
+// found without deploying a guess to find out.
+router.get('/contact-probe', requireWebhookSecret, controller.contactProbe)
+
 // Which WhatsApp templates are configured. Booleans only — the codes are
 // credentials and are never returned.
 router.get('/notification-config', requireWebhookSecret, controller.notificationConfig)

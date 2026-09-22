@@ -1207,6 +1207,59 @@ const statusFromZoho = async (req, res) => {
  * the only symptom is a message nobody receives. This reports what is set
  * without printing any of it — the codes are credentials.
  */
+/**
+ * Which Zoho Books contact a phone number or email resolves to.
+ *
+ * Reads only: it never creates a contact, an estimate or anything else. It
+ * exists because "a new customer was created again" is the one symptom that
+ * cannot be diagnosed from outside — the answer is several API calls deep, and
+ * every guess about it so far has cost a deploy to disprove.
+ *
+ * Returns the exact spellings tried and which one matched, so a number that
+ * plainly exists in Books and still does not match can be seen rather than
+ * theorised about.
+ */
+const contactProbe = async (req, res) => {
+    const invoice = require('../helpers/zohoShipmentInvoice')
+    const phone = str(req.query.phone)
+    const email = str(req.query.email)
+
+    if (!phone && !email) {
+        return res.status(400).json({ success: false, message: 'Pass ?phone= or ?email= (or both)' })
+    }
+
+    const variants = invoice.phoneVariants(phone)
+    const attempts = []
+
+    if (email) {
+        const found = await zoho
+            .call('get', 'contacts', { params: { email }, books: true })
+            .catch((err) => ({ error: err?.zoho?.message || err.message }))
+        const hit = (found?.contacts || [])[0]
+        attempts.push({ by: 'email', value: email, matched: hit ? hit.contact_name : null, contact_id: hit?.contact_id ?? null, error: found?.error })
+    }
+
+    for (const candidate of variants) {
+        const found = await zoho
+            .call('get', 'contacts', { params: { phone: candidate }, books: true })
+            .catch((err) => ({ error: err?.zoho?.message || err.message }))
+        const hit = (found?.contacts || [])[0]
+        attempts.push({ by: 'phone', value: candidate, matched: hit ? hit.contact_name : null, contact_id: hit?.contact_id ?? null, error: found?.error })
+        if (hit) break
+    }
+
+    const winner = attempts.find((a) => a.contact_id)
+    return res.status(200).json({
+        success: true,
+        phone_as_given: phone || null,
+        phone_variants_tried: variants,
+        attempts,
+        result: winner
+            ? `would reuse ${winner.matched} (matched by ${winner.by} ${winner.value})`
+            : 'no match — a new contact would be created'
+    })
+}
+
 const notificationConfig = async (_req, res) => {
     const { templateCodeFor } = require('./shipmentsController')
 
@@ -1248,6 +1301,7 @@ module.exports = {
     triggerFromSalesOrder,
     repairItemCurrency,
     notificationConfig,
+    contactProbe,
     reconcileFromZoho,
     statusFromZoho,
     shipInZoho,
