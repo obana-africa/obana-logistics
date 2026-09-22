@@ -107,6 +107,22 @@ const contactFor = async (customer) => {
     return String(created?.contact?.contact_id ?? '')
 }
 
+/**
+ * The Books currency id for naira, remembered once.
+ *
+ * Looked up rather than configured: a currency id is per-organisation, so a
+ * hard-coded one is correct until the day the org changes and then silently
+ * posts every invoice in the wrong currency.
+ */
+let nairaIdCache = null
+const nairaCurrencyId = async () => {
+    if (nairaIdCache !== null) return nairaIdCache
+    const body = await zoho.call('get', 'settings/currencies', { books: true })
+    const ngn = (body?.currencies || []).find((c) => str(c.currency_code).toUpperCase() === 'NGN')
+    nairaIdCache = ngn?.currency_id ? String(ngn.currency_id) : null
+    return nairaIdCache
+}
+
 /** A short description of the journey, so the invoice line says what was sold. */
 const describe = async (shipment) => {
     const [pickup, delivery] = await Promise.all([
@@ -149,26 +165,30 @@ const invoiceShipment = async (shipment) => {
         const currency = str(shipment.currency).toUpperCase() || 'NGN'
         const today = new Date().toISOString().slice(0, 10)
 
-        /* Books is on USD. Convert with Zoho's own naira rate rather than any
-           other source, so the invoice agrees with every other figure this
-           integration writes. */
-        let amount = feeNgn
-        let rate = 1
-        let rateSource = 'none (already NGN in a NGN book)'
-        if (currency === 'NGN') {
-            const naira = await zoho.getNairaRate(today).catch(() => null)
-            if (naira?.rate > 0) {
-                rate = naira.rate
-                amount = round2(feeNgn / rate)
-                rateSource = `zoho_currency_settings @ ${naira.effective_date ?? today}`
-            }
-        }
+        /* Raise the invoice in the currency the delivery was actually sold in,
+           rather than converting first.
+        
+           The books are kept in USD, so the temptation is to divide by a rate
+           and post dollars. Two things make that worse than it looks: Zoho
+           quotes NGN as 0.000714, which is USD per naira — the inverse of the
+           ~1400 the rest of this integration divides by — so getting the
+           direction wrong produces a figure a million times out and still looks
+           like a number. And a converted invoice records a rate that was true
+           for one second, which is not what the customer was charged.
+        
+           Books is multi-currency. Handing it ₦26,400 and the NGN currency id
+           lets it hold the sale at its real value and do its own conversion for
+           the accounts, which is both more accurate and impossible to invert. */
+        const currencyId = await nairaCurrencyId().catch(() => null)
+        const amount = feeNgn
+        const postedIn = currency === 'NGN' && currencyId ? 'NGN' : 'USD (org default)'
 
         const invoice = await zoho.call('post', 'invoices', {
             books: true,
             params: { ignore_auto_number_generation: true },
             data: {
                 customer_id: contactId,
+                ...(currency === 'NGN' && currencyId ? { currency_id: currencyId } : {}),
                 /* SHI-A0RP5236, not SHI-20260922-A0RP5236. The date is
                    already the invoice date and the code alone identifies the
                    shipment, so carrying both makes a number nobody can read
@@ -196,16 +216,15 @@ const invoiceShipment = async (shipment) => {
             invoice_number: created.invoice_number,
             amount,
             currency_charged: currency,
+            posted_in: postedIn,
             amount_ngn: feeNgn,
-            ngn_rate: rate,
-            rate_source: rateSource,
             at: new Date().toISOString(),
         }
         await shipment.update({ metadata: { ...(shipment.metadata || {}), books_invoice: record } }).catch(() => {})
 
         console.log(
             `[BOOKS INVOICE] ${shipment.shipment_reference} → ${created.invoice_number} ` +
-                `(₦${feeNgn} @ ${rate} = ${amount})`
+                `(${amount} ${postedIn})`
         )
         return { invoiced: true, ...record }
     } catch (error) {
