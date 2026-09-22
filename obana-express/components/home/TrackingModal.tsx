@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { StageRail } from "@/components/shipments/StageRail";
 import Link from "next/link";
 import { ArrowRight, Loader2, MapPin, Package, Search, X } from "lucide-react";
 import { apiClient } from "@/lib/api";
@@ -245,56 +246,7 @@ function Result({ shipment, onReset }: { shipment: TrackedShipment; onReset: () 
 					))}
 			</div>
 
-			{/* The three stages and when each was reached. A list of events says
-			    what happened; this says where the parcel is, which is what
-			    someone tracking actually came to find out. */}
-			{shipment.timeline && shipment.timeline.length > 0 && (
-				<ol className="border-y border-slate-100 py-4 sm:flex sm:items-start sm:gap-1">
-					{shipment.timeline.map((stage, i) => (
-						<li
-							key={stage.label}
-							className="relative flex items-center gap-3 pb-4 last:pb-0 sm:flex-1 sm:flex-col sm:gap-0 sm:pb-0 sm:text-center"
-						>
-							{/* Phone: a vertical rail. Three labels side by side at
-							    360px wrap into each other and read as one word. */}
-							<span
-								className={`absolute left-[5px] top-4 h-full w-0.5 sm:hidden ${
-									i === shipment.timeline!.length - 1 ? "bg-transparent" : stage.done ? "bg-[#1b3b5f]" : "bg-slate-200"
-								}`}
-								aria-hidden
-							/>
-							<span
-								className={`z-10 h-3 w-3 shrink-0 rounded-full sm:hidden ${
-									stage.current ? "bg-[#1b3b5f] ring-4 ring-[#1b3b5f]/15" : stage.done ? "bg-[#1b3b5f]" : "bg-slate-200"
-								}`}
-								aria-hidden
-							/>
-
-							{/* Tablet and up: the same stages as a horizontal rail. */}
-							<div className="hidden w-full items-center sm:flex">
-								<span className={`h-0.5 flex-1 ${i === 0 ? "bg-transparent" : stage.done ? "bg-[#1b3b5f]" : "bg-slate-200"}`} aria-hidden />
-								<span
-									className={`h-3 w-3 shrink-0 rounded-full ${
-										stage.current ? "bg-[#1b3b5f] ring-4 ring-[#1b3b5f]/15" : stage.done ? "bg-[#1b3b5f]" : "bg-slate-200"
-									}`}
-									aria-hidden
-								/>
-								<span
-									className={`h-0.5 flex-1 ${
-										i === shipment.timeline!.length - 1 ? "bg-transparent" : shipment.timeline![i + 1].done ? "bg-[#1b3b5f]" : "bg-slate-200"
-									}`}
-									aria-hidden
-								/>
-							</div>
-
-							<div className="min-w-0 sm:mt-2">
-								<p className={`text-xs font-semibold ${stage.done ? "text-slate-900" : "text-slate-400"}`}>{stage.label}</p>
-								<p className="text-[11px] text-slate-500">{stage.at ? when(stage.at) : "—"}</p>
-							</div>
-						</li>
-					))}
-				</ol>
-			)}
+			<StageRail stages={shipment.timeline ?? []} />
 
 			{events.length > 0 && (
 				<ol className="max-h-60 overflow-y-auto pr-1">

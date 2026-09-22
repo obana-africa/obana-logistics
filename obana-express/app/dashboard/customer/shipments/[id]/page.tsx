@@ -1,6 +1,7 @@
 'use client';
 
 import React, { use, useEffect, useState } from 'react';
+import { StageRail } from "@/components/shipments/StageRail";
 import DashboardLayout from '@/components/DashboardLayout';
 import { Card, Badge, Loader, Button } from '@/components/ui';
 import { apiClient } from '@/lib/api';
@@ -71,6 +72,8 @@ interface ShipmentDetail {
   pickup_address: Address;
   items: ShipmentItem[];
   tracking_events: TrackingEvent[];
+  /** The three stages, as the public tracking page shows them. */
+  timeline?: { label: string; at: string | null; done: boolean; current: boolean }[];
   driver: Driver | null;
 }
 
@@ -149,6 +152,13 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
             {statusMeta(shipment.status).label}
           </Badge>
         </div>
+
+        {/* Where the parcel is, before what has happened to it — the same
+            three stages the tracking link from WhatsApp shows, so a customer
+            sees one account of their delivery wherever they opened it from. */}
+        <Card className="p-6 mb-6">
+          <StageRail stages={shipment.timeline ?? []} />
+        </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Tracking History */}
