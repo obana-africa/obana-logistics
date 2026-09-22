@@ -1053,12 +1053,23 @@ const shipmentController = {
                     error: err.message
                 }));
 
+                /* A delivery Obana sold on its own account has no sales order
+                   behind it, so nothing else would ever record the revenue.
+                   Awaited so the outcome can be returned rather than lost, and
+                   non-fatal by construction: a shipment that could not be
+                   invoiced is still a shipment, and the gap is recoverable —
+                   a booking that failed because the books were slow is not. */
+                const invoice = await require('../helpers/zohoShipmentInvoice')
+                    .invoiceShipment(shipment)
+                    .catch((err) => ({ error: err.message }));
+
                 triggerPostCreationProcesses(shipment.id, isInternal);
 
                 return res.status(201).json({
                     success: true,
                     message: 'Shipment created successfully',
                     notification,
+                    invoice,
                     data: {
                         shipment_id: shipment.id,
                         shipment_reference: shipment.shipment_reference,
