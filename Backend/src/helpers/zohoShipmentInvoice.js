@@ -78,6 +78,39 @@ const customerOf = async (shipment) => {
 }
 
 /**
+ * The same phone number in every form Zoho might be holding it.
+ *
+ * Books matches `phone=` as an exact string, not a suffix: a contact stored as
+ * 2348035655122 is found by that and by nothing else — not +2348035655122, not
+ * 08035655122, not the last nine digits. So searching one form finds a customer
+ * only when whoever typed it into Zoho happened to type it the same way, which
+ * is why a customer who was plainly there kept being created again.
+ *
+ * There is no way to ask Zoho to be lenient, so the leniency is here: every
+ * plausible spelling is tried until one matches, most-likely first. Ordered so
+ * the common case costs one call.
+ */
+const phoneVariants = (raw) => {
+    const digits = str(raw).replace(/\D/g, '')
+    if (digits.length < 9) return []
+
+    // The national number, however the country code and trunk zero were written.
+    let local = digits
+    if (local.startsWith('234')) local = local.slice(3)
+    if (local.startsWith('0')) local = local.slice(1)
+    if (local.length < 9) return []
+
+    const forms = [
+        `234${local}`, // how Zoho stored the one we checked
+        `+234${local}`,
+        `0${local}`, // as a Nigerian writes it
+        local, // bare national number
+        str(raw), // exactly as it arrived, in case it was stored verbatim
+    ]
+    return [...new Set(forms.filter(Boolean))]
+}
+
+/**
  * The Books contact for this customer, found by email and otherwise created.
  *
  * Matched on email rather than name: two people called the same thing are two
@@ -90,11 +123,7 @@ const contactFor = async (customer) => {
 
     /* Email first, then phone. Both identify a person; a name does not, and
        matching on one would merge two customers who happen to share it while
-       still missing the same customer typed differently twice.
-
-       Phone is compared on its last nine digits, because the same number is
-       written +2348090335245, 08090335245 and 234-809-033-5245 by three
-       different people and Zoho stores whatever it was given. */
+       still missing the same customer typed differently twice. */
     if (customer.email) {
         const found = await zoho
             .call('get', 'contacts', { params: { email: customer.email }, books: true })
@@ -103,16 +132,12 @@ const contactFor = async (customer) => {
         if (existing?.contact_id) return { id: String(existing.contact_id), found: `email ${customer.email}` }
     }
 
-    const digits = customer.phone.replace(/\D/g, '')
-    if (digits.length >= 9) {
-        const tail = digits.slice(-9)
+    for (const candidate of phoneVariants(customer.phone)) {
         const found = await zoho
-            .call('get', 'contacts', { params: { phone: tail }, books: true })
+            .call('get', 'contacts', { params: { phone: candidate }, books: true })
             .catch(() => null)
-        const match = (found?.contacts || []).find((c) =>
-            [c.phone, c.mobile].some((p) => String(p || '').replace(/\D/g, '').endsWith(tail))
-        )
-        if (match?.contact_id) return { id: String(match.contact_id), found: `phone ending ${tail}` }
+        const match = (found?.contacts || [])[0]
+        if (match?.contact_id) return { id: String(match.contact_id), found: `phone ${candidate}` }
     }
 
     const created = await zoho.call('post', 'contacts', {
