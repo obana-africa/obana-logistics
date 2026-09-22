@@ -21,6 +21,16 @@ export const TOC = [
 		],
 	},
 	{
+		group: "Zoho",
+		items: [
+			{ id: "zoho-overview", label: "Overview" },
+			{ id: "zoho-fields", label: "Custom fields" },
+			{ id: "zoho-goods", label: "Goods: direct route" },
+			{ id: "zoho-services", label: "Services: custom fields" },
+			{ id: "zoho-troubleshooting", label: "When nothing happens" },
+		],
+	},
+	{
 		group: "Webhooks",
 		items: [
 			{ id: "webhooks", label: "Receive events" },
