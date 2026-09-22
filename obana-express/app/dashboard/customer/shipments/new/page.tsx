@@ -41,6 +41,10 @@ function withQuotePrefill<T extends { pickup_address: object; delivery_address: 
 }
 
 // Only what the courier needs: where, who to call and what's in the box. Service and price are picked on step 2.
+/* Quantity is no longer asked for. A sender knows what the parcel weighs, not
+   what one of several identical things inside it weighs, so the form takes the
+   packed weight and the API — which prices on weight × quantity — is handed a
+   quantity of one. */
 const emptyItem = () => ({ name: '', quantity: '1', weight: '', price: '' });
 const emptyForm = () => ({
   pickup_address: { line1: '', city: '', state: '', country: '', countryCode: '', stateCode: '', phone: '', contact_name: '' },
@@ -110,7 +114,7 @@ export default function CreateShipmentPage() {
   const setItem = (index: number, patch: Partial<Item>) =>
     setFormData((prev) => ({ ...prev, items: prev.items.map((item, i) => (i === index ? { ...item, ...patch } : item)) }));
 
-  // Weight is per unit, so multiply by quantity.
+  // Quantity is always 1 now; the weight entered is the packed weight.
   const shipmentWeight = formData.items.reduce(
     (sum, item) => sum + (parseFloat(item.weight) || 0.5) * (parseInt(item.quantity) || 1),
     0
@@ -194,7 +198,6 @@ export default function CreateShipmentPage() {
     if (!emailOk(d.email)) e['delivery.email'] = 'Enter a valid email address.';
     formData.items.forEach((item, i) => {
       if (!item.name.trim()) e[`item.${i}.name`] = 'Enter what this item is.';
-      if (!(parseInt(item.quantity) >= 1)) e[`item.${i}.quantity`] = 'At least 1.';
       if (!(parseFloat(item.price) > 0)) e[`item.${i}.price`] = 'Enter the item value.';
       if (!(parseFloat(item.weight) > 0)) e[`item.${i}.weight`] = 'Enter the weight in kg.';
     });
@@ -436,8 +439,8 @@ export default function CreateShipmentPage() {
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Input
-                      label="Contact name (optional)"
-                      placeholder="Who we ask for"
+                      label="Who should we ask for?"
+                      placeholder="Optional"
                       value={formData.pickup_address.contact_name}
                       onChange={(e) => setPickup({ contact_name: e.target.value })}
                     />
@@ -524,7 +527,7 @@ export default function CreateShipmentPage() {
                   <Package className="h-5 w-5 text-purple-600" />
                   What you&apos;re sending
                 </h3>
-                <p className="text-sm text-gray-600 mb-5">Weight sets the price, so weigh the packed item if you can.</p>
+                <p className="text-sm text-gray-600 mb-5">Weight sets the price, so give us the packed weight if you can. Value is what we cover if it goes missing.</p>
 
                 <div className="space-y-4">
                   {formData.items.map((item, index) => (
@@ -542,30 +545,18 @@ export default function CreateShipmentPage() {
                         )}
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Input
-                          label="Item name"
-                          error={fieldErrors[`item.${index}.name`]}
-                          placeholder="e.g., Laptop"
-                          value={item.name}
-                          onChange={(e) => setItem(index, { name: e.target.value })}
-                          required
-                        />
-                        <Input
-                          label="Quantity"
-                          error={fieldErrors[`item.${index}.quantity`]}
-                          type="number"
-                          min="1"
-                          placeholder="1"
-                          value={item.quantity}
-                          onChange={(e) => setItem(index, { quantity: e.target.value })}
-                          required
-                        />
-                      </div>
+                      <Input
+                        label="What are you sending?"
+                        error={fieldErrors[`item.${index}.name`]}
+                        placeholder="e.g., Laptop and charger"
+                        value={item.name}
+                        onChange={(e) => setItem(index, { name: e.target.value })}
+                        required
+                      />
 
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Input
-                          label="Weight per item (kg)"
+                          label="How heavy is it altogether? (kg)"
                           error={fieldErrors[`item.${index}.weight`]}
                           type="number"
                           step="0.1"
@@ -576,7 +567,7 @@ export default function CreateShipmentPage() {
                           required
                         />
                         <Input
-                          label="Value per item (₦)"
+                          label="What is it worth? (₦)"
                           error={fieldErrors[`item.${index}.price`]}
                           type="number"
                           step="0.01"
@@ -596,7 +587,7 @@ export default function CreateShipmentPage() {
                   fullWidth
                   className="mt-4 border-2 border-purple-300 hover:bg-purple-50"
                 >
-                  + Add Another Item
+                  + Add something else
                 </Button>
               </div>
 
@@ -777,7 +768,7 @@ export default function CreateShipmentPage() {
                         <p className="text-sm text-gray-500 mt-1">{item.weight} kg each</p>
                       </div>
                       <div className="text-right text-sm ml-4">
-                        <p className="font-semibold text-gray-900">Qty: {item.quantity}</p>
+                        <p className="font-semibold text-gray-900">{item.weight} kg</p>
                         <p className="text-gray-600 mt-1">{formatMoney(parseFloat(item.price || '0'), 'NGN')} each</p>
                       </div>
                     </div>
