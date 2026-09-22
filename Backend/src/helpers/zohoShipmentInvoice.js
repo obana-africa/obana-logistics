@@ -47,21 +47,48 @@ const isDirectShipment = (shipment) => {
     return !/^(SO|QT|EST|INV)[-\s]/i.test(ref)
 }
 
-/** Whoever the delivery is for, as Books needs them. */
+/**
+ * Who the invoice is for.
+ *
+ * The person who booked the delivery, not the person receiving it. An invoice
+ * is a demand for payment, and the recipient of a parcel has not agreed to pay
+ * for anything — invoicing them would be wrong on its face, and on a gift or a
+ * vendor drop it would be a stranger.
+ *
+ * The booker is an account on this platform, so their email is stable and one
+ * person is one contact however many parcels they send. Invoicing the recipient
+ * would have made a new Books contact per delivery address, which is exactly
+ * the sprawl worth avoiding.
+ *
+ * The delivery contact is the last resort — for a booking made with no account
+ * behind it, it is the only name there is.
+ */
 const customerOf = async (shipment) => {
     const meta = shipment.metadata || {}
     const fromMeta = meta.customer && typeof meta.customer === 'object' ? meta.customer : {}
 
-    let address = null
-    if (shipment.delivery_address_id) {
-        address = await db.addresses.findByPk(shipment.delivery_address_id).catch(() => null)
+    // 1. The account that booked and pays.
+    let booker = null
+    if (shipment.user_id) {
+        booker = await db.users.findByPk(shipment.user_id).catch(() => null)
     }
 
+    // 2. A customer named explicitly by the caller (the Zoho flow does this).
+    // 3. Whoever is taking delivery — only when there is nobody better.
+    let address = null
+    if (!booker && !str(fromMeta.email)) {
+        address = shipment.delivery_address_id
+            ? await db.addresses.findByPk(shipment.delivery_address_id).catch(() => null)
+            : null
+    }
+
+    const email = str(booker?.email) || str(fromMeta.email) || str(address?.contact_email) || ''
     return {
         zohoId: str(fromMeta.id) || null,
-        name: str(fromMeta.name) || str(address?.name) || 'Walk-in Customer',
-        email: str(fromMeta.email) || str(address?.contact_email) || '',
-        phone: str(fromMeta.phone) || str(address?.phone) || '',
+        name: str(fromMeta.name) || str(address?.name) || email.split('@')[0] || 'Obana Logistics customer',
+        email,
+        phone: str(booker?.phone) || str(fromMeta.phone) || str(address?.phone) || '',
+        source: booker ? 'account that booked it' : fromMeta.email ? 'customer on the request' : 'delivery contact',
     }
 }
 
@@ -217,6 +244,8 @@ const invoiceShipment = async (shipment) => {
             amount,
             currency_charged: currency,
             posted_in: postedIn,
+            billed_to: customer.email || customer.name,
+            billed_from: customer.source,
             amount_ngn: feeNgn,
             at: new Date().toISOString(),
         }
