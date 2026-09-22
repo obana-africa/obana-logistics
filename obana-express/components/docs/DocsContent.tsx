@@ -7,6 +7,7 @@ import { C, Callout, DefList, Endpoint, H3, P, Params, Section, Steps } from "@/
 import * as S from "@/components/docs/samples";
 import { ZohoFields, ZohoGoods, ZohoOverview, ZohoServices, ZohoTroubleshooting } from "@/components/docs/ZohoSections";
 import { Shopify } from "@/components/docs/ShopifySection";
+import { Thaja } from "@/components/docs/ThajaSection";
 
 // The developer docs: task-first guides with copy-paste examples. Documents only what the API actually does.
 
@@ -763,6 +764,7 @@ export default function DocsContent() {
 			<TrackShipment />
 			<CancelShipment />
 			<Statuses />
+			<Thaja />
 			<Shopify />
 			<ZohoOverview />
 			<ZohoFields />
