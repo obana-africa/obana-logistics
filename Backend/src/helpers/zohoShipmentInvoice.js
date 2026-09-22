@@ -48,47 +48,31 @@ const isDirectShipment = (shipment) => {
 }
 
 /**
- * Who the invoice is for.
+ * Who the invoice is for: whoever takes delivery.
  *
- * The person who booked the delivery, not the person receiving it. An invoice
- * is a demand for payment, and the recipient of a parcel has not agreed to pay
- * for anything — invoicing them would be wrong on its face, and on a gift or a
- * vendor drop it would be a stranger.
+ * Pickup on these shipments is Obana — the fulfilment centre, or a vendor
+ * collecting on Obana's behalf — so the party at the other end is the customer,
+ * and the delivery details are the customer's details. A phone number and an
+ * email are collected precisely because someone has to be reachable about this
+ * parcel, and that someone is the buyer.
  *
- * The booker is an account on this platform, so their email is stable and one
- * person is one contact however many parcels they send. Invoicing the recipient
- * would have made a new Books contact per delivery address, which is exactly
- * the sprawl worth avoiding.
- *
- * The delivery contact is the last resort — for a booking made with no account
- * behind it, it is the only name there is.
+ * The name is the least reliable of the three and is treated that way: it is
+ * what the contact is called if a new one has to be made, never what an
+ * existing one is found by.
  */
 const customerOf = async (shipment) => {
     const meta = shipment.metadata || {}
     const fromMeta = meta.customer && typeof meta.customer === 'object' ? meta.customer : {}
 
-    // 1. The account that booked and pays.
-    let booker = null
-    if (shipment.user_id) {
-        booker = await db.users.findByPk(shipment.user_id).catch(() => null)
-    }
+    const address = shipment.delivery_address_id
+        ? await db.addresses.findByPk(shipment.delivery_address_id).catch(() => null)
+        : null
 
-    // 2. A customer named explicitly by the caller (the Zoho flow does this).
-    // 3. Whoever is taking delivery — only when there is nobody better.
-    let address = null
-    if (!booker && !str(fromMeta.email)) {
-        address = shipment.delivery_address_id
-            ? await db.addresses.findByPk(shipment.delivery_address_id).catch(() => null)
-            : null
-    }
-
-    const email = str(booker?.email) || str(fromMeta.email) || str(address?.contact_email) || ''
     return {
         zohoId: str(fromMeta.id) || null,
-        name: str(fromMeta.name) || str(address?.name) || email.split('@')[0] || 'Obana Logistics customer',
-        email,
-        phone: str(booker?.phone) || str(fromMeta.phone) || str(address?.phone) || '',
-        source: booker ? 'account that booked it' : fromMeta.email ? 'customer on the request' : 'delivery contact',
+        name: str(address?.name) || str(fromMeta.name) || 'Obana Logistics customer',
+        email: str(address?.contact_email) || str(fromMeta.email) || '',
+        phone: str(address?.phone) || str(fromMeta.phone) || '',
     }
 }
 
@@ -101,14 +85,33 @@ const customerOf = async (shipment) => {
  * which is the best that can be said about a walk-in.
  */
 const contactFor = async (customer) => {
-    if (customer.zohoId) return customer.zohoId
+    if (customer.zohoId) return { id: customer.zohoId, found: 'zoho id on the request' }
 
+    /* Email first, then phone. Both identify a person; a name does not, and
+       matching on one would merge two customers who happen to share it while
+       still missing the same customer typed differently twice.
+
+       Phone is compared on its last nine digits, because the same number is
+       written +2348090335245, 08090335245 and 234-809-033-5245 by three
+       different people and Zoho stores whatever it was given. */
     if (customer.email) {
         const found = await zoho
             .call('get', 'contacts', { params: { email: customer.email }, books: true })
             .catch(() => null)
         const existing = (found?.contacts || [])[0]
-        if (existing?.contact_id) return String(existing.contact_id)
+        if (existing?.contact_id) return { id: String(existing.contact_id), found: `email ${customer.email}` }
+    }
+
+    const digits = customer.phone.replace(/\D/g, '')
+    if (digits.length >= 9) {
+        const tail = digits.slice(-9)
+        const found = await zoho
+            .call('get', 'contacts', { params: { phone: tail }, books: true })
+            .catch(() => null)
+        const match = (found?.contacts || []).find((c) =>
+            [c.phone, c.mobile].some((p) => String(p || '').replace(/\D/g, '').endsWith(tail))
+        )
+        if (match?.contact_id) return { id: String(match.contact_id), found: `phone ending ${tail}` }
     }
 
     const created = await zoho.call('post', 'contacts', {
@@ -131,7 +134,7 @@ const contactFor = async (customer) => {
                 : {}),
         },
     })
-    return String(created?.contact?.contact_id ?? '')
+    return { id: String(created?.contact?.contact_id ?? ''), found: 'created a new contact' }
 }
 
 /**
@@ -186,8 +189,9 @@ const invoiceShipment = async (shipment) => {
 
     try {
         const customer = await customerOf(shipment)
-        const contactId = await contactFor(customer)
-        if (!contactId) return { skipped: 'could not resolve a Books contact' }
+        const contact = await contactFor(customer)
+        if (!contact?.id) return { skipped: 'could not resolve a Books contact' }
+        const contactId = contact.id
 
         const currency = str(shipment.currency).toUpperCase() || 'NGN'
         const today = new Date().toISOString().slice(0, 10)
@@ -244,8 +248,8 @@ const invoiceShipment = async (shipment) => {
             amount,
             currency_charged: currency,
             posted_in: postedIn,
-            billed_to: customer.email || customer.name,
-            billed_from: customer.source,
+            billed_to: customer.email || customer.phone || customer.name,
+            contact_matched_by: contact.found,
             amount_ngn: feeNgn,
             at: new Date().toISOString(),
         }
