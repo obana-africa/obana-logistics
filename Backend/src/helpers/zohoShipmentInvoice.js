@@ -169,7 +169,11 @@ const invoiceShipment = async (shipment) => {
             params: { ignore_auto_number_generation: true },
             data: {
                 customer_id: contactId,
-                invoice_number: `${PREFIX}-${shipment.shipment_reference.replace(/^OBN-/, '')}`,
+                /* SHI-A0RP5236, not SHI-20260922-A0RP5236. The date is
+                   already the invoice date and the code alone identifies the
+                   shipment, so carrying both makes a number nobody can read
+                   aloud or type from memory. */
+                invoice_number: `${PREFIX}-${shipment.shipment_reference.split('-').pop()}`,
                 date: today,
                 reference_number: shipment.shipment_reference,
                 line_items: [
