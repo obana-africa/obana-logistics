@@ -166,7 +166,7 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
 	const tabs = items.slice(0, 4);
 
 	return (
-		<div className="min-h-dvh bg-slate-50">
+		<div data-dashboard-shell className="flex min-h-dvh flex-col bg-slate-50">
 			{/* Desktop sidebar */}
 			<aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white lg:flex">
 				<Link href="/" className="flex h-16 items-center px-6" aria-label="Obana Logistics home">
@@ -202,7 +202,7 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
 				</button>
 			</header>
 
-			<main className="px-4 pb-28 pt-5 sm:px-6 lg:ml-64 lg:px-10 lg:pb-12 lg:pt-8">
+			<main className="flex-1 px-4 pb-28 pt-5 sm:px-6 lg:ml-64 lg:px-10 lg:pb-12 lg:pt-8">
 				<div className="mx-auto max-w-6xl">{children}</div>
 			</main>
 

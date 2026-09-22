@@ -31,6 +31,8 @@
 html {
 	scroll-behavior: smooth;
 	-webkit-tap-highlight-color: transparent;
+	background: var(--background);
+	min-height: 100%;
 }
 
 body {
@@ -38,6 +40,19 @@ body {
 	color: var(--foreground);
 	font-family: var(--font-sans);
 	-webkit-font-smoothing: antialiased;
+	min-height: 100%;
+	/* Stops the scroll chaining past the end of the page on iOS, which is what
+	   drags that empty area into view in the first place. */
+	overscroll-behavior-y: none;
+}
+
+/* The dashboard paints itself slate-50 while the document underneath stayed
+   white, so anywhere the shell did not reach — past the last card on a phone,
+   or the rubber-band at the end of a scroll — showed as a white band under the
+   tab bar. Scoped to the dashboard: the marketing pages are white by design and
+   have no business changing colour to fix a gap on a different screen. */
+body:has([data-dashboard-shell]) {
+	background: #f8fafc;
 }
 
 h1,
