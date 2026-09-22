@@ -1,5 +1,6 @@
 const db = require('../models/db')
 const zoho = require('./zohoInventory')
+const { trackingUrl } = require('./shipmentStatus')
 
 /**
  * A Zoho Books invoice for a shipment Obana carried on its own account.
@@ -137,22 +138,6 @@ const contactFor = async (customer) => {
     return { id: String(created?.contact?.contact_id ?? ''), found: 'created a new contact' }
 }
 
-/**
- * The Books currency id for naira, remembered once.
- *
- * Looked up rather than configured: a currency id is per-organisation, so a
- * hard-coded one is correct until the day the org changes and then silently
- * posts every invoice in the wrong currency.
- */
-let nairaIdCache = null
-const nairaCurrencyId = async () => {
-    if (nairaIdCache !== null) return nairaIdCache
-    const body = await zoho.call('get', 'settings/currencies', { books: true })
-    const ngn = (body?.currencies || []).find((c) => str(c.currency_code).toUpperCase() === 'NGN')
-    nairaIdCache = ngn?.currency_id ? String(ngn.currency_id) : null
-    return nairaIdCache
-}
-
 /** A short description of the journey, so the invoice line says what was sold. */
 const describe = async (shipment) => {
     const [pickup, delivery] = await Promise.all([
@@ -178,7 +163,7 @@ const invoiceShipment = async (shipment) => {
 
     // Never twice for the same shipment.
     const already = shipment.metadata?.books_invoice
-    if (already?.invoice_id) return { skipped: 'already invoiced', invoice: already }
+    if (already?.estimate_id || already?.invoice_id) return { skipped: 'already raised', invoice: already }
 
     if (!isDirectShipment(shipment)) {
         return { skipped: `${shipment.order_reference} is a marketplace order — already in the books` }
@@ -210,21 +195,37 @@ const invoiceShipment = async (shipment) => {
            Books is multi-currency. Handing it ₦26,400 and the NGN currency id
            lets it hold the sale at its real value and do its own conversion for
            the accounts, which is both more accurate and impossible to invert. */
-        const currencyId = await nairaCurrencyId().catch(() => null)
-        const amount = feeNgn
-        const postedIn = currency === 'NGN' && currencyId ? 'NGN' : 'USD (org default)'
+        /* Estimates are raised in the book's own currency, USD, so the figure
+           is converted rather than posted in naira.
+        
+           getNairaRate normalises Zoho's quote to naira per dollar, which is
+           the direction this divides by. That matters more than it reads: Zoho
+           quotes 0.000588 — dollars per naira — and dividing by that turns a
+           ₦26,400 delivery into $44,897,959. The normalising is done once, in
+           the helper, so no caller has to remember which way round it is. */
+        const naira = currency === 'NGN' ? await zoho.getNairaRate(today).catch(() => null) : null
+        if (currency === 'NGN' && !(naira?.rate > 0)) {
+            return { skipped: 'no NGN exchange rate in Zoho — add one in Currencies before estimating' }
+        }
+        const rate = naira?.rate ?? 1
+        const amount = currency === 'NGN' ? round2(feeNgn / rate) : feeNgn
 
-        const invoice = await zoho.call('post', 'invoices', {
+        /* An estimate, not an invoice. It carries the same number and the same
+           figures, but it is a proposal rather than a demand — so finance
+           converts it to a sales order or an invoice when they are satisfied it
+           is real, instead of crediting one that never was. It also gives the
+           shipment and tracking references somewhere to live where whoever
+           opens the record can see them. */
+        const invoice = await zoho.call('post', 'estimates', {
             books: true,
             params: { ignore_auto_number_generation: true },
             data: {
                 customer_id: contactId,
-                ...(currency === 'NGN' && currencyId ? { currency_id: currencyId } : {}),
                 /* SHI-A0RP5236, not SHI-20260922-A0RP5236. The date is
                    already the invoice date and the code alone identifies the
                    shipment, so carrying both makes a number nobody can read
                    aloud or type from memory. */
-                invoice_number: `${PREFIX}-${shipment.shipment_reference.split('-').pop()}`,
+                estimate_number: `${PREFIX}-${shipment.shipment_reference.split('-').pop()}`,
                 date: today,
                 reference_number: shipment.shipment_reference,
                 line_items: [
@@ -236,6 +237,11 @@ const invoiceShipment = async (shipment) => {
                     },
                 ],
                 notes: `Raised automatically for shipment ${shipment.shipment_reference}.`,
+                custom_fields: [
+                    { api_name: 'cf_shipment_id', value: shipment.shipment_reference },
+                    { api_name: 'cf_tracking_url', value: trackingUrl(shipment.shipment_reference) },
+                    { api_name: 'cf_carrier_name', value: shipment.carrier_name || 'Obana Logistics' }
+                ],
             },
         })
 
@@ -256,10 +262,10 @@ const invoiceShipment = async (shipment) => {
         await shipment.update({ metadata: { ...(shipment.metadata || {}), books_invoice: record } }).catch(() => {})
 
         console.log(
-            `[BOOKS INVOICE] ${shipment.shipment_reference} → ${created.invoice_number} ` +
-                `(${amount} ${postedIn})`
+            `[BOOKS ESTIMATE] ${shipment.shipment_reference} → ${created.estimate_number} ` +
+                `(₦${feeNgn} @ ${rate.toFixed(2)} = $${amount})`
         )
-        return { invoiced: true, ...record }
+        return { estimated: true, ...record }
     } catch (error) {
         /* Never let the accounts cost a delivery. A shipment that could not be
            invoiced is still a shipment, and the gap is recoverable; a booking

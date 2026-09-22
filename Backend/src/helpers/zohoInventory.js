@@ -221,10 +221,33 @@ const getNairaRate = async (onDate) => {
         .sort((a, b) => String(b.effective_date).localeCompare(String(a.effective_date)))[0]
 
     const chosen = inForce || list.sort((a, b) => String(a.effective_date).localeCompare(String(b.effective_date)))[0]
-    const rate = num(chosen?.exchange_rate)
-    if (rate <= 0) throw new Error('Zoho returned an NGN exchange rate of zero')
 
-    return { rate, effective_date: chosen.effective_date ?? null, used_fallback: !inForce }
+    /* Zoho names this field `rate` on the exchangerates endpoint, not
+       `exchange_rate`. Reading the wrong one produced undefined, then zero, then
+       a thrown error every single time — so this function has never once
+       returned a rate, and every caller has been quietly living on its fallback. */
+    const quoted = num(chosen?.rate ?? chosen?.exchange_rate)
+    if (quoted <= 0) throw new Error('Zoho returned an NGN exchange rate of zero')
+
+    /* And it is quoted the other way round from how this codebase uses it:
+       0.000588 is dollars per naira, while every caller divides a naira figure
+       by `rate` expecting naira per dollar. Returning Zoho's number unchanged
+       would turn a ₦26,400 delivery into a $44,897,959 one — arithmetic that
+       is discovered in the accounts, not in a test. Normalised here, once, so
+       no caller has to know which way Zoho happens to quote it.
+
+       Judged by magnitude rather than by trusting a label: a naira-per-dollar
+       rate is in the hundreds or thousands, a dollar-per-naira rate is a tiny
+       fraction, and nothing plausible sits near 1. */
+    const rate = quoted < 1 ? 1 / quoted : quoted
+
+    return {
+        rate,
+        quoted,
+        inverted: quoted < 1,
+        effective_date: chosen.effective_date ?? null,
+        used_fallback: !inForce
+    }
 }
 
 /* ────────────────────────────────── writes ───────────────────────────────── */
