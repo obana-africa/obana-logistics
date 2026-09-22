@@ -47,21 +47,32 @@ const isDirectShipment = (shipment) => {
     return !/^(SO|QT|EST|INV)[-\s]/i.test(ref)
 }
 
-/** Whoever the delivery is for, as Books needs them. */
+/**
+ * Who the invoice is for: whoever takes delivery.
+ *
+ * Pickup on these shipments is Obana — the fulfilment centre, or a vendor
+ * collecting on Obana's behalf — so the party at the other end is the customer,
+ * and the delivery details are the customer's details. A phone number and an
+ * email are collected precisely because someone has to be reachable about this
+ * parcel, and that someone is the buyer.
+ *
+ * The name is the least reliable of the three and is treated that way: it is
+ * what the contact is called if a new one has to be made, never what an
+ * existing one is found by.
+ */
 const customerOf = async (shipment) => {
     const meta = shipment.metadata || {}
     const fromMeta = meta.customer && typeof meta.customer === 'object' ? meta.customer : {}
 
-    let address = null
-    if (shipment.delivery_address_id) {
-        address = await db.addresses.findByPk(shipment.delivery_address_id).catch(() => null)
-    }
+    const address = shipment.delivery_address_id
+        ? await db.addresses.findByPk(shipment.delivery_address_id).catch(() => null)
+        : null
 
     return {
         zohoId: str(fromMeta.id) || null,
-        name: str(fromMeta.name) || str(address?.name) || 'Walk-in Customer',
-        email: str(fromMeta.email) || str(address?.contact_email) || '',
-        phone: str(fromMeta.phone) || str(address?.phone) || '',
+        name: str(address?.name) || str(fromMeta.name) || 'Obana Logistics customer',
+        email: str(address?.contact_email) || str(fromMeta.email) || '',
+        phone: str(address?.phone) || str(fromMeta.phone) || '',
     }
 }
 
@@ -74,14 +85,33 @@ const customerOf = async (shipment) => {
  * which is the best that can be said about a walk-in.
  */
 const contactFor = async (customer) => {
-    if (customer.zohoId) return customer.zohoId
+    if (customer.zohoId) return { id: customer.zohoId, found: 'zoho id on the request' }
 
+    /* Email first, then phone. Both identify a person; a name does not, and
+       matching on one would merge two customers who happen to share it while
+       still missing the same customer typed differently twice.
+
+       Phone is compared on its last nine digits, because the same number is
+       written +2348090335245, 08090335245 and 234-809-033-5245 by three
+       different people and Zoho stores whatever it was given. */
     if (customer.email) {
         const found = await zoho
             .call('get', 'contacts', { params: { email: customer.email }, books: true })
             .catch(() => null)
         const existing = (found?.contacts || [])[0]
-        if (existing?.contact_id) return String(existing.contact_id)
+        if (existing?.contact_id) return { id: String(existing.contact_id), found: `email ${customer.email}` }
+    }
+
+    const digits = customer.phone.replace(/\D/g, '')
+    if (digits.length >= 9) {
+        const tail = digits.slice(-9)
+        const found = await zoho
+            .call('get', 'contacts', { params: { phone: tail }, books: true })
+            .catch(() => null)
+        const match = (found?.contacts || []).find((c) =>
+            [c.phone, c.mobile].some((p) => String(p || '').replace(/\D/g, '').endsWith(tail))
+        )
+        if (match?.contact_id) return { id: String(match.contact_id), found: `phone ending ${tail}` }
     }
 
     const created = await zoho.call('post', 'contacts', {
@@ -104,7 +134,7 @@ const contactFor = async (customer) => {
                 : {}),
         },
     })
-    return String(created?.contact?.contact_id ?? '')
+    return { id: String(created?.contact?.contact_id ?? ''), found: 'created a new contact' }
 }
 
 /**
@@ -159,8 +189,9 @@ const invoiceShipment = async (shipment) => {
 
     try {
         const customer = await customerOf(shipment)
-        const contactId = await contactFor(customer)
-        if (!contactId) return { skipped: 'could not resolve a Books contact' }
+        const contact = await contactFor(customer)
+        if (!contact?.id) return { skipped: 'could not resolve a Books contact' }
+        const contactId = contact.id
 
         const currency = str(shipment.currency).toUpperCase() || 'NGN'
         const today = new Date().toISOString().slice(0, 10)
@@ -217,6 +248,8 @@ const invoiceShipment = async (shipment) => {
             amount,
             currency_charged: currency,
             posted_in: postedIn,
+            billed_to: customer.email || customer.phone || customer.name,
+            contact_matched_by: contact.found,
             amount_ngn: feeNgn,
             at: new Date().toISOString(),
         }
