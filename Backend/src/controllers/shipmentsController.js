@@ -122,6 +122,33 @@ const templateCodeFor = (name) => {
  * Send the WhatsApp notification(s) for a shipment lifecycle event.
  * Fire-and-forget; never throws. Skips any audience whose template code isn't configured.
  */
+/**
+ * The stages a parcel goes through, each with the moment it got there.
+ *
+ * A list of events tells you what happened; this tells you where it is, which
+ * is the question someone tracking is actually asking. Built in one place so
+ * the page a customer opens from WhatsApp and the page they open from their
+ * dashboard cannot describe the same parcel differently.
+ */
+const buildTimeline = (plain) => {
+    const events = plain.tracking_events ?? [];
+    const at = (...statuses) => {
+        const hit = [...events].reverse().find((e) => statuses.includes(String(e.status).toLowerCase()));
+        return hit?.createdAt ?? null;
+    };
+    const reached = {
+        'Package Created': at('created', 'pending', 'confirmed') ?? plain.createdAt,
+        'In Transit': at('picked_up', 'dispatched', 'in_transit'),
+        Fulfilled: at('delivered') ?? plain.actual_delivery_at
+    };
+    return Object.entries(reached).map(([label, time]) => ({
+        label,
+        at: time,
+        done: Boolean(time),
+        current: plain.display_status === label
+    }));
+};
+
 const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
     try {
         const cfg = WA_EVENTS[event];
@@ -1543,6 +1570,9 @@ const shipmentController = {
 
             const plainShipment = shipment.get({ plain: true });
             plainShipment.display_status = displayStatus(plainShipment.status);
+            // The same stages the public tracking page shows, so a customer
+            // sees one account of their parcel wherever they opened it from.
+            plainShipment.timeline = buildTimeline(plainShipment);
 
             // The Zoho order this came from, so a shipment can be tied back to
             // it from the dashboard without opening Zoho.
@@ -1625,25 +1655,7 @@ const shipmentController = {
                 : null;
             delete plain.metadata;
 
-            /* The stages a parcel goes through, each with the moment it got
-               there. A list of events tells you what happened; this tells you
-               where it is, which is the question someone tracking is asking. */
-            const events = plain.tracking_events ?? [];
-            const at = (...statuses) => {
-                const hit = [...events].reverse().find((e) => statuses.includes(String(e.status).toLowerCase()));
-                return hit?.createdAt ?? null;
-            };
-            const reached = {
-                'Package Created': at('created', 'pending', 'confirmed') ?? plain.createdAt,
-                'In Transit': at('picked_up', 'dispatched', 'in_transit'),
-                Fulfilled: at('delivered') ?? plain.actual_delivery_at
-            };
-            plain.timeline = Object.entries(reached).map(([label, time]) => ({
-                label,
-                at: time,
-                done: Boolean(time),
-                current: plain.display_status === label
-            }));
+            plain.timeline = buildTimeline(plain);
 
             return res.status(200).json({ success: true, data: plain });
         } catch (error) {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { use, useEffect, useState } from 'react';
+import { StageRail } from "@/components/shipments/StageRail";
 import DashboardLayout from '@/components/DashboardLayout';
 import { Card, Badge, Loader, Button } from '@/components/ui';
 import { apiClient } from '@/lib/api';
@@ -71,6 +72,8 @@ interface ShipmentDetail {
   pickup_address: Address;
   items: ShipmentItem[];
   tracking_events: TrackingEvent[];
+  /** The three stages, as the public tracking page shows them. */
+  timeline?: { label: string; at: string | null; done: boolean; current: boolean }[];
   driver: Driver | null;
 }
 
@@ -134,21 +137,55 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
 
     return (
       <>
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 truncate mb-2 md:mb-0">
-            Shipment #{shipment.shipment_reference}
-          </h1>
-          <Badge
-            variant={
-              shipment.status === 'delivered' ? 'success' :
-              shipment.status === 'in_transit' ? 'info' :
-              ['failed', 'cancelled'].includes(shipment.status) ? 'error' : 'warning'
-            }
-            className="capitalize"
-          >
-            {statusMeta(shipment.status).label}
-          </Badge>
-        </div>
+        {/* Where the parcel is, first and without scrolling. A customer opens
+            this to find that out; the reference is what they pasted to get
+            here, not what they came to read. */}
+        <section className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-5 sm:px-7">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              {shipment.carrier_name || 'Obana Logistics'}
+            </p>
+
+            <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                {/* The journey, in the words of the places themselves. */}
+                <h1 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xl font-bold text-slate-900 sm:text-2xl">
+                  <span className="truncate">{shipment.pickup_address?.city || 'Pickup'}</span>
+                  <span className="text-slate-300">&rarr;</span>
+                  <span className="truncate">{shipment.delivery_address?.city || 'Delivery'}</span>
+                </h1>
+                <p className="mt-1 font-mono text-xs text-slate-500">{shipment.shipment_reference}</p>
+              </div>
+
+              <span className="inline-flex shrink-0 items-center gap-2 self-start rounded-full bg-[#1b3b5f] px-4 py-1.5 text-sm font-semibold text-white sm:self-auto">
+                <span className="h-1.5 w-1.5 rounded-full bg-white/80" aria-hidden />
+                {shipment.display_status || statusMeta(shipment.status).label}
+              </span>
+            </div>
+          </div>
+
+          <div className="px-5 sm:px-7">
+            <StageRail stages={shipment.timeline ?? []} />
+          </div>
+
+          {/* The few facts worth having on the first screen. Everything else
+              waits below, where someone who wants detail will look for it. */}
+          <dl className="grid grid-cols-2 gap-px border-t border-slate-100 bg-slate-100 sm:grid-cols-4">
+            {[
+              shipment.source?.order_number ? { k: 'Order', v: shipment.source.order_number } : null,
+              { k: 'Items', v: String(shipment.total_items) },
+              { k: 'Weight', v: `${shipment.total_weight} kg` },
+              { k: 'Booked', v: whenText(shipment.createdAt) },
+            ]
+              .filter(Boolean)
+              .map((cell) => (
+                <div key={cell!.k} className="bg-white px-4 py-3">
+                  <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{cell!.k}</dt>
+                  <dd className="mt-0.5 truncate text-sm font-semibold text-slate-900">{cell!.v}</dd>
+                </div>
+              ))}
+          </dl>
+        </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Tracking History */}
@@ -165,7 +202,6 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
                     <p className={`font-semibold ${index === 0 ? 'text-primary' : 'text-gray-800'}`}>{event.description}</p>
                     <p className="text-sm text-gray-500">{whenText(event.createdAt)}</p>
                     {event.location && <p className="text-sm text-gray-500">Location: {event.location}</p>}
-                    <p className="text-xs text-gray-400 mt-1">Source: {event.performed_by}</p>
                   </div>
                 ))}
               </div>
@@ -223,11 +259,15 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
                   <User className="w-5 h-5 mr-2 text-gray-500" />
                   Assigned Driver
                 </h3>
-                <div className="space-y-2 text-sm">
-                  <p><span className="font-medium">Driver Code:</span> {shipment.driver.driver_code}</p>
-                  <p><span className="font-medium">Vehicle:</span> <span className="capitalize">{shipment.driver.vehicle_type} ({shipment.driver.vehicle_registration})</span></p>
-                  <p><span className="font-medium">Contact:</span> {shipment.driver.metadata.phone}</p>
-                  <p><span className="font-medium">Rating:</span> {shipment.driver.metadata.rating} / 5</p>
+                {/* What a customer needs is a way to reach the rider. A
+                    driver's code, plate and rating are ours, not theirs. */}
+                <div className="space-y-1 text-sm">
+                  <p className="capitalize text-gray-800">Arriving by {shipment.driver.vehicle_type}</p>
+                  {shipment.driver.metadata?.phone && (
+                    <a href={`tel:${shipment.driver.metadata.phone}`} className="font-semibold text-[#1b3b5f] hover:underline">
+                      {shipment.driver.metadata.phone}
+                    </a>
+                  )}
                 </div>
               </Card>
             )}
