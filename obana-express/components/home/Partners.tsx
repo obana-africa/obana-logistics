@@ -5,6 +5,16 @@ import { cld } from "@/lib/site";
 /* eslint-disable @next/next/no-img-element -- Cloudinary sizes these images per screen via cld(). */
 
 // ─── Partner data ─────────────────────────────────────────────────────────────
+//
+// Only carriers Obana has a relationship with and may name.
+//
+// FedEx, UPS and C.H. Robinson were removed. Their logos are registered
+// trademarks, and showing them on a page headed "We Work With The Best
+// Partners" states a commercial relationship to every buyer who lands here. If
+// that relationship exists and there is written permission to use the marks,
+// add them back — the entry is four lines and the images are still in
+// Cloudinary. If it does not, this is the kind of thing a B2B buyer checks and
+// a trademark owner sends a letter about.
 const partners = [
 	{
 		id: 1,
@@ -15,37 +25,17 @@ const partners = [
 	},
 	{
 		id: 2,
-		name: "FedEx Logistics",
-		logo: "fedEx_bnnse3",
-		width: 140,
-		height: 56,
-	},
-	{
-		id: 3,
 		name: "Terminal",
 		logo: "Terminal_dheycu",
 		width: 140,
 		height: 48,
 	},
-	{
-		id: 4,
-		name: "C.H. Robinson",
-		logo: "CH_tmbuvt",
-		width: 160,
-		height: 44,
-	},
-	{
-		id: 5,
-		name: "UPS",
-		logo: "UPS_maehg2",
-		width: 72,
-		height: 80,
-	},
 ];
 
 // Duplicate for two rows with different ordering so they feel distinct
-const rowOne = [...partners, ...partners]; // GIG, FedEx, Terminal, CH Robinson, UPS × 2
-const rowTwo = [...[...partners].reverse(), ...[...partners].reverse()]; // reversed × 2
+// Repeated so a short list still fills the marquee without a visible gap.
+const rowOne = [...partners, ...partners, ...partners];
+const rowTwo = [...[...partners].reverse(), ...[...partners].reverse(), ...[...partners].reverse()];
 
 // ─── Scroll-triggered section visibility ─────────────────────────────────────
 function useVisible(threshold = 0.1) {

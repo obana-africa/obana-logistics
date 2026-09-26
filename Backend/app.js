@@ -15,6 +15,19 @@ const app = express();
 // Render sits behind a proxy; needed for the real client IP (rate limits).
 app.set("trust proxy", 1);
 
+/* Zoho's workflow-rule webhooks post the ENTIRE sales order, and a sales order
+   with eighty items carries every line's custom fields twice over — well past
+   express.json()'s 100kb default. Express then answers 413 "Payload Too Large"
+   before any route runs, Zoho records a failure and retries, and the shipment
+   is never booked. It happened on SO-00683: six attempts, all 413.
+
+   The body is not even read: /zoho/shipment-trigger takes salesorder_id from
+   the query string and fetches the order from Zoho itself. So the limit here is
+   only about accepting the request at all. Ten megabytes is far more than the
+   largest order could produce, and it is scoped to /zoho so no other endpoint
+   gains a bigger surface than it needs. */
+app.use("/zoho", express.json({ limit: "10mb" }));
+app.use("/zoho", express.urlencoded({ extended: false, limit: "10mb" }));
 app.use(express.json());
 const http = require("http");
 
