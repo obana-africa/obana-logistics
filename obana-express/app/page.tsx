@@ -4,7 +4,6 @@ import QuickActions from "@/components/home/Quickactions";
 import MultipleRoles from "@/components/home/MultipleRoles";
 import HowItWorks from "@/components/home/HowItWorks";
 import FAQ from "@/components/home/FAQ";
-import Partners from "@/components/home/Partners";
 import CrossBorderCTA from "@/components/home/CrossBorderCTA";
 import Footer from "@/components/home/Footer";
 
@@ -19,7 +18,6 @@ export default function Home() {
 			<MultipleRoles />
 			<HowItWorks />
 			<FAQ />
-			<Partners />
 			<CrossBorderCTA />
 			<Footer />
 		</div>
