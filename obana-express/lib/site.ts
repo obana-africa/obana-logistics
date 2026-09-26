@@ -9,7 +9,7 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost
    NOTE: this mailbox has to exist before deploying. Simplest route is a
    forwarding alias on the obana.africa domain pointing at whoever reads the
    Gmail today — the address changes, the person reading it does not. */
-export const SUPPORT_EMAIL = "support@obana.africa";
+export const SUPPORT_EMAIL = "logistics@obana.africa";
 
 // Falls back to Obana's Cloudinary account so a missing env var can never crash a page.
 const CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dbewrzeuj";
