@@ -8,7 +8,15 @@ const controller = require('../controllers/zohoShipmentController')
    express.urlencoded parses — so an XML body arrives as an empty object and
    whatever it carried is simply gone. Capture it as text, so at worst it is
    visible and at best it is usable. */
-router.use(express.text({ type: ['text/xml', 'application/xml', 'text/plain', 'application/*+xml'] }))
+router.use(
+    express.text({
+        type: ['text/xml', 'application/xml', 'text/plain', 'application/*+xml'],
+        // Same reason as the JSON limit in app.js: a workflow rule posts the
+        // whole sales order, and the default 100kb turns a large order into a
+        // 413 before this router is reached.
+        limit: '10mb',
+    })
+)
 
 // Record every call Zoho makes, before anything can reject it. What Zoho
 // actually sends has been the one unobservable thing in this integration, and

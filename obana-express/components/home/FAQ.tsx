@@ -1,5 +1,6 @@
 "use client";
 
+import { SUPPORT_EMAIL } from "@/lib/site";
 import React, { useState, useRef, useEffect } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
@@ -227,7 +228,7 @@ export default function FAQ() {
 						Everything you need to know about Obana Logistics. Can&apos;t find your
 						answer?{" "}
 						<a
-							href="mailto:obana.africa@gmail.com"
+							href={`mailto:${SUPPORT_EMAIL}`}
 							className="font-semibold underline underline-offset-2 hover:opacity-70 transition-opacity"
 							style={{ color: "#1b3b5f" }}
 						>
@@ -271,7 +272,7 @@ export default function FAQ() {
 						Our support team is available 24/7 to help you.
 					</p>
 					<a
-						href="mailto:obana.africa@gmail.com"
+						href={`mailto:${SUPPORT_EMAIL}`}
 						className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-200 hover:opacity-90 active:scale-[0.97]"
 						style={{ background: "#ffffff", color: "#1b3b5f" }}
 					>
