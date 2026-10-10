@@ -26,6 +26,7 @@ import { apiClient } from "@/lib/api";
 import { formatMoney } from "@/lib/shipments";
 import { errorMessage, useRemote } from "@/lib/useRemote";
 import { usePaged } from "@/lib/usePaged";
+import ConfirmDelete from "@/components/dashboard/ConfirmDelete";
 
 const MODE_CHIPS = [{ value: "", label: "All modes" }, ...TRANSPORT_MODES];
 const SERVICE_CHIPS = [{ value: "", label: "All services" }, ...SERVICE_LEVELS];
@@ -143,7 +144,9 @@ export default function AdminRoutesPage() {
 			routesQ.retry();
 			window.scrollTo({ top: 0, behavior: "smooth" });
 		} catch (err) {
-			setDeleteError(errorMessage(err, "We couldn't delete this route. Please try again."));
+			/* Rethrown so the dialog shows it and stays open. */
+			setDeleteBusy(false);
+			throw new Error(errorMessage(err, "We couldn't delete this route. Please try again."));
 		} finally {
 			setDeleteBusy(false);
 		}
@@ -429,29 +432,13 @@ export default function AdminRoutesPage() {
 			)}
 
 			{deleting && (
-				<Sheet
-					size="small"
-					title="Delete route?"
-					onClose={() => !deleteBusy && setDeleting(null)}
-					footer={
-						<>
-							<Button type="button" variant="secondary" onClick={() => setDeleting(null)} disabled={deleteBusy} className="flex-1 sm:flex-none">
-								Cancel
-							</Button>
-							<Button type="button" variant="danger" onClick={confirmDelete} loading={deleteBusy} className="flex-1 sm:flex-none">
-								{deleteBusy ? "Deleting…" : "Delete route"}
-							</Button>
-						</>
-					}
-				>
-					<div className="space-y-3">
-						<p className="text-sm text-slate-600">
-							<span className="font-semibold text-slate-900">{routeTitle(deleting)}</span> ({modeLabel(deleting.transport_mode)} · {deleting.service_level}) and its{" "}
-							{bracketCount(deleting)} will be removed. New shipments can no longer be priced on it. This can&apos;t be undone.
-						</p>
-						{deleteError && <Alert type="error">{deleteError}</Alert>}
-					</div>
-				</Sheet>
+				<ConfirmDelete
+					what={routeTitle(deleting)}
+					detail={`${modeLabel(deleting.transport_mode)} · ${deleting.service_level}`}
+					consequence={`Its ${bracketCount(deleting)} go with it, and new shipments can no longer be priced on it.`}
+					onCancel={() => setDeleting(null)}
+					onConfirm={confirmDelete}
+				/>
 			)}
 		</DashboardLayout>
 	);

@@ -6,10 +6,11 @@ import { AlertTriangle, X } from "lucide-react";
 /**
  * Deleting is permanent, so it asks for a code to be typed first.
  *
- * This is a brake, not a lock — it stops a mis-click, not a person. Anyone who
- * can reach this screen is already an admin, and the server checks that.
+ * The code is never printed on screen. Showing it would make this a button
+ * with an extra step; withholding it means only someone who knows it can
+ * delete, which is the point.
  */
-export const DELETE_CODE = process.env.NEXT_PUBLIC_DELETE_CODE || "1234";
+const DELETE_CODE = process.env.NEXT_PUBLIC_DELETE_CODE || "1234";
 
 export default function ConfirmDelete({
 	what,
@@ -83,9 +84,7 @@ export default function ConfirmDelete({
 					</p>
 
 					<label className="mt-4 block">
-						<span className="text-xs font-semibold text-slate-700">
-							Type <span className="font-mono font-bold text-slate-900">{DELETE_CODE}</span> to confirm
-						</span>
+						<span className="text-xs font-semibold text-slate-700">Enter the delete code</span>
 						<input
 							value={code}
 							onChange={(e) => {
@@ -93,10 +92,11 @@ export default function ConfirmDelete({
 								setError("");
 							}}
 							onKeyDown={(e) => e.key === "Enter" && run()}
+							type="password"
 							inputMode="numeric"
+							autoComplete="off"
 							autoFocus
 							disabled={busy}
-							placeholder={DELETE_CODE}
 							className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm tracking-widest outline-none focus:border-red-500"
 						/>
 					</label>
