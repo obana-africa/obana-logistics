@@ -9,6 +9,7 @@ import { formatDate, type Tone } from "@/lib/shipments";
 import { useRemote } from "@/lib/useRemote";
 import { usePaged } from "@/lib/usePaged";
 import ConfirmDelete from "@/components/dashboard/ConfirmDelete";
+import RowActions from "@/components/dashboard/RowActions";
 
 // Shape of GET /users (userController.getUsers): user columns with every user attribute flattened on top
 // (first_name, last_name, role …). Older payloads may nest them under `attributes`.
@@ -400,14 +401,17 @@ export default function AdminUsersPage() {
 													</td>
 													<td className="whitespace-nowrap px-5 py-3 text-right text-slate-600">{formatDate(u.createdAt)}</td>
 													<td className="whitespace-nowrap px-5 py-3 text-right">
-														<button
-															type="button"
-															onClick={() => setDeleting(u)}
-															aria-label={`Delete ${name || u.email || "this account"}`}
-															className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-														>
-															<Trash2 size={16} />
-														</button>
+														<RowActions
+															label={`Actions for ${name || u.email || "this account"}`}
+															actions={[
+																{
+																	label: "Delete account",
+																	danger: true,
+																	icon: <Trash2 size={14} />,
+																	onSelect: () => setDeleting(u),
+																},
+															]}
+														/>
 													</td>
 												</tr>
 											);

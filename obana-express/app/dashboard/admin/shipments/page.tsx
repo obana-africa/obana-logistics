@@ -2,12 +2,14 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Package, Search, X } from "lucide-react";
+import { Package, Search, Trash2, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { EmptyState, ErrorState, ListSkeleton, PageHeader, Pager, Panel, StatusBadge, ToneBadge } from "@/components/dashboard/kit";
 import { apiClient } from "@/lib/api";
 import { STATUS_OPTIONS, formatDate, formatMoney, routeLabel } from "@/lib/shipments";
 import { useRemote } from "@/lib/useRemote";
+import ConfirmDelete from "@/components/dashboard/ConfirmDelete";
+import RowActions from "@/components/dashboard/RowActions";
 
 type Place = { name?: string | null; line1?: string | null; city?: string | null; state?: string | null; country?: string | null } | null;
 interface AdminShipment {
@@ -58,6 +60,7 @@ export default function AdminShipmentsPage() {
 	const [carrier, setCarrier] = useState("");
 	const [query, setQuery] = useState("");
 	const [search, setSearch] = useState("");
+	const [deleting, setDeleting] = useState<AdminShipment | null>(null);
 
 	const key = JSON.stringify({ page, status, carrier, search });
 	const { data, loading, error, retry } = useRemote<Page>(key, async () => {
@@ -200,6 +203,7 @@ export default function AdminShipmentsPage() {
 											<th className="px-5 py-3">Handled by</th>
 											<th className="px-5 py-3">Status</th>
 											<th className="px-5 py-3 text-right">Amount</th>
+											<th className="px-5 py-3 text-right"><span className="sr-only">Actions</span></th>
 										</tr>
 									</thead>
 									<tbody className="divide-y divide-slate-100">
@@ -220,6 +224,19 @@ export default function AdminShipmentsPage() {
 													<StatusBadge status={s.status} />
 												</td>
 												<td className="px-5 py-3.5 text-right font-semibold tabular-nums text-slate-900">{formatMoney(s.shipping_fee, s.currency)}</td>
+												<td className="px-5 py-3.5 text-right">
+													<RowActions
+														label={`Actions for ${s.shipment_reference}`}
+														actions={[
+															{
+																label: "Delete shipment",
+																danger: true,
+																icon: <Trash2 size={14} />,
+																onSelect: () => setDeleting(s),
+															},
+														]}
+													/>
+												</td>
 											</tr>
 										))}
 									</tbody>
@@ -231,6 +248,20 @@ export default function AdminShipmentsPage() {
 					{pg && !error && <Pager page={pg.page} pages={Math.max(pg.pages, 1)} total={pg.total} noun="shipments" onPage={setPage} disabled={loading} />}
 				</Panel>
 			</div>
+
+			{deleting && (
+				<ConfirmDelete
+					what={deleting.shipment_reference}
+					detail={routeLabel(deleting.pickup_address, deleting.delivery_address)}
+					consequence="Its tracking history goes with it, and the customer loses sight of it."
+					onCancel={() => setDeleting(null)}
+					onConfirm={async () => {
+						await apiClient.deleteShipment(deleting.shipment_reference);
+						setDeleting(null);
+						retry();
+					}}
+				/>
+			)}
 		</DashboardLayout>
 	);
 }
