@@ -83,13 +83,19 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
 	const [menuOpen, setMenuOpen] = useState(false);
 
 	const userRole = (user?.account_type ?? (user as { role?: string } | null)?.role) as Role | undefined;
-	const wrongRole = !!userRole && userRole !== role && userRole !== "admin";
+
+	/* Fails closed.
+	   This read `!!userRole && userRole !== role && …`, which skipped the whole
+	   check whenever the role did not resolve — a half-written profile, an
+	   attribute that never saved — and let that account open any dashboard,
+	   the admin one included. An unknown role is now simply not allowed. */
+	const allowed = userRole === role || userRole === "admin";
 
 	useEffect(() => {
 		if (isLoading) return;
 		if (!isAuthenticated) router.replace("/auth/login");
-		else if (wrongRole) router.replace(dashboardFor(user));
-	}, [isLoading, isAuthenticated, wrongRole, user, router]);
+		else if (!allowed) router.replace(dashboardFor(user));
+	}, [isLoading, isAuthenticated, allowed, user, router]);
 
 	// Close the drawer on Escape and lock page scroll while it is open.
 	useEffect(() => {
@@ -116,7 +122,7 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
 		router.replace("/");
 	};
 
-	if (isLoading || !isAuthenticated || wrongRole) {
+	if (isLoading || !isAuthenticated || !allowed) {
 		return (
 			<div className="flex min-h-dvh items-center justify-center bg-slate-50" role="status" aria-live="polite">
 				<div className="flex flex-col items-center gap-4">

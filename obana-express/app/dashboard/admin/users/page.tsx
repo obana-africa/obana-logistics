@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { Search, Users, X } from "lucide-react";
+import { Search, Trash2, Users, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { EmptyState, ErrorState, ListSkeleton, PageHeader, Pager, Panel, ToneBadge } from "@/components/dashboard/kit";
 import { apiClient } from "@/lib/api";
 import { formatDate, type Tone } from "@/lib/shipments";
 import { useRemote } from "@/lib/useRemote";
 import { usePaged } from "@/lib/usePaged";
+import ConfirmDelete from "@/components/dashboard/ConfirmDelete";
 
 // Shape of GET /users (userController.getUsers): user columns with every user attribute flattened on top
 // (first_name, last_name, role …). Older payloads may nest them under `attributes`.
@@ -242,6 +243,7 @@ function CreateUserPanel({ onClose, onCreated }: { onClose: () => void; onCreate
 
 export default function AdminUsersPage() {
 	const [creating, setCreating] = useState(false);
+	const [deleting, setDeleting] = useState<AdminUser | null>(null);
 
 	const { data, loading, error, retry } = useRemote<AdminUser[]>("admin-users", async () => {
 		const response = await apiClient.getAllUsers();
@@ -374,6 +376,7 @@ export default function AdminUsersPage() {
 											<th className="px-5 py-3">Phone</th>
 											<th className="px-5 py-3">Role</th>
 											<th className="px-5 py-3 text-right">Joined</th>
+											<th className="px-5 py-3 text-right"><span className="sr-only">Actions</span></th>
 										</tr>
 									</thead>
 									<tbody className="divide-y divide-slate-100">
@@ -396,6 +399,16 @@ export default function AdminUsersPage() {
 														<ToneBadge tone={r.tone}>{r.label}</ToneBadge>
 													</td>
 													<td className="whitespace-nowrap px-5 py-3 text-right text-slate-600">{formatDate(u.createdAt)}</td>
+													<td className="whitespace-nowrap px-5 py-3 text-right">
+														<button
+															type="button"
+															onClick={() => setDeleting(u)}
+															aria-label={`Delete ${name || u.email || "this account"}`}
+															className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+														>
+															<Trash2 size={16} />
+														</button>
+													</td>
 												</tr>
 											);
 										})}
@@ -413,6 +426,20 @@ export default function AdminUsersPage() {
 					</p>
 				)}
 			</div>
+
+			{deleting && (
+				<ConfirmDelete
+					what={nameOf(deleting) || deleting.email || "this account"}
+					detail={deleting.email ?? undefined}
+					consequence="They lose access immediately and their shipment history goes with them."
+					onCancel={() => setDeleting(null)}
+					onConfirm={async () => {
+						await apiClient.deleteUser(deleting.id);
+						setDeleting(null);
+						retry();
+					}}
+				/>
+			)}
 		</DashboardLayout>
 	);
 }
