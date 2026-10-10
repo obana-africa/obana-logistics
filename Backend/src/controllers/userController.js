@@ -572,6 +572,13 @@ const getUser = async (email = null, phone = null, withAttr = false, req = null,
                 user.role = roleVal
                 user.permission = { role: roleVal, scope: [] }
             }
+        } else {
+            /* No role on the account. It used to come back undefined, and the
+               dashboard treated "unknown" as "allow", so such an account could
+               open any screen including the admin one. The least privilege is
+               the safe answer here. */
+            user.role = 'customer'
+            user.permission = { role: 'customer', scope: [] }
         }
         // Attach Agent Profile if exists
         const agentProfile = await Agents.findOne({ where: { user_id: user.id } });
