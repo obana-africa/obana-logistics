@@ -464,6 +464,22 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Creates an account on someone's behalf. Omit `password` and the server
+   * generates one, returning it once as `temporary_password`.
+   */
+  async createUserAsAdmin(payload: {
+    email: string;
+    phone?: string;
+    first_name?: string;
+    last_name?: string;
+    role: string;
+    password?: string;
+  }) {
+    const response = await this.client.post<ApiResponse>('/users', payload);
+    return response.data;
+  }
+
   async getAdminStats() {
     const response = await this.client.get<ApiResponse>('/shipments/admin/stats');
     return response.data;

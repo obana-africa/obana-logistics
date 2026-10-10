@@ -62,7 +62,187 @@ function Avatar({ label }: { label: string }) {
 	);
 }
 
+const CREATABLE = [
+	{ value: "customer", label: "Customer", hint: "Books and tracks their own shipments." },
+	{ value: "agent", label: "Agent", hint: "Books and manages shipments for customers." },
+	{ value: "driver", label: "Driver", hint: "Delivers the shipments assigned to them." },
+	{ value: "admin", label: "Admin", hint: "Full access, including creating other accounts." },
+];
+
+const FIELD =
+	"w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#1B3B5F]";
+
+/**
+ * Creates an account for someone who cannot sign up themselves.
+ *
+ * The password comes back once and is stored hashed, so it stays on screen
+ * until dismissed — there is no second chance to read it.
+ */
+function CreateUserPanel({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+	const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", role: "customer" });
+	const [busy, setBusy] = useState(false);
+	const [failure, setFailure] = useState("");
+	const [created, setCreated] = useState<{ email: string; password?: string } | null>(null);
+	const [copied, setCopied] = useState(false);
+
+	const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+		setForm((f) => ({ ...f, [key]: e.target.value }));
+		setFailure("");
+	};
+
+	const submit = async (e: React.FormEvent) => {
+		e.preventDefault();
+		if (!form.email.trim()) {
+			setFailure("An email address is required — they sign in with it.");
+			return;
+		}
+
+		setBusy(true);
+		setFailure("");
+		try {
+			const res = await apiClient.createUserAsAdmin({
+				email: form.email.trim(),
+				phone: form.phone.trim() || undefined,
+				first_name: form.first_name.trim() || undefined,
+				last_name: form.last_name.trim() || undefined,
+				role: form.role,
+			});
+			const body = (res?.data ?? {}) as { email?: string; temporary_password?: string };
+			setCreated({ email: body.email ?? form.email.trim(), password: body.temporary_password });
+			onCreated();
+		} catch (err: unknown) {
+			const e2 = err as { response?: { data?: { message?: string } }; message?: string };
+			setFailure(e2?.response?.data?.message ?? e2?.message ?? "Could not create that account.");
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	if (created) {
+		return (
+			<Panel>
+				<div className="p-5">
+					<h2 className="text-lg font-semibold text-slate-900">Account created</h2>
+					<p className="mt-1 text-sm text-slate-600">{created.email} can sign in now.</p>
+
+					{created.password && (
+						<div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+							<p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+								Temporary password — shown once
+							</p>
+							<p className="mt-2 font-mono text-lg font-bold tracking-wide text-slate-900">
+								{created.password}
+							</p>
+							<button
+								type="button"
+								onClick={() => {
+									navigator.clipboard?.writeText(`${created.email} / ${created.password}`);
+									setCopied(true);
+								}}
+								className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900"
+							>
+								{copied ? "Copied" : "Copy email and password"}
+							</button>
+							<p className="mt-2 text-xs leading-relaxed text-amber-800">
+								Give this to them and ask them to change it after signing in. It cannot be
+								shown again — if it is lost, they use Forgot password.
+							</p>
+						</div>
+					)}
+
+					<button
+						type="button"
+						onClick={onClose}
+						className="mt-4 rounded-lg bg-[#1B3B5F] px-4 py-2 text-sm font-semibold text-white"
+					>
+						Done
+					</button>
+				</div>
+			</Panel>
+		);
+	}
+
+	return (
+		<Panel>
+			<form onSubmit={submit} className="p-5">
+				<div className="flex items-start justify-between gap-3">
+					<div>
+						<h2 className="text-lg font-semibold text-slate-900">New account</h2>
+						<p className="mt-1 text-sm text-slate-600">
+							They sign in with the email below. A password is generated and shown once.
+						</p>
+					</div>
+					<button type="button" onClick={onClose} aria-label="Close" className="text-slate-400">
+						<X className="h-5 w-5" />
+					</button>
+				</div>
+
+				<div className="mt-4 grid gap-3 sm:grid-cols-2">
+					<label className="block">
+						<span className="text-xs font-semibold text-slate-700">First name</span>
+						<input value={form.first_name} onChange={set("first_name")} className={`mt-1 ${FIELD}`} />
+					</label>
+					<label className="block">
+						<span className="text-xs font-semibold text-slate-700">Last name</span>
+						<input value={form.last_name} onChange={set("last_name")} className={`mt-1 ${FIELD}`} />
+					</label>
+					<label className="block sm:col-span-2">
+						<span className="text-xs font-semibold text-slate-700">Email</span>
+						<input
+							type="email"
+							value={form.email}
+							onChange={set("email")}
+							placeholder="they.sign.in@with.this"
+							className={`mt-1 ${FIELD}`}
+						/>
+					</label>
+					<label className="block">
+						<span className="text-xs font-semibold text-slate-700">Phone</span>
+						<input value={form.phone} onChange={set("phone")} className={`mt-1 ${FIELD}`} />
+					</label>
+					<label className="block">
+						<span className="text-xs font-semibold text-slate-700">Role</span>
+						<select value={form.role} onChange={set("role")} className={`mt-1 ${FIELD}`}>
+							{CREATABLE.map((r) => (
+								<option key={r.value} value={r.value}>
+									{r.label}
+								</option>
+							))}
+						</select>
+					</label>
+				</div>
+
+				<p className="mt-2 text-xs text-slate-500">
+					{CREATABLE.find((r) => r.value === form.role)?.hint}
+				</p>
+
+				{failure && <p className="mt-3 text-sm text-red-600">{failure}</p>}
+
+				<div className="mt-5 flex gap-2">
+					<button
+						type="submit"
+						disabled={busy}
+						className="rounded-lg bg-[#1B3B5F] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+					>
+						{busy ? "Creating…" : "Create account"}
+					</button>
+					<button
+						type="button"
+						onClick={onClose}
+						disabled={busy}
+						className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
+					>
+						Cancel
+					</button>
+				</div>
+			</form>
+		</Panel>
+	);
+}
+
 export default function AdminUsersPage() {
+	const [creating, setCreating] = useState(false);
+
 	const { data, loading, error, retry } = useRemote<AdminUser[]>("admin-users", async () => {
 		const response = await apiClient.getAllUsers();
 		return (response?.data ?? []) as AdminUser[];
@@ -92,7 +272,25 @@ export default function AdminUsersPage() {
 	return (
 		<DashboardLayout role="admin">
 			<div className="space-y-5">
-				<PageHeader title="Users" description="Everyone with an Obana account — customers, drivers, agents and admins." />
+				<PageHeader
+					title="Users"
+					description="Everyone with an Obana account — customers, drivers, agents and admins."
+					actions={
+						!creating && (
+							<button
+								type="button"
+								onClick={() => setCreating(true)}
+								className="rounded-lg bg-[#1B3B5F] px-4 py-2 text-sm font-semibold text-white"
+							>
+								Create account
+							</button>
+						)
+					}
+				/>
+
+				{creating && (
+					<CreateUserPanel onClose={() => setCreating(false)} onCreated={retry} />
+				)}
 
 				<div className="space-y-3">
 					<label className="relative block">

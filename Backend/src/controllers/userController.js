@@ -602,14 +602,38 @@ const getUsers = async (req, res) => {
 /**
  * Create user by admin (skips OTP)
  */
+/* Readable over the phone and still hard to guess: no O/0, no I/l. */
+const TEMP_PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+const generateTempPassword = (length = 12) => {
+    const bytes = crypto.randomBytes(length);
+    let out = '';
+    for (let i = 0; i < length; i += 1) out += TEMP_PASSWORD_ALPHABET[bytes[i] % TEMP_PASSWORD_ALPHABET.length];
+    return out;
+};
+
 const createUserByAdmin = async (req, res) => {
     try {
         const { email, phone, password, first_name, last_name, role, account_type, vehicle_type, vehicle_registration } = req.body;
-        const userRole = role || account_type || 'customer';
-        let user = await User.findOne({ where: { email } });
+        const userRole = String(role || account_type || 'customer').toLowerCase();
+
+        if (!email || !String(email).trim()) {
+            return res.status(400).send(utils.responseError('An email address is required'));
+        }
+
+        const normalisedEmail = String(email).toLowerCase().trim();
+        let user = await User.findOne({ where: { email: normalisedEmail } });
         if (user) return res.status(400).send(utils.responseError('User already exists'));
-        const hashedPassword = await hashPassword(password || '123456'); // Default password
-        user = await User.create({ email, phone, password: hashedPassword });
+
+        /* Every account made here used to fall back to the literal password
+           "123456" when none was supplied, and the admin was never told, so
+           there was no way to know an account had one. A generated password is
+           returned once instead, below. */
+        const supplied = String(password ?? '').trim();
+        const issuedPassword = supplied || generateTempPassword();
+        const hashedPassword = await hashPassword(issuedPassword);
+
+        user = await User.create({ email: normalisedEmail, phone, password: hashedPassword });
         await createUserAttributes(user.id, { first_name, last_name, role: userRole });
         if (userRole === 'driver') {
             await Drivers.create({
@@ -620,10 +644,23 @@ const createUserByAdmin = async (req, res) => {
                 status: 'active',
                 total_deliveries: 0,
                 successful_deliveries: 0,
-                metadata: { phone, email, first_name, last_name, rating: 5.0 }
+                metadata: { phone, email: normalisedEmail, first_name, last_name, rating: 5.0 }
             });
         }
-        return res.status(201).send(utils.responseSuccess(user));
+
+        /* Shown once. It is stored hashed and cannot be read back, so the admin
+           has this one chance to pass it on. Only when we generated it — an
+           admin who chose the password already knows it. */
+        const created = user.toJSON ? user.toJSON() : { ...user };
+        delete created.password;
+        created.role = userRole;
+        if (!supplied) {
+            created.temporary_password = issuedPassword;
+            created.password_note =
+                'Shown once. Give it to them and ask them to change it after signing in.';
+        }
+
+        return res.status(201).send(utils.responseSuccess(created));
     } catch (error) {
         console.error('Error creating user:', error);
         return res.status(500).send(utils.responseError(error.message));
