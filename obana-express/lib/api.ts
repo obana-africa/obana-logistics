@@ -218,7 +218,15 @@ class ApiClient {
         const originalRequest = error.config as any;
 
         
-        if (originalRequest.url?.includes('/users/token') || originalRequest.url?.includes('/users/logout')) {
+        /* Signing in and signing up answer 401 for a wrong password or a
+           duplicate. Those are answers, not expired sessions — refreshing on
+           them pointlessly round-trips and, on failure, signs the visitor out
+           of the account they were already using. */
+        const AUTH_ENDPOINTS = ['/users/token', '/users/logout', '/users/login', '/users/signup'];
+        if (AUTH_ENDPOINTS.some((path) => originalRequest.url?.includes(path))) {
+          const body = error.response?.data as { message?: string; error?: string } | undefined;
+          const message = body?.message ?? body?.error;
+          if (message) error.message = message;
           return Promise.reject(error);
         }
 
@@ -244,6 +252,14 @@ class ApiClient {
             return Promise.reject(refreshError);
           }
         }
+
+        /* Carry the server's own message on `.message`.
+           Callers do `err.message`, and an AxiosError's message is
+           "Request failed with status code 409" — so every failure reached the
+           user as a status code while the real reason sat unread in the body. */
+        const body = error.response?.data as { message?: string; error?: string } | undefined;
+        const serverMessage = body?.message ?? body?.error;
+        if (serverMessage) error.message = serverMessage;
 
         return Promise.reject(error);
       }
