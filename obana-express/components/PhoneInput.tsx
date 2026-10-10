@@ -19,6 +19,35 @@ interface PhoneInputProps {
 // Europe → Africa is Obana's core lane, so both ends of it are at the top of the list.
 const PREFERRED = ['ng', 'gb', 'gh', 'ke', 'za', 'de', 'fr', 'nl', 'it', 'es', 'ie', 'be'];
 
+/**
+ * Reconciles what people type with the country already chosen.
+ *
+ * Everyone says their own number the way it is printed on a card — 0904 887
+ * 7098 — and that leading zero is a national trunk prefix, not part of the
+ * number. Typed under a +234 country it produced "+090 488 770 98": a plus, a
+ * trunk zero, and no country code at all. It is not a number anywhere, and it
+ * reached the database in that state.
+ *
+ * Four shapes arrive here, and all four should end up identical:
+ *
+ *   2340904887709  dial code with the trunk zero still after it
+ *   0904887709     the local form, as printed
+ *   2349048877098  already correct
+ *   9048877098     national, no trunk zero
+ */
+const withCountryCode = (raw: string, dial: string) => {
+  const digits = String(raw ?? '').replace(/\D/g, '');
+  if (!dial || !digits) return digits;
+
+  if (digits.startsWith(`${dial}0`)) return dial + digits.slice(dial.length + 1);
+  if (digits.startsWith(dial)) return digits;
+  if (digits.startsWith('0')) return dial + digits.slice(1);
+
+  /* Bare national number. Guarded on length so a number already carrying
+     another country's code is not given a second one. */
+  return digits.length <= 10 ? dial + digits : digits;
+};
+
 /** International phone field that matches the other form fields (48px, same border and focus ring). */
 export default function PhoneInput({
   value,
@@ -49,7 +78,7 @@ export default function PhoneInput({
         country={defaultCountry}
         preferredCountries={PREFERRED}
         value={value}
-        onChange={onChange}
+        onChange={(raw, country) => onChange(withCountryCode(raw, (country as { dialCode?: string })?.dialCode ?? ''))}
         disabled={disabled}
         placeholder={placeholder}
         enableSearch

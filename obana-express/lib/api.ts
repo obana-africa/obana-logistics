@@ -496,6 +496,12 @@ class ApiClient {
     return response.data;
   }
 
+  /** Removes an account. Admin only; the server checks. */
+  async deleteUser(id: number | string) {
+    const response = await this.client.delete<ApiResponse>(`/users/${encodeURIComponent(String(id))}`);
+    return response.data;
+  }
+
   async getAdminStats() {
     const response = await this.client.get<ApiResponse>('/shipments/admin/stats');
     return response.data;
