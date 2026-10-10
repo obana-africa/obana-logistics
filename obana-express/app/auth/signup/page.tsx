@@ -135,10 +135,16 @@ export default function SignupPage() {
 					profile_photo,
 				};
 			}
-			const response = await signup(form.first_name.trim(), form.last_name.trim(), form.email.trim(), form.phone, form.password, role, additional);
+			const response = await signup(form.first_name.trim(), form.last_name.trim(), form.email.trim(), form.phone.trim(), form.password, role, additional);
 			router.replace(next ?? dashboardFor(response?.data?.user ?? { role }));
 		} catch (err) {
-			setFormError(err instanceof Error ? err.message : "We couldn't create your account. Please try again.");
+			/* The server names the field it rejected, so the message lands on that
+			   input rather than only in the banner above the form. */
+			const e = err as { response?: { data?: { field?: string; message?: string } }; message?: string };
+			const field = e?.response?.data?.field;
+			const message = e?.message ?? "We couldn't create your account. Please try again.";
+			if (field === "email" || field === "phone") setErrors((prev) => ({ ...prev, [field]: message }));
+			setFormError(message);
 		} finally {
 			setLoading(false);
 		}

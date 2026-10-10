@@ -9,6 +9,7 @@ const fs = require('fs')
 const { uploadImage } = require('../helpers/cloudinary')
 const path = require('path')
 const crypto = require('crypto')
+const { canonicalEmail, canonicalPhone, phoneVariants } = require('../helpers/identity.js')
 const User = db.users
 const Tokens = db.tokens
 const Attribute = db.attributes
@@ -44,13 +45,24 @@ const createUserRequest = async (req, res) => {
             utils.responseError(`Role is required and must be one of: ${validRoles.join(', ')}`)
         )
     }
-    const user = await getUser(req.body.email, req.body.phone)
-    if (user) {
-        return res.status(401).send(
-            utils.responseError('Email or Phone number already registered')
-        )
+    /* 409, not 401. A duplicate is not an authentication failure, and the
+       client's interceptor treats every 401 as an expired session — it tried
+       to refresh the token mid-signup and could sign the visitor out. */
+    const existing = await getUser(req.body.email, req.body.phone)
+    if (existing) {
+        const sameEmail = canonicalEmail(existing.email) === canonicalEmail(req.body.email)
+        return res.status(409).send({
+            ...utils.responseError(
+                sameEmail
+                    ? 'That email address already has an account. Sign in instead, or use Forgot password.'
+                    : 'That phone number already has an account. Sign in instead, or use Forgot password.',
+                409,
+            ),
+            code: sameEmail ? 'email_taken' : 'phone_taken',
+            field: sameEmail ? 'email' : 'phone',
+        })
     }
-    
+
     const authData = await createUser(req.body, req, res);
     return res.status(201).send(utils.responseSuccess(authData));
     } catch (err) {
@@ -77,10 +89,12 @@ const createUser = async (payload, req, res) => {
     const { first_name, last_name, vehicle_type, vehicle_registration, role,  ...userData } = payload
     
     const hashedPassword = await hashPassword(userData.password)
-    // Create user
+    /* Stored canonical so the variants shrink to one over time. Falls back to
+       what was typed when it is not a number we recognise, rather than
+       dropping it. */
     user = await User.create({
-        email: userData.email,
-        phone: userData.phone,
+        email: canonicalEmail(userData.email),
+        phone: canonicalPhone(userData.phone) ?? userData.phone,
         password: hashedPassword
     })
     const attributesToSave = { first_name, last_name, role };
@@ -309,26 +323,43 @@ const resetPassword = async (req, res) => {
  */
 const loginRequest = async (req, res) => {
     try {
-    req.body.user_identification = req.body.user_identification.toLowerCase()
+    /* Trimmed: a trailing space from autofill or a paste used to read as a
+       different address entirely and came back "User not found". */
+    req.body.user_identification = String(req.body.user_identification ?? '').trim().toLowerCase()
+    if (!req.body.user_identification) {
+        return res.status(400).send(utils.responseError('Enter your email address or phone number'))
+    }
+
     const user = await getUser(req.body.user_identification, req.body.user_identification)
     if (!user) {
         return res.status(401).send(
-            utils.responseError('User not found. Check your credentials and try again')
+            utils.responseError('No account found with those details. Check them and try again')
         )
     }
-    bcrypt.compare(req.body.password, user.password, async (error, isMatch) => {
-        if (isMatch) {
-            
-            const userProfile = await getUser(user.email, user.phone, true, req, res);
-            const rememberMe = req.body.hasOwnProperty('remember_me') ? req.body.remember_me : false;
-            const authData = await createAuthDetail(userProfile, rememberMe);
-            return res.status(200).send(utils.responseSuccess(authData));
-        } else {
-            return res.status(401).send(
-                utils.responseError('Wrong password. Check your credentials and try again')
-            )
-        }
-    })
+
+    /* An account created through Google has no password, so there is nothing
+       to compare and bcrypt would throw. */
+    if (!user.password) {
+        return res.status(401).send(
+            utils.responseError('This account signs in with Google. Use "Continue with Google" instead')
+        )
+    }
+
+    /* Awaited, not a callback. The callback ran outside this try/catch, so
+       anything thrown inside it — a failed profile load, a token error —
+       escaped unhandled and the request never answered at all. The browser
+       just waited. */
+    const isMatch = await bcrypt.compare(req.body.password ?? '', user.password)
+    if (!isMatch) {
+        return res.status(401).send(
+            utils.responseError('Wrong password. Check your credentials and try again')
+        )
+    }
+
+    const userProfile = await getUser(user.email, user.phone, true, req, res);
+    const rememberMe = Object.prototype.hasOwnProperty.call(req.body, 'remember_me') ? req.body.remember_me : false;
+    const authData = await createAuthDetail(userProfile, rememberMe);
+    return res.status(200).send(utils.responseSuccess(authData));
 } catch (err) {
     return res.status(500).send(
         utils.responseError(err.message)
@@ -499,10 +530,16 @@ const logout = async (req, res) => {
  **/
 const getUser = async (email = null, phone = null, withAttr = false, req = null, res = null, user_id = null) => {
     const criteria = [];
+    /* Both sides lowered: an address stored as Finance@Obana.Africa was
+       unreachable by a login that lowercases what was typed. */
     if (email)
-        criteria.push({ email: email })
-    if (phone)
-        criteria.push({ phone: phone })
+        criteria.push(db.Sequelize.where(db.Sequelize.fn('LOWER', db.Sequelize.col('email')), canonicalEmail(email)))
+    /* Every spelling of the number, so a row saved as +234… is still found by
+       someone typing 0803… — see helpers/identity.js. */
+    if (phone) {
+        const variants = phoneVariants(phone)
+        if (variants.length) criteria.push({ phone: { [Op.in]: variants } })
+    }
     if (user_id)
         criteria.push({ id: user_id })
     if (criteria.length === 0)
@@ -621,9 +658,22 @@ const createUserByAdmin = async (req, res) => {
             return res.status(400).send(utils.responseError('An email address is required'));
         }
 
-        const normalisedEmail = String(email).toLowerCase().trim();
-        let user = await User.findOne({ where: { email: normalisedEmail } });
-        if (user) return res.status(400).send(utils.responseError('User already exists'));
+        const normalisedEmail = canonicalEmail(email);
+        /* Goes through getUser so the phone is matched in every spelling, the
+           same as signup — an exact match here let an admin create a second
+           account for someone already on the platform. */
+        let user = await getUser(normalisedEmail, phone);
+        if (user) {
+            const sameEmail = canonicalEmail(user.email) === normalisedEmail;
+            return res.status(409).send(
+                utils.responseError(
+                    sameEmail
+                        ? 'That email address already has an account.'
+                        : 'That phone number already belongs to another account.',
+                    409,
+                ),
+            );
+        }
 
         /* Every account made here used to fall back to the literal password
            "123456" when none was supplied, and the admin was never told, so
@@ -633,7 +683,11 @@ const createUserByAdmin = async (req, res) => {
         const issuedPassword = supplied || generateTempPassword();
         const hashedPassword = await hashPassword(issuedPassword);
 
-        user = await User.create({ email: normalisedEmail, phone, password: hashedPassword });
+        user = await User.create({
+            email: normalisedEmail,
+            phone: canonicalPhone(phone) ?? phone,
+            password: hashedPassword,
+        });
         await createUserAttributes(user.id, { first_name, last_name, role: userRole });
         if (userRole === 'driver') {
             await Drivers.create({
