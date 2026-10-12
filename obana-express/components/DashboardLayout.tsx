@@ -52,6 +52,7 @@ const NAV: Record<Role, NavItem[]> = {
 	],
 	admin: [
 		{ name: "Overview", href: "/dashboard/admin", icon: LayoutDashboard },
+		{ name: "New shipment", href: "/dashboard/admin/shipments/new", icon: PackagePlus },
 		{ name: "Shipments", href: "/dashboard/admin/shipments", icon: Package },
 		{ name: "Routes & pricing", href: "/dashboard/admin/routes", icon: Route },
 		{ name: "Partners", href: "/dashboard/admin/partners", icon: Handshake },
