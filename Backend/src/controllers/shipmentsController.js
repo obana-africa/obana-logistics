@@ -817,6 +817,41 @@ const shipmentController = {
             const payload = req.body;
             // console.log("SHIPMENT PAYLLOADDDDDD", payload)
 
+            /* An administrator booking on a customer's behalf.
+             *
+             * The shipment has to belong to the customer — it is their parcel,
+             * it shows on their dashboard and they are the one who can cancel
+             * it — so user_id becomes theirs, not the admin's. Who actually
+             * booked it is kept in metadata, because otherwise there is no
+             * record that the customer did not do this themselves.
+             *
+             * Fails closed: anyone who is not an admin asking to create a
+             * shipment under someone else's name is refused, not ignored. */
+            let bookedByAdminId = null;
+            if (payload.on_behalf_of) {
+                const superAdminEmail = process.env.LOGISTICS_EMAIL || 'shipment@obana.africa';
+                const isAdmin = req.user && (req.user.role === 'admin' || req.user.email === superAdminEmail);
+                if (!isAdmin) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'Only an administrator can create a shipment for another customer'
+                    });
+                }
+
+                const target = await db.users.findOne({ where: { id: payload.on_behalf_of } });
+                if (!target) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'That customer no longer exists'
+                    });
+                }
+
+                bookedByAdminId = req.user.id;
+                userId = target.id;
+                tenantId = null;
+            }
+            delete payload.on_behalf_of;
+
             // If items are missing at root but present in nested shipments
             if ((!payload.items || payload.items.length === 0) && payload.dispatcher?.shipments?.[0]) {
                 const nestedShipment = payload.dispatcher.shipments[0];
@@ -975,6 +1010,10 @@ const shipmentController = {
                     metadata: {
                         original_payload: payload,
                         dispatcher: payload.dispatcher,
+                        // Set only when an admin booked this for the customer,
+                        // so the row shows who acted as well as who it is for.
+                        booked_by_admin_id: bookedByAdminId,
+                        booked_on_behalf: !!bookedByAdminId,
                         // Salesperson (Zoho salesorder) — used for WhatsApp notifications
                         salesperson: payload.salesperson || null,
                         store_customer: storeCustomer,
