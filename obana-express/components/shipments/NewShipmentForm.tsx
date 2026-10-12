@@ -96,6 +96,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [newShipmentInfo, setNewShipmentInfo] = useState<any>(null);
+  const [booksResult, setBooksResult] = useState<any>(null);
   const [matchedRoute, setMatchedRoute] = useState<any>(null);
   // The price picked on step 2; null means the first (cheapest) one.
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
@@ -191,6 +192,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
     setShowFieldErrors(false);
     setShowSuccessModal(false);
     setNewShipmentInfo(null);
+    setBooksResult(null);
   };
 
   // Everything the shipment needs is checked here, on step 1 — nothing should fail later at "Create shipment".
@@ -281,6 +283,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
       if (response.success && response.data) {
         clearPendingQuote();
         setNewShipmentInfo(response.data);
+        setBooksResult((response as { invoice?: unknown }).invoice ?? null);
         setShowSuccessModal(true);
         setError('');
       } else {
@@ -396,9 +399,25 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                   </p>
                 </div>
 
+                {role === 'admin' && booksResult && (
+                  <div className="mb-6 rounded-lg border p-3 text-left text-sm">
+                    {booksResult.invoice_number ? (
+                      <p className="text-emerald-700">
+                        <span className="font-semibold">Obana Books:</span> {booksResult.invoice_number} raised
+                        {booksResult.amount ? ` (${booksResult.posted_in || 'USD'} ${booksResult.amount})` : ''}
+                      </p>
+                    ) : (
+                      <p className="text-amber-700">
+                        <span className="font-semibold">Not sent to Obana Books:</span>{' '}
+                        {booksResult.skipped || booksResult.error || 'no reason given'}
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-3">
                   <Button
-                    onClick={() => router.push(`/dashboard/customer/shipments/${newShipmentInfo.shipment_reference}`)}
+                    onClick={() => router.push(`${listHref}/${newShipmentInfo.shipment_reference}`)}
                     fullWidth
                     variant="primary"
                   >
