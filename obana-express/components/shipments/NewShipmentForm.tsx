@@ -84,9 +84,11 @@ export type NewShipmentFormProps = {
 	onBehalfOf?: string;
 	/** Shown in the header so the admin can see who they are booking for. */
 	onBehalfOfName?: string;
+	/** Optional control rendered in the header — the admin's "create for" picker. */
+	customerPicker?: React.ReactNode;
 };
 
-export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehalfOfName }: NewShipmentFormProps) {
+export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehalfOfName, customerPicker }: NewShipmentFormProps) {
 	const listHref = role === 'admin' ? '/dashboard/admin/shipments' : '/dashboard/customer/shipments';
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -301,9 +303,10 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl" style={{ fontFamily: 'var(--font-display)' }}>New shipment</h1>
             <p className="mt-1 text-slate-600">Add the addresses and items, pick a price, then confirm.</p>
+            {customerPicker}
             {onBehalfOfName && (
               /* An admin can have several of these open at once, so the name
-                 stays on screen rather than only in the URL. */
+                 stays on screen rather than only in a dropdown. */
               <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-[#1B3B5F]/[0.07] px-2.5 py-1 text-sm font-semibold text-[#1B3B5F]">
                 Booking for {onBehalfOfName}
               </p>
