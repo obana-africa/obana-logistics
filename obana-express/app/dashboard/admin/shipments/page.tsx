@@ -2,9 +2,9 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Package, Search, Trash2, X } from "lucide-react";
+import { Package, Plus, Search, Trash2, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { EmptyState, ErrorState, ListSkeleton, PageHeader, Pager, Panel, StatusBadge, ToneBadge } from "@/components/dashboard/kit";
+import { ButtonLink, EmptyState, ErrorState, ListSkeleton, PageHeader, Pager, Panel, StatusBadge, ToneBadge } from "@/components/dashboard/kit";
 import { apiClient } from "@/lib/api";
 import { STATUS_OPTIONS, formatDate, formatMoney, routeLabel } from "@/lib/shipments";
 import { useRemote } from "@/lib/useRemote";
@@ -88,7 +88,15 @@ export default function AdminShipmentsPage() {
 	return (
 		<DashboardLayout role="admin">
 			<div className="space-y-5">
-				<PageHeader title="Shipments" description="Every shipment on Obana — our fleet and partner carriers." />
+				<PageHeader
+					title="Shipments"
+					description="Every shipment on Obana — our fleet and partner carriers."
+					actions={
+						<ButtonLink href="/dashboard/admin/shipments/new" icon={Plus}>
+							New shipment
+						</ButtonLink>
+					}
+				/>
 
 				<div className="space-y-3">
 					<form onSubmit={applySearch} className="flex gap-2" role="search">
