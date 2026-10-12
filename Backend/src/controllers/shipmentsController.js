@@ -2210,18 +2210,65 @@ const shipmentController = {
     deleteShipment: async (req, res) => {
         try {
             const { shipment_id } = req.params;
-            const shipment = await db.shippings.findByPk(shipment_id);
+
+            /* The dashboard deletes by reference — OBN-20261012-PVN711SI — but
+               this looked the value up as a primary key, which is an integer.
+               Postgres rejected the cast before any row was read, and the catch
+               below turned that into a flat 'Error deleting shipment'. So every
+               delete from the admin list failed, and the reason never left the
+               server. Accept either form; the rest of the API is split the same
+               way, with /track/:shipment_reference beside this route. */
+            const shipment = /^\d+$/.test(String(shipment_id))
+                ? await db.shippings.findByPk(shipment_id)
+                : await db.shippings.findOne({ where: { shipment_reference: shipment_id } });
 
             if (!shipment) {
                 return res.status(404).json({ success: false, message: 'Shipment not found' });
             }
 
-            await shipment.destroy();
+            /* Nothing declares onDelete anywhere, so the database refuses to
+               remove a shipment while anything still points at it — and every
+               real shipment has items and tracking events. This is why delete
+               failed for all of them and not just some.
+            
+               Two kinds of reference, handled differently:
+            
+               items and tracking carry shipment_id NOT NULL. They describe
+               this shipment and mean nothing without it, so they go with it.
+            
+               quotes and store webhook deliveries carry it nullable. A quote
+               is what the customer was offered and a delivery is a record of
+               what we sent a store; both are true whether or not the shipment
+               still exists, so the row stays and only the link is dropped.
+            
+               webhook_logs keeps a shipment reference as a string rather than
+               a foreign key, so it neither blocks this nor needs touching. */
+            const t = await db.sequelize.transaction();
+            try {
+                const id = shipment.id;
+                await db.quotes.update({ shipment_id: null }, { where: { shipment_id: id }, transaction: t });
+                await db.store_webhook_deliveries.update({ shipment_id: null }, { where: { shipment_id: id }, transaction: t });
+                await db.shipment_tracking.destroy({ where: { shipment_id: id }, transaction: t });
+                await db.shipment_items.destroy({ where: { shipment_id: id }, transaction: t });
+                await shipment.destroy({ transaction: t });
+                await t.commit();
+            } catch (err) {
+                await t.rollback();
+                throw err;
+            }
 
             return res.status(200).json({ success: true, message: 'Shipment deleted successfully' });
         } catch (error) {
             console.error('Error deleting shipment:', error);
-            return res.status(500).json({ success: false, message: 'Error deleting shipment' });
+            /* Say what went wrong. This route is admin-only, and the previous
+               flat 'Error deleting shipment' meant the cause existed solely in
+               a server log nobody reads while the delete was being retried. */
+            const detail = error?.parent?.detail || error?.original?.detail || error?.message;
+            return res.status(500).json({
+                success: false,
+                message: 'Error deleting shipment',
+                reason: detail || undefined
+            });
         }
     }
 };
