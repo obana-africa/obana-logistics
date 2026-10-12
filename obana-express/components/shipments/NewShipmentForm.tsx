@@ -401,17 +401,35 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
 
                 {role === 'admin' && booksResult && (
                   <div className="mb-6 rounded-lg border p-3 text-left text-sm">
-                    {booksResult.invoice_number ? (
-                      <p className="text-emerald-700">
-                        <span className="font-semibold">Obana Books:</span> {booksResult.invoice_number} raised
-                        {booksResult.amount ? ` (${booksResult.posted_in || 'USD'} ${booksResult.amount})` : ''}
-                      </p>
-                    ) : (
-                      <p className="text-amber-700">
-                        <span className="font-semibold">Not sent to Obana Books:</span>{' '}
-                        {booksResult.skipped || booksResult.error || 'no reason given'}
-                      </p>
-                    )}
+                    {(() => {
+                      /* "Zoho accepted the request but returned no invoice" is
+                         the server saying Zoho took the quote — it just could
+                         not read the reference back out of the reply. Reading
+                         that as "not sent" was wrong: the quote is in Books. */
+                      const accepted = /accepted the request/i.test(String(booksResult.error ?? ''));
+                      if (booksResult.invoice_number) {
+                        return (
+                          <p className="text-emerald-700">
+                            <span className="font-semibold">Obana Books:</span> quote {booksResult.invoice_number} raised
+                            {booksResult.amount ? ` (${booksResult.posted_in || 'USD'} ${booksResult.amount})` : ''}
+                          </p>
+                        );
+                      }
+                      if (accepted) {
+                        return (
+                          <p className="text-emerald-700">
+                            <span className="font-semibold">Obana Books:</span> quote raised — Zoho did not return its
+                            reference, so look it up under this shipment number.
+                          </p>
+                        );
+                      }
+                      return (
+                        <p className="text-amber-700">
+                          <span className="font-semibold">Not sent to Obana Books:</span>{' '}
+                          {booksResult.skipped || booksResult.error || 'no reason given'}
+                        </p>
+                      );
+                    })()}
                   </div>
                 )}
 
