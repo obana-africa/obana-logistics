@@ -235,6 +235,16 @@ const invoiceShipment = async (shipment) => {
         const rate = naira?.rate ?? 1
         const amount = currency === 'NGN' ? round2(feeNgn / rate) : feeNgn
 
+        /* Obana's service charge, split off the delivery and put in Zoho's own
+           field for it, so the estimate shows the two the way the quote does.
+           Same rate as the line; the line then takes whatever the charge
+           leaves, so the estimate totals the fee exactly as before. */
+        const serviceCharge = num(shipment.metadata?.fee_breakdown?.service_charge) > 0
+            && num(shipment.metadata.fee_breakdown.service_charge) < feeNgn
+            ? round2(num(shipment.metadata.fee_breakdown.service_charge) / rate)
+            : 0
+        const lineAmount = round2(amount - serviceCharge)
+
         /* An estimate, not an invoice. It carries the same number and the same
            figures, but it is a proposal rather than a demand — so finance
            converts it to a sales order or an invoice when they are satisfied it
@@ -257,10 +267,12 @@ const invoiceShipment = async (shipment) => {
                     {
                         name: 'Obana Logistics delivery',
                         description: await describe(shipment),
-                        rate: amount,
+                        rate: lineAmount,
                         quantity: 1,
                     },
                 ],
+                /* Zoho takes this one as a string. */
+                ...(serviceCharge > 0 ? { shipping_charge: serviceCharge.toFixed(2) } : {}),
                 notes: `Raised automatically for shipment ${shipment.shipment_reference}.`,
                 custom_fields: [
                     { api_name: 'cf_shipment_id', value: shipment.shipment_reference },
