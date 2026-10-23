@@ -150,6 +150,54 @@ const buildTimeline = (plain) => {
     }));
 };
 
+/* ── The international "created" message ──────────────────────────────────────
+ *
+ * The first template says three things: who, how heavy, how much. An inbound
+ * job needs more, and needs them apart: the route, the air waybill, and the
+ * delivery and the service charge as two figures rather than one total nobody
+ * can take apart.
+ *
+ * It is a second approved template rather than a change to the first, because
+ * a template's variables are fixed once Meta approves it. Set
+ * KUDISMS_WA_CREATED_INTL_TEMPLATE and a cross-border shipment uses it; leave
+ * it unset and every message sends exactly as it does today.
+ */
+
+/* The approved code for that template, so a deploy works whether or not the
+   variable reached Render. KUDISMS_WA_CREATED_INTL_TEMPLATE overrides it, which
+   is how a replacement template gets used without a code change. */
+const DEFAULT_INTL_CREATED_TEMPLATE = '1828513205';
+
+/** "NGN 2 157 777.00" — spaces, because KudiSMS splits parameters on commas. */
+const waMoney = (currency, amount) =>
+    `${currency} ${Number(amount || 0)
+        .toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        .replace(/,/g, ' ')}`;
+
+/** "Villaverla (Italy)" — no comma, for the same reason. */
+const waPlace = (address, fallback) => {
+    const city = String(address?.city ?? '').trim();
+    const country = String(address?.country ?? '').trim();
+    if (city && country) return `${city} (${country})`;
+    return city || country || fallback;
+};
+
+/**
+ * The air waybill, from wherever it actually is.
+ *
+ * Nobody types an AWB into a field at booking — it does not exist yet. It
+ * arrives when the forwarder issues it, which is when somebody attaches the
+ * waybill and writes the number in the note beside it. So that is read first,
+ * then the carrier reference an external booking carries, and failing both the
+ * message says so: a WhatsApp template cannot be sent with an empty variable.
+ */
+const waAirWaybill = (shipment) => {
+    const documents = Array.isArray(shipment.documents) ? shipment.documents : [];
+    const awb = documents.find((d) => String(d?.kind ?? '').trim().toUpperCase() === 'AWB');
+    const fromNote = String(awb?.note ?? '').trim();
+    return fromNote || String(shipment.external_carrier_reference ?? '').trim() || 'Not yet issued';
+};
+
 const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
     try {
         const cfg = WA_EVENTS[event];
@@ -183,18 +231,67 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
         const shippingCost = `${currency} ${Number(shipment.shipping_fee || 0).toFixed(2)}`;
         const buttonParameters = [shipment.shipment_reference];      // {{1}} in track URL
 
+        /* The international template, when there is one and the lane needs it.
+           Both buttons take the reference — they differ only in the base URL
+           each one holds, so the second lands on the documents page. */
+        const intlTemplate = event === 'created'
+            ? templateCodeFor('KUDISMS_WA_CREATED_INTL_TEMPLATE') || DEFAULT_INTL_CREATED_TEMPLATE
+            : '';
+        let intlParameters = null;
+        if (intlTemplate) {
+            const pickup = shipment.pickup_address
+                || (shipment.pickup_address_id ? await db.addresses.findByPk(shipment.pickup_address_id) : null);
+            const country = (a) => String(a?.country ?? '').trim().toLowerCase();
+            if (pickup && address && country(pickup) && country(address) && country(pickup) !== country(address)) {
+                const split = shipment.metadata?.fee_breakdown;
+                const charge = Number(split?.service_charge) || 0;
+                const delivery = Number(split?.base) || Number(shipment.shipping_fee) || 0;
+                intlParameters = [
+                    customerName,                                   // {{1}}
+                    waPlace(pickup, 'the pickup address'),          // {{2}}
+                    waPlace(address, 'the delivery address'),       // {{3}}
+                    shipmentWeight,                                 // {{4}}
+                    waAirWaybill(shipment),                         // {{5}}
+                    waMoney(currency, delivery),                    // {{6}}
+                    waMoney(currency, charge),                      // {{7}}
+                    waMoney(currency, shipment.shipping_fee)        // {{8}}
+                ];
+            }
+        }
+
         // Customer: {{1}} Customer Name  {{2}} Shipment Weight  {{3}} Shipping Cost
-        const customerTemplate = templateCodeFor(cfg.customer);
+        // Cross-border, when KUDISMS_WA_CREATED_INTL_TEMPLATE is set:
+        //   {{1}} Name {{2}} From {{3}} To {{4}} Weight {{5}} AWB
+        //   {{6}} Delivery {{7}} Service charge {{8}} Total, and a second button.
+        const customerTemplate = intlParameters ? intlTemplate : templateCodeFor(cfg.customer);
         if (customerTemplate && recipientPhone) {
             // KudiSMS answers 200 even when it refuses, so the result is the only
             // thing that says whether a message was actually accepted. Logging
             // "Sent" regardless is how a rejected template goes unnoticed.
-            const sent = await sendWhatsApp({
+            let sent = await sendWhatsApp({
                 recipient: recipientPhone,
                 templateCode: customerTemplate,
-                parameters: [customerName, shipmentWeight, shippingCost],
-                buttonParameters
+                parameters: intlParameters ?? [customerName, shipmentWeight, shippingCost],
+                buttonParameters: intlParameters ? [shipment.shipment_reference, shipment.shipment_reference] : buttonParameters
             });
+
+            /* The international template refused — not approved yet, or its
+               variables do not match what is sent. The shipment is real and the
+               customer is waiting, so fall back to the template that has been
+               working rather than leave them with no message at all. The
+               rejection is still logged, so the cause is not hidden. */
+            if (!sent.success && intlParameters) {
+                const fallback = templateCodeFor(cfg.customer);
+                console.warn(`[WA ${event}] international template ${customerTemplate} refused (${sent.error ?? 'unknown'}); falling back to ${cfg.customer}`);
+                if (fallback) {
+                    sent = await sendWhatsApp({
+                        recipient: recipientPhone,
+                        templateCode: fallback,
+                        parameters: [customerName, shipmentWeight, shippingCost],
+                        buttonParameters
+                    });
+                }
+            }
             outcome.customer = sent.success ? 'sent' : `rejected: ${sent.error ?? 'unknown'}`;
             if (sent.success) console.log(`[WA ${event}] Sent to customer ${recipientPhone} for ${shipment.shipment_reference}`);
             else console.error(`[WA ${event}] KudiSMS refused the customer message for ${shipment.shipment_reference}:`, sent.error, sent.data ?? '');
