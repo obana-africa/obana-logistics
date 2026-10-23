@@ -24,10 +24,10 @@
 
 module.exports = {
     async up(queryInterface, Sequelize) {
-        const table = await queryInterface.describeTable('shipments');
+        const table = await queryInterface.describeTable('shippings');
         if (table.documents) return;
 
-        await queryInterface.addColumn('shipments', 'documents', {
+        await queryInterface.addColumn('shippings', 'documents', {
             type: Sequelize.JSONB,
             allowNull: false,
             defaultValue: [],
@@ -36,8 +36,8 @@ module.exports = {
     },
 
     async down(queryInterface) {
-        const table = await queryInterface.describeTable('shipments');
+        const table = await queryInterface.describeTable('shippings');
         if (!table.documents) return;
-        await queryInterface.removeColumn('shipments', 'documents');
+        await queryInterface.removeColumn('shippings', 'documents');
     },
 };
