@@ -168,11 +168,21 @@ const buildTimeline = (plain) => {
    is how a replacement template gets used without a code change. */
 const DEFAULT_INTL_CREATED_TEMPLATE = '1828513205';
 
-/** "NGN 2 157 777.00" — spaces, because KudiSMS splits parameters on commas. */
-const waMoney = (currency, amount) =>
-    `${currency} ${Number(amount || 0)
-        .toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        .replace(/,/g, ' ')}`;
+/**
+ * "\u20a62 157 777" — the naira sign, not the three letters.
+ *
+ * Spaces group the digits because KudiSMS splits its parameters field on
+ * commas. The kobo are dropped when there are none: route prices are whole
+ * naira, and ".00" on three figures in one message is length for nothing.
+ * Anything not in naira keeps its code, since no symbol is safe to guess.
+ */
+const waMoney = (currency, amount) => {
+    const value = Number(amount || 0);
+    const figure = value
+        .toLocaleString('en-NG', { minimumFractionDigits: Number.isInteger(value) ? 0 : 2, maximumFractionDigits: 2 })
+        .replace(/,/g, ' ');
+    return String(currency).toUpperCase() === 'NGN' ? `\u20a6${figure}` : `${currency} ${figure}`;
+};
 
 /** "Villaverla (Italy)" — no comma, for the same reason. */
 const waPlace = (address, fallback) => {
