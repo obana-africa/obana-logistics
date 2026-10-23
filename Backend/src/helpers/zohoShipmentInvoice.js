@@ -234,6 +234,32 @@ const invoiceShipment = async (shipment) => {
         }
         const rate = naira?.rate ?? 1
         const amount = currency === 'NGN' ? round2(feeNgn / rate) : feeNgn
+        /* The currency the estimate is raised in: the book's own, USD, when a
+           naira fee has been converted, otherwise the one it was sold in.
+           Recorded so a figure in the books can be read without having to know
+           which way the conversion went. (It was referenced but never declared,
+           which threw after Zoho had already accepted the estimate — so the
+           record was never written, and a retry would have raised a second
+           one.) */
+        const postedIn = currency === 'NGN' ? 'USD' : currency
+
+        /* The delivery on the line, Obana's service charge underneath it.
+        
+           Both were one number before, which made the estimate say the
+           delivery cost ten per cent more than the route it was priced from —
+           so finance could not reconcile a quote against the route table, and
+           the charge Obana earns was invisible in its own books. Zoho has a
+           field for exactly this: shipping_charge sits below the line items and
+           is added to the total, so the estimate totals the same as it did.
+        
+           Converted at the same rate as the line, then the line is set to
+           whatever the charge leaves, so rounding can never make the estimate
+           total differ from the fee the customer was quoted. */
+        const split = shipment.metadata?.fee_breakdown
+        const serviceCharge = num(split?.service_charge) > 0 && num(split?.service_charge) < feeNgn
+            ? round2(num(split.service_charge) / rate)
+            : 0
+        const lineAmount = round2(amount - serviceCharge)
 
         /* An estimate, not an invoice. It carries the same number and the same
            figures, but it is a proposal rather than a demand — so finance
@@ -257,11 +283,16 @@ const invoiceShipment = async (shipment) => {
                     {
                         name: 'Obana Logistics delivery',
                         description: await describe(shipment),
-                        rate: amount,
+                        rate: lineAmount,
                         quantity: 1,
                     },
                 ],
-                notes: `Raised automatically for shipment ${shipment.shipment_reference}.`,
+                /* Zoho wants this one as a string. */
+                ...(serviceCharge > 0 ? { shipping_charge: serviceCharge.toFixed(2) } : {}),
+                notes: `Raised automatically for shipment ${shipment.shipment_reference}.`
+                    + (serviceCharge > 0
+                        ? ` Delivery ${postedIn} ${lineAmount.toFixed(2)} plus a ${split?.percent ? `${split.percent}% ` : ''}service charge of ${postedIn} ${serviceCharge.toFixed(2)}.`
+                        : ''),
                 custom_fields: [
                     { api_name: 'cf_shipment_id', value: shipment.shipment_reference },
                     { api_name: 'cf_tracking_url', value: trackingUrl(shipment.shipment_reference) },
@@ -270,13 +301,26 @@ const invoiceShipment = async (shipment) => {
             },
         })
 
-        const created = invoice?.invoice
-        if (!created?.invoice_id) return { error: 'Zoho accepted the request but returned no invoice' }
+        /* An estimate comes back under `estimate`. Reading `invoice` meant this
+           returned "Zoho accepted the request but returned no invoice" every
+           single time — while the estimate sat in Books, correctly raised. The
+           record was then never saved, so the guard against raising a second
+           one for the same shipment had nothing to find. `invoice` is still
+           read as a fallback in case this is ever pointed at the invoices
+           endpoint. */
+        const created = invoice?.estimate || invoice?.invoice
+        const createdId = created?.estimate_id || created?.invoice_id
+        if (!createdId) return { error: 'Zoho accepted the request but returned no estimate' }
+        const createdNumber = created.estimate_number || created.invoice_number
 
         const record = {
-            invoice_id: String(created.invoice_id),
-            invoice_number: created.invoice_number,
+            estimate_id: String(createdId),
+            estimate_number: createdNumber,
+            /* The dashboard reads invoice_number; kept so it still shows. */
+            invoice_number: createdNumber,
             amount,
+            line_amount: lineAmount,
+            service_charge: serviceCharge,
             currency_charged: currency,
             posted_in: postedIn,
             billed_to: customer.email || customer.phone || customer.name,
@@ -287,8 +331,9 @@ const invoiceShipment = async (shipment) => {
         await shipment.update({ metadata: { ...(shipment.metadata || {}), books_invoice: record } }).catch(() => {})
 
         console.log(
-            `[BOOKS ESTIMATE] ${shipment.shipment_reference} → ${created.estimate_number} ` +
-                `(₦${feeNgn} @ ${rate.toFixed(2)} = $${amount})`
+            `[BOOKS ESTIMATE] ${shipment.shipment_reference} → ${createdNumber} ` +
+                `(₦${feeNgn} @ ${rate.toFixed(2)} = ${postedIn} ${amount}` +
+                `${serviceCharge > 0 ? `, of which ${serviceCharge.toFixed(2)} service charge` : ''})`
         )
         return { estimated: true, ...record }
     } catch (error) {

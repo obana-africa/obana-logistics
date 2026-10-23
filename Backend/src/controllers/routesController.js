@@ -535,15 +535,33 @@ const priceTemplate = (template, weight) => {
     const basePrice = Number(bracket.price || 0);
 
     const match = { ...bracket };
+    let base = basePrice;
     if (isOverweight && maxWeight > 0) {
-        match.price = basePrice + ((weight - maxWeight) * basePrice) / maxWeight;
+        base = basePrice + ((weight - maxWeight) * basePrice) / maxWeight;
         match.is_overweight = true;
-    } else {
-        match.price = basePrice;
     }
-    // Obana's margin on its own routes, applied once to the total (partner rates have their own markup).
-    // Round to kobo first so float noise (11000 × 1.1 = 12100.000000000002) doesn't add a naira.
-    match.price = Math.ceil(Math.round(match.price * (1 + routeMarkupPercent() / 100) * 100) / 100);
+
+    /* Obana's service charge, as its own figure rather than folded into the
+       price (partner rates have their own markup, applied where they are
+       priced).
+
+       It used to be multiplied into the number before anyone saw it, which made
+       a quote impossible to check: a 131 kg job entered at ₦2,157,557 showed as
+       ₦2,373,313 and nothing on the screen or in the books said where the
+       difference came from. It is the same money either way — the customer was
+       always paying it, and it is on Obana's own quotes as a line — so the fix
+       is to show it, not to stop charging it.
+
+       Kept separate all the way through: the quote, the booking form and the
+       Books estimate each take the two numbers and put the charge where it
+       belongs. The lines add up to the total exactly, because a quote whose
+       parts do not sum is worse than one that rounds a naira oddly. */
+    const kobo = (v) => Math.round(v * 100) / 100;
+    const percent = routeMarkupPercent();
+    match.base_price = Math.ceil(kobo(base));
+    match.service_charge_percent = percent;
+    match.service_charge = Math.ceil(kobo((match.base_price * percent) / 100));
+    match.price = match.base_price + match.service_charge;
     return match;
 };
 
@@ -606,6 +624,10 @@ const laneOptions = (routeTemplates, origin_state, origin_country, destination_s
             id: `obana-${service.transport_mode}-${service.service_level.toLowerCase()}`,
             ...service,
             price: Math.ceil(Number(match.price)),
+            /* The two halves of that price, for the screen and for the books. */
+            base_price: Math.ceil(Number(match.base_price ?? match.price)),
+            service_charge: Math.ceil(Number(match.service_charge ?? 0)),
+            service_charge_percent: Number(match.service_charge_percent ?? 0),
             eta: match.eta || null,
             estimated_delivery: deliveryTimeRange(match.eta),
             preferred_driver: driverSummary(template.preferred_driver)
@@ -759,6 +781,12 @@ const matchTemplate = async (req, res) => {
             if (isDomesticNigeria && isDeliveryToFulfilmentCentre) {
                 match.price = 2000;
                 match.is_fulfilment_centre_handling_fee = true;
+                /* A flat handling fee is the whole of it. The split belonged to
+                   the route price this replaced, and leaving it would show two
+                   parts that do not add up to the two thousand being charged. */
+                match.base_price = 2000;
+                match.service_charge = 0;
+                match.service_charge_percent = 0;
             }
             match.estimated_delivery = deliveryTimeRange(match.eta)
             shipmentResults.push({
@@ -1046,7 +1074,10 @@ const buildQuoteOptions = async ({ origin, destination, originCode, destCode, we
             transport_mode: o.transport_mode,
             service_level: o.service_level,
             eta: o.eta,
-            price: o.price
+            price: o.price,
+            base_price: o.base_price ?? o.price,
+            service_charge: o.service_charge ?? 0,
+            service_charge_percent: o.service_charge_percent ?? 0
         })
     }
 
@@ -1081,7 +1112,13 @@ const buildQuoteOptions = async ({ origin, destination, originCode, destCode, we
                         transport_mode: null,
                         service_level: null,
                         eta: p.rate.delivery_time || null,
-                        price: p.price
+                        price: p.price,
+                        /* A partner's markup is applied where the rate is
+                           priced and is not a line of ours, so there is
+                           nothing to break out here. */
+                        base_price: p.price,
+                        service_charge: 0,
+                        service_charge_percent: 0
                     })
                 })
             }

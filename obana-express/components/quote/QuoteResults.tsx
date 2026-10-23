@@ -124,6 +124,16 @@ function OptionCard({
 						{shown}
 					</p>
 					{converted && <p className="mt-0.5 text-sm text-slate-500">charged {charged}</p>}
+					{/* What the price is made of. Shown in naira even when the
+					    headline figure is converted, because that is the
+					    currency the two parts were worked out in. */}
+					{!!option.service_charge && !!option.base_price && (
+						<p className="mt-1 text-slate-500 text-xs tabular-nums">
+							{formatMoney(option.base_price, "NGN")} delivery +{" "}
+							{formatMoney(option.service_charge, "NGN")}{" "}
+							{option.service_charge_percent ? `${option.service_charge_percent}% service charge` : "service charge"}
+						</p>
+					)}
 				</div>
 			</div>
 
