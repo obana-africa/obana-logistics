@@ -10,12 +10,13 @@ import { useRemote } from '@/lib/useRemote';
 import { clearPendingQuote } from '@/components/quote/quote';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Check, Package, MapPin, Truck, Clock, AlertCircle, X, MessageCircle, Mail, PackageSearch } from 'lucide-react';
+import { Check, Package, MapPin, Truck, Clock, AlertCircle, X, MessageCircle, Mail, PackageSearch, Download } from 'lucide-react';
 import { SUPPORT_EMAIL, supportPhoneDisplay, whatsappLink } from '@/lib/site';
 import { LocationInput } from '@/components/LocationInput';
 import PhoneInput from '@/components/PhoneInput';
 import DocumentPicker from '@/components/shipments/DocumentPicker';
 import { asDataUrl, type PendingDocument, uploadFailureReason } from '@/lib/shipmentDocuments';
+import { printShipmentSummary } from '@/lib/shipmentSummaryPdf';
 
 // Arriving from the public quote page (?pickup_city=…&delivery_city=…&weight=4.5): start with that route and weight.
 const subscribeNothing = () => () => {};
@@ -200,8 +201,11 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
       name: item.name.trim(),
       quantity: parseInt(item.quantity) || 1,
       weight: parseFloat(item.weight) || 0.5,
-      price: parseFloat(item.price),
-      total_price: parseFloat(item.price),
+      /* Zero, never NaN: JSON turns NaN into null and the columns behind these
+         two are NOT NULL, so a blank box would be refused by the database
+         rather than simply left unsaid. */
+      price: parseFloat(item.price) || 0,
+      total_price: parseFloat(item.price) || 0,
     }));
 
   /* What the sender is trying to do, in a sentence — so a message to us
@@ -270,7 +274,10 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
     if (!emailOk(d.email)) e['delivery.email'] = 'Enter a valid email address.';
     formData.items.forEach((item, i) => {
       if (!item.name.trim()) e[`item.${i}.name`] = 'Enter what this item is.';
-      if (!(parseFloat(item.price) > 0)) e[`item.${i}.price`] = 'Enter the item value.';
+      /* What it is worth is not asked for. It buys cover if the parcel goes
+         missing and nothing else — it does not price the delivery, which is
+         done on weight — so a sender who does not know, or would rather not
+         say, is not stopped at the door for it. */
       if (!(parseFloat(item.weight) > 0)) e[`item.${i}.weight`] = 'Enter the weight in kg.';
     });
     return e;
@@ -343,6 +350,44 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
       }
       setDocStatus({ done: i + 1, total: pendingDocs.length, failed: [...failed] });
     }
+  };
+
+  /**
+   * The review screen as a document, for keeping or sending on.
+   *
+   * Built from the same values the screen is showing rather than fetched
+   * again, so the paper and the page can never disagree about the price.
+   */
+  const downloadSummary = () => {
+    if (!selected) return;
+    const place = (a: { line1?: string; city?: string; state?: string; country?: string; name?: string; contact_name?: string; phone?: string }) =>
+      [a.name || a.contact_name, a.line1, [a.city, a.state].filter(Boolean).join(', '), a.country, a.phone].filter(Boolean) as string[];
+
+    const charges = selected.base_price && selected.service_charge
+      ? [
+          { label: 'Delivery', value: formatMoney(selected.base_price, 'NGN') },
+          { label: chargeLabel(selected), value: formatMoney(selected.service_charge, 'NGN') },
+          { label: 'Total', value: formatMoney(selected.price, 'NGN'), strong: true },
+        ]
+      : [{ label: 'Shipping cost', value: formatMoney(selected.price, 'NGN'), strong: true }];
+
+    const opened = printShipmentSummary({
+      reference: newShipmentInfo?.shipment_reference ?? null,
+      route: `${formData.pickup_address.city}, ${formData.pickup_address.state} → ${formData.delivery_address.city}, ${formData.delivery_address.state}`,
+      service: serviceLabel(selected),
+      weight: `${shipmentWeight.toFixed(2)} kg`,
+      charges,
+      pickup: place(formData.pickup_address),
+      delivery: place(formData.delivery_address),
+      items: formData.items
+        .filter((i) => i.name.trim())
+        .map((i) => ({
+          name: i.name.trim(),
+          weight: `${parseFloat(i.weight) || 0} kg`,
+          value: i.price ? formatMoney(parseFloat(i.price) || 0, 'NGN') : '—',
+        })),
+    });
+    if (!opened) showError('Your browser blocked the download window. Allow pop-ups for this site and try again.');
   };
 
   const handleCreateShipment = async () => {
@@ -750,7 +795,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                   <Package className="h-5 w-5 text-purple-600" />
                   What you&apos;re sending
                 </h3>
-                <p className="text-sm text-gray-600 mb-5">Weight sets the price, so give us the packed weight if you can. Value is what we cover if it goes missing.</p>
+                <p className="text-sm text-gray-600 mb-5">Weight sets the price, so give us the packed weight if you can. Value is optional — it is what we cover if the parcel goes missing.</p>
 
                 <div className="space-y-4">
                   {formData.items.map((item, index) => (
@@ -790,14 +835,13 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                           required
                         />
                         <Input
-                          label="What is it worth? (₦)"
+                          label="What is it worth? (₦, optional)"
                           error={fieldErrors[`item.${index}.price`]}
                           type="number"
                           step="0.01"
-                          placeholder="0.00"
+                          placeholder="Leave blank if you'd rather not say"
                           value={item.price}
                           onChange={(e) => setItem(index, { price: e.target.value })}
-                          required
                         />
                       </div>
                     </div>
@@ -1024,7 +1068,11 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                       </div>
                       <div className="text-right text-sm ml-4">
                         <p className="font-semibold text-gray-900">{item.weight} kg</p>
-                        <p className="text-gray-600 mt-1">{formatMoney(parseFloat(item.price || '0'), 'NGN')} each</p>
+                        {/* Blank rather than ₦0.00: an unstated value is not a
+                            worthless parcel. */}
+                        {parseFloat(item.price) > 0 && (
+                          <p className="text-gray-600 mt-1">{formatMoney(parseFloat(item.price), 'NGN')} each</p>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1041,6 +1089,14 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                 >
                   ✓ Confirm & Create Shipment
                 </Button>
+                <button
+                  type="button"
+                  onClick={downloadSummary}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border-2 border-slate-300 px-4 py-3 font-semibold text-slate-700 text-sm transition-colors hover:bg-slate-50"
+                >
+                  <Download className="h-4 w-4" aria-hidden />
+                  Download summary (PDF)
+                </button>
                 <Button onClick={() => setStep('match')} fullWidth variant="secondary">
                   ← Back to Prices
                 </Button>

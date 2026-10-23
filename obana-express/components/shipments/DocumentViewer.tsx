@@ -1,8 +1,8 @@
 "use client";
 
-import { X } from "lucide-react";
-import { useEffect } from "react";
-import type { ShipmentDocument } from "@/lib/shipmentDocuments";
+import { Download, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { type ShipmentDocument, downloadUrl, isPdf, previewUrl } from "@/lib/shipmentDocuments";
 
 /**
  * A photograph, opened where it was listed.
@@ -14,6 +14,11 @@ import type { ShipmentDocument } from "@/lib/shipmentDocuments";
  * where a browser reads one properly.
  */
 export function DocumentViewer({ doc, onClose }: { doc: ShipmentDocument; onClose: () => void }) {
+	/* Set when the picture itself will not load — a file type the account does
+	   not serve, a link that has expired. Better to say so and offer the file
+	   than leave a broken-image mark on a black screen. */
+	const [failed, setFailed] = useState(false);
+	const pdf = isPdf(doc);
 	/* Escape closes it, and the page underneath does not scroll while it is
 	   open — both are what anyone who has used one of these expects. */
 	useEffect(() => {
@@ -45,6 +50,17 @@ export function DocumentViewer({ doc, onClose }: { doc: ShipmentDocument; onClos
 					)}
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
+					{/* Saved rather than opened: the download attribute is ignored
+					    across origins, so the link carries fl_attachment instead. */}
+					<a
+						href={downloadUrl(doc.url)}
+						download={doc.name}
+						onClick={(e) => e.stopPropagation()}
+						className="inline-flex items-center gap-1.5 rounded-lg border border-white/30 px-3 py-1.5 font-medium text-xs transition-colors hover:bg-white/10"
+					>
+						<Download className="h-3.5 w-3.5" aria-hidden />
+						Download
+					</a>
 					{/* The full file, for printing or sending on. */}
 					<a
 						href={doc.url}
@@ -65,14 +81,42 @@ export function DocumentViewer({ doc, onClose }: { doc: ShipmentDocument; onClos
 					</button>
 				</div>
 			</div>
-			{/* Clicks on the picture itself keep it open; the backdrop closes it. */}
-			{/* eslint-disable-next-line @next/next/no-img-element */}
-			<img
-				src={doc.url}
-				alt={doc.name}
-				onClick={(e) => e.stopPropagation()}
-				className="min-h-0 flex-1 cursor-default rounded-lg bg-white/5 object-contain"
-			/>
+			{/* Clicks on the picture itself keep it open; the backdrop closes it.
+			    A PDF is drawn by Cloudinary as its first page — what somebody
+			    checking "is this the right waybill?" wants, and it arrives in a
+			    moment rather than as a download. */}
+			{failed ? (
+				<div
+					onClick={(e) => e.stopPropagation()}
+					className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-lg bg-white/5 p-6 text-center"
+				>
+					<p className="text-sm text-white/80">This one cannot be shown here.</p>
+					<a
+						href={downloadUrl(doc.url)}
+						download={doc.name}
+						className="inline-flex items-center gap-1.5 rounded-lg bg-white px-4 py-2 font-semibold text-slate-900 text-sm"
+					>
+						<Download className="h-4 w-4" aria-hidden />
+						Download it instead
+					</a>
+				</div>
+			) : (
+				<>
+					{/* eslint-disable-next-line @next/next/no-img-element */}
+					<img
+						src={previewUrl(doc.url)}
+						alt={doc.name}
+						onError={() => setFailed(true)}
+						onClick={(e) => e.stopPropagation()}
+						className="min-h-0 flex-1 cursor-default rounded-lg bg-white/5 object-contain"
+					/>
+					{pdf && (
+						<p className="mt-2 shrink-0 text-center text-white/50 text-xs">
+							First page. Download for the whole document.
+						</p>
+					)}
+				</>
+			)}
 		</div>
 	);
 }

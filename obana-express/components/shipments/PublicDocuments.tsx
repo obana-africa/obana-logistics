@@ -1,8 +1,14 @@
 "use client";
 
-import { FileText, Paperclip } from "lucide-react";
+import { Download, FileText, Paperclip } from "lucide-react";
 import { useState } from "react";
-import { type ShipmentDocument, documentDate, isImage, thumbUrl } from "@/lib/shipmentDocuments";
+import {
+	type ShipmentDocument,
+	canPreview,
+	documentDate,
+	downloadUrl,
+	thumbUrl,
+} from "@/lib/shipmentDocuments";
 import { DocumentViewer } from "./DocumentViewer";
 
 /**
@@ -39,10 +45,10 @@ export function PublicDocuments({
 			</h3>
 			<ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
 				{docs.map((d) => {
-					const picture = isImage(d);
+					const shows = canPreview(d);
 					return (
 						<li key={d.id || d.url} className="flex items-center gap-3 bg-white px-3 py-2.5">
-							{picture ? (
+							{shows ? (
 								<button
 									type="button"
 									onClick={() => setViewing(d)}
@@ -69,7 +75,7 @@ export function PublicDocuments({
 										{d.kind}
 									</span>
 								)}
-								{picture ? (
+								{shows ? (
 									<button
 										type="button"
 										onClick={() => setViewing(d)}
@@ -93,6 +99,18 @@ export function PublicDocuments({
 									</p>
 								)}
 							</div>
+							{/* Saved, not opened — fl_attachment, because the download
+							    attribute does nothing across origins. */}
+							<a
+								href={downloadUrl(d.url)}
+								download={d.name}
+								onClick={(e) => e.stopPropagation()}
+								aria-label={`Download ${d.name}`}
+								title="Download"
+								className="shrink-0 rounded-md p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+							>
+								<Download className="h-4 w-4" aria-hidden />
+							</a>
 						</li>
 					);
 				})}
