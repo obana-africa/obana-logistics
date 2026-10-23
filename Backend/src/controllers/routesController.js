@@ -530,30 +530,52 @@ const normalizeState = (value) => {
     return STATE_ALIASES[s] || s
 }
 
-// How well one end of a template fits a place: 2 = same state; 1 = same country, when that end is outside
-// Nigeria (we price abroad per country) or the template covers the whole country (metadata.<side>_any_state).
-const endFit = (meta, side, state, countryCode) => {
+// How well one end of a template fits a place: 2 = same state; 1 = same country, when the lane is
+// priced country to country (see laneTemplates), that end is outside Nigeria, or the template covers
+// the whole country (metadata.<side>_any_state).
+const endFit = (meta, side, state, countryCode, countryOnly = false) => {
     const tCountry = normalizeText(formatCountryCode(meta[`${side}_country_code`] || meta[`${side}_country`]))
     if (!meta[`${side}_country_code`] && !meta[`${side}_country`]) return 0
     if (tCountry !== countryCode) return 0
     if (normalizeState(meta[`${side}_state`]) === state) return 2
-    return countryCode !== 'ng' || meta[`${side}_any_state`] ? 1 : 0
+    return countryOnly || countryCode !== 'ng' || meta[`${side}_any_state`] ? 1 : 0
 }
 
 /**
  * Every template that serves this lane, best-fitting first. Templates flagged metadata.bidirectional
  * also serve the reverse direction (e.g. Lagos → Kano prices Kano → Lagos too).
+ *
+ * A lane that crosses a border is matched country to country, on both ends. One Italy → Nigeria
+ * route therefore covers Milan and Villaverla alike, and Lagos and Port Harcourt alike: what decides
+ * the cost of a cross-border job is the flight, and saying so should not take a row for every pair of
+ * states — Italy to Nigeria alone would be twenty provinces times thirty-seven states. Before this,
+ * an import priced from Italy reached Lagos and nowhere else, and the shipment that prompted it —
+ * Villaverla to Port Harcourt — could not be quoted at all.
+ *
+ * A lane inside one country still matches on state, because Lagos → Kano and Lagos → Ogun are
+ * genuinely different prices, and nothing about those two thousand rows changes.
+ *
+ * Fit is the two ends added together, so the more specific route still wins: with a route to Lagos
+ * and a route to Rivers both on the books, a parcel to Port Harcourt takes the Rivers one.
  */
 const laneTemplates = (routeTemplates, origin_state, origin_country, destination_state, destination_country) => {
     const oState = normalizeState(origin_state)
     const dState = normalizeState(destination_state)
     const oCountry = normalizeText(formatCountryCode(origin_country))
     const dCountry = normalizeText(formatCountryCode(destination_country))
+    const countryOnly = oCountry !== dCountry
     const lane = []
     for (const t of routeTemplates) {
         const meta = t.metadata || {}
-        const forward = Math.min(endFit(meta, 'origin', oState, oCountry), endFit(meta, 'destination', dState, dCountry))
-        const reverse = meta.bidirectional ? Math.min(endFit(meta, 'origin', dState, dCountry), endFit(meta, 'destination', oState, oCountry)) : 0
+        /* Both ends have to fit, so a miss on either is a miss. */
+        const fitBoth = (aState, aCountry, bState, bCountry) => {
+            const a = endFit(meta, 'origin', aState, aCountry, countryOnly)
+            if (!a) return 0
+            const b = endFit(meta, 'destination', bState, bCountry, countryOnly)
+            return b ? a + b : 0
+        }
+        const forward = fitBoth(oState, oCountry, dState, dCountry)
+        const reverse = meta.bidirectional ? fitBoth(dState, dCountry, oState, oCountry) : 0
         const fit = Math.max(forward, reverse)
         if (fit > 0) lane.push({ template: t, fit })
     }
