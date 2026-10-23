@@ -141,7 +141,7 @@ Authorization: Bearer <your store key>
 			<DefList
 				rows={[
 					{ term: "No prices at checkout", children: <>Check that <strong>Turn on at checkout</strong> is on. Connecting alone does not change checkout.</> },
-					{ term: '"No Obana route for this lane"', children: <>Obana quotes lanes it runs. The message names the lane so it can be priced — send it to support.</> },
+					{ term: '"We don\'t deliver from … to … yet"', children: <>Obana quotes lanes it runs. The reply carries <strong>code: route_unavailable</strong> and names the lane, so it can be shown to a shopper as it stands or sent to us to be priced.</> },
 					{ term: "A shipment was refused", children: <>Almost always a missing delivery phone number. A courier cannot collect without one.</> },
 					{ term: "The key stopped working", children: <>Rotating a key in Obana does not update Thaja. Paste the new one and save again.</> },
 				]}
