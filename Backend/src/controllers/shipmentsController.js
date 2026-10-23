@@ -2196,7 +2196,16 @@ const shipmentController = {
                     stored = await uploadDocument(file, `shipments/${shipment.shipment_reference || shipment.id}`);
                 } catch (err) {
                     console.error('Shipment document upload failed:', err);
-                    return res.status(502).json({ success: false, message: 'That file could not be uploaded. Please try again.' });
+                    /* Cloudinary's reason, passed on. "Please try again" is the
+                       wrong advice when the cause is a file type the account
+                       refuses or a key nobody set, and retrying forever is what
+                       people do when nothing tells them otherwise. */
+                    const reason = err?.reason ? ` ${err.reason}` : '';
+                    return res.status(502).json({
+                        success: false,
+                        message: `That file could not be uploaded.${reason}`,
+                        reason: err?.reason ?? null
+                    });
                 }
             }
 
