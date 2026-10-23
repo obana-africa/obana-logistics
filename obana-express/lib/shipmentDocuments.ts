@@ -89,11 +89,16 @@ export const uploadFailureReason = (err: unknown) => {
 	const e = err as { response?: { status?: number; data?: { message?: string } }; message?: string };
 	const status = e?.response?.status;
 	const said = e?.response?.data?.message;
+	/* 413 first: Express rejects an oversized body before any route runs, so
+	   there is no message of ours to read — only the status says what happened. */
 	if (status === 413) return "the file is too large to send — attach a smaller copy";
+	/* Otherwise the server's own words win, because they name the cause where a
+	   status cannot: an unsupported file type, a size over the plan's limit, a
+	   credential nobody set. */
+	if (said) return said;
 	if (status === 403) return "you cannot attach to this shipment";
 	if (status === 404) return "the shipment could not be found";
-	if (status === 502) return "the upload service refused it — try again";
-	if (said) return said;
+	if (status === 502) return "the upload service refused it";
 	if (!status) return "we could not reach the server";
 	return `the server answered ${status}`;
 };
