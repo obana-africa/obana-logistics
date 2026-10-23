@@ -130,6 +130,31 @@ export function RouteFormSheet({
 							placeholder="Origin city"
 						/>
 						{shown?.origin && <p className="mt-1.5 text-sm text-rose-600">{shown.origin}</p>}
+						{/* One route for a whole country. Pricing has always honoured
+						    this — endFit treats the end as a match on country alone —
+						    but nothing could set it, so a route meant to cover
+						    "anywhere in Nigeria" had to be created state by state, and
+						    the one state nobody had got to failed the quote. */}
+						<label className="mt-2 flex items-start gap-2 text-sm">
+							<input
+								type="checkbox"
+								className="mt-0.5"
+								checked={Boolean(form.origin.anyState)}
+								onChange={(e) =>
+									setForm((prev) => ({
+										...prev,
+										origin: { ...prev.origin, anyState: e.target.checked },
+									}))
+								}
+							/>
+							<span>
+								Serves the whole country
+								<span className="block text-muted-foreground text-xs">
+									Any state in {form.origin.country || "this country"}, not just{" "}
+									{form.origin.state || "the state above"}.
+								</span>
+							</span>
+						</label>
 					</div>
 					<div data-invalid={shown?.destination ? "true" : undefined}>
 						<LocationInput
@@ -140,6 +165,31 @@ export function RouteFormSheet({
 							placeholder="Destination city"
 						/>
 						{shown?.destination && <p className="mt-1.5 text-sm text-rose-600">{shown.destination}</p>}
+						{/* One route for a whole country. Pricing has always honoured
+						    this — endFit treats the end as a match on country alone —
+						    but nothing could set it, so a route meant to cover
+						    "anywhere in Nigeria" had to be created state by state, and
+						    the one state nobody had got to failed the quote. */}
+						<label className="mt-2 flex items-start gap-2 text-sm">
+							<input
+								type="checkbox"
+								className="mt-0.5"
+								checked={Boolean(form.destination.anyState)}
+								onChange={(e) =>
+									setForm((prev) => ({
+										...prev,
+										destination: { ...prev.destination, anyState: e.target.checked },
+									}))
+								}
+							/>
+							<span>
+								Serves the whole country
+								<span className="block text-muted-foreground text-xs">
+									Any state in {form.destination.country || "this country"}, not just{" "}
+									{form.destination.state || "the state above"}.
+								</span>
+							</span>
+						</label>
 					</div>
 				</Section>
 

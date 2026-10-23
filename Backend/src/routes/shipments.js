@@ -21,6 +21,12 @@ router.get('/track/:shipment_reference', auth.authenticateToken, controller.getS
     router.get('/users/:user_id', auth.authenticateToken, auth.verifyRole(['admin', 'driver', 'agent', 'customer']), controller.getUserShipments);
  
     router.put('/status/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin','driver','agent']), controller.updateShipmentStatus);
+    /* The papers a shipment is about. Anyone who may see the shipment may see
+       its documents; attaching is for the people who handle it. */
+    router.get('/:shipment_id/documents', auth.authenticateToken, auth.verifyRole(['admin', 'driver', 'agent', 'customer']), controller.listShipmentDocuments);
+    router.post('/:shipment_id/documents', auth.authenticateToken, auth.verifyRole(['admin', 'agent', 'driver']), controller.addShipmentDocument);
+    router.delete('/:shipment_id/documents/:document_id', auth.authenticateToken, auth.verifyRole(['admin', 'agent']), controller.removeShipmentDocument);
+
     router.put('/:shipment_id/assign-driver', auth.authenticateToken, auth.verifyRole(['admin', 'agent']), controller.assignDriver);
     router.post('/confirm-external/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin']), controller.confirmExternalShipment);
     router.post('/push-to-partner/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin']), controller.pushToPartner);

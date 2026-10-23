@@ -19,4 +19,24 @@ const uploadImage = async (fileStr, folder) => {
     }
 };
 
-module.exports = { uploadImage };
+/**
+ * Any file a shipment carries — a waybill PDF, a packing list, a photograph.
+ *
+ * `resource_type: 'auto'` is the difference from uploadImage above: without
+ * it Cloudinary treats everything as an image and a PDF comes back as a
+ * broken one. Shipment papers are mostly PDFs.
+ */
+const uploadDocument = async (fileStr, folder) => {
+    try {
+        const uploaded = await cloudinary.uploader.upload(fileStr, {
+            folder,
+            resource_type: 'auto',
+        });
+        return uploaded.secure_url;
+    } catch (err) {
+        console.error('Cloudinary Upload Error:', err);
+        throw new Error('Failed to upload the document to Cloudinary');
+    }
+};
+
+module.exports = { uploadImage, uploadDocument };

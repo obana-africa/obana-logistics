@@ -522,6 +522,29 @@ class ApiClient {
     return response.data;
   }
 
+  /* The papers a shipment is about: waybills, invoices, photographs of the
+     goods. `file` is a data URL; the API puts it in Cloudinary and keeps the
+     link on the shipment. */
+  async listShipmentDocuments(shipmentId: string | number) {
+    const response = await this.client.get<ApiResponse>(`/shipments/${shipmentId}/documents`);
+    return response.data;
+  }
+
+  async addShipmentDocument(
+    shipmentId: string | number,
+    doc: { file?: string; url?: string; name: string; kind?: string; note?: string },
+  ) {
+    const response = await this.client.post<ApiResponse>(`/shipments/${shipmentId}/documents`, doc);
+    return response.data;
+  }
+
+  async removeShipmentDocument(shipmentId: string | number, documentId: string) {
+    const response = await this.client.delete<ApiResponse>(
+      `/shipments/${shipmentId}/documents/${documentId}`,
+    );
+    return response.data;
+  }
+
   
   async getPublicShipment(id: string) {
     const response = await this.client.get<ApiResponse>(`/shipments/public/track/${id}`);
