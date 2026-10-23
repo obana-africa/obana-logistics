@@ -163,6 +163,11 @@ const buildTimeline = (plain) => {
  * it unset and every message sends exactly as it does today.
  */
 
+/* The approved code for that template, so a deploy works whether or not the
+   variable reached Render. KUDISMS_WA_CREATED_INTL_TEMPLATE overrides it, which
+   is how a replacement template gets used without a code change. */
+const DEFAULT_INTL_CREATED_TEMPLATE = '1828513205';
+
 /** "NGN 2 157 777.00" — spaces, because KudiSMS splits parameters on commas. */
 const waMoney = (currency, amount) =>
     `${currency} ${Number(amount || 0)
@@ -229,7 +234,9 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
         /* The international template, when there is one and the lane needs it.
            Both buttons take the reference — they differ only in the base URL
            each one holds, so the second lands on the documents page. */
-        const intlTemplate = event === 'created' ? templateCodeFor('KUDISMS_WA_CREATED_INTL_TEMPLATE') : '';
+        const intlTemplate = event === 'created'
+            ? templateCodeFor('KUDISMS_WA_CREATED_INTL_TEMPLATE') || DEFAULT_INTL_CREATED_TEMPLATE
+            : '';
         let intlParameters = null;
         if (intlTemplate) {
             const pickup = shipment.pickup_address
@@ -261,12 +268,30 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
             // KudiSMS answers 200 even when it refuses, so the result is the only
             // thing that says whether a message was actually accepted. Logging
             // "Sent" regardless is how a rejected template goes unnoticed.
-            const sent = await sendWhatsApp({
+            let sent = await sendWhatsApp({
                 recipient: recipientPhone,
                 templateCode: customerTemplate,
                 parameters: intlParameters ?? [customerName, shipmentWeight, shippingCost],
                 buttonParameters: intlParameters ? [shipment.shipment_reference, shipment.shipment_reference] : buttonParameters
             });
+
+            /* The international template refused — not approved yet, or its
+               variables do not match what is sent. The shipment is real and the
+               customer is waiting, so fall back to the template that has been
+               working rather than leave them with no message at all. The
+               rejection is still logged, so the cause is not hidden. */
+            if (!sent.success && intlParameters) {
+                const fallback = templateCodeFor(cfg.customer);
+                console.warn(`[WA ${event}] international template ${customerTemplate} refused (${sent.error ?? 'unknown'}); falling back to ${cfg.customer}`);
+                if (fallback) {
+                    sent = await sendWhatsApp({
+                        recipient: recipientPhone,
+                        templateCode: fallback,
+                        parameters: [customerName, shipmentWeight, shippingCost],
+                        buttonParameters
+                    });
+                }
+            }
             outcome.customer = sent.success ? 'sent' : `rejected: ${sent.error ?? 'unknown'}`;
             if (sent.success) console.log(`[WA ${event}] Sent to customer ${recipientPhone} for ${shipment.shipment_reference}`);
             else console.error(`[WA ${event}] KudiSMS refused the customer message for ${shipment.shipment_reference}:`, sent.error, sent.data ?? '');
