@@ -44,12 +44,54 @@ export const asDataUrl = (file: File) =>
 	});
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|heic|heif|tiff?)(\?|#|$)/i;
+const PDF_EXT = /\.pdf(\?|#|$)/i;
 
-/** Is this one worth showing rather than only linking? */
-export const isImage = (doc: { url?: string; name?: string }) =>
-	IMAGE_EXT.test(doc.url ?? "") ||
-	IMAGE_EXT.test(doc.name ?? "") ||
-	/res\.cloudinary\.com\/[^/]+\/image\/upload\//.test(doc.url ?? "");
+const isCloudinary = (url?: string) => /res\.cloudinary\.com\/[^/]+\/(image|raw)\/upload\//.test(url ?? "");
+
+/** A PDF, by either its link or the name it was attached under. */
+export const isPdf = (doc: { url?: string; name?: string }) =>
+	PDF_EXT.test(doc.url ?? "") || PDF_EXT.test(doc.name ?? "");
+
+/**
+ * A picture — one an <img> can actually render.
+ *
+ * The extension decides, and it decides against a PDF first. Cloudinary stores
+ * a PDF under /image/upload/ like everything else it can rasterise, so taking
+ * that path as proof of an image put waybills into an <img> tag, where they
+ * came out as a broken-image mark on a dark screen. A Cloudinary path is only
+ * read as a hint once the obvious non-images are ruled out.
+ */
+export const isImage = (doc: { url?: string; name?: string }) => {
+	if (isPdf(doc)) return false;
+	if (IMAGE_EXT.test(doc.url ?? "") || IMAGE_EXT.test(doc.name ?? "")) return true;
+	return isCloudinary(doc.url) && !/\.(zip|docx?|xlsx?|csv|txt)(\?|#|$)/i.test(doc.url ?? "");
+};
+
+/** Anything we can show on the page rather than hand to another tab. */
+export const canPreview = (doc: { url?: string; name?: string }) => isImage(doc) || (isPdf(doc) && isCloudinary(doc.url));
+
+/**
+ * What to put in the <img> when the document is opened.
+ *
+ * A PDF is not an image, but Cloudinary will draw its first page as one, which
+ * is what somebody checking "is this the right waybill?" actually wants — and
+ * it arrives in a moment rather than as a download. The original is always one
+ * tap away for the rest of the pages.
+ */
+export const previewUrl = (url: string) =>
+	PDF_EXT.test(url) && isCloudinary(url)
+		? url.replace("/upload/", "/upload/pg_1,f_jpg,q_auto/").replace(/\.pdf(\?|#|$)/i, ".jpg$1")
+		: url;
+
+/**
+ * The same file, as a download rather than something the browser opens.
+ *
+ * The `download` attribute is ignored across origins, so a tap on a Cloudinary
+ * link opens the file instead of saving it. fl_attachment makes Cloudinary send
+ * it with Content-Disposition: attachment, which every browser does save.
+ */
+export const downloadUrl = (url: string) =>
+	isCloudinary(url) ? url.replace("/upload/", "/upload/fl_attachment/") : url;
 
 /**
  * A small version of a picture, for the list.

@@ -10,12 +10,13 @@ import { useRemote } from '@/lib/useRemote';
 import { clearPendingQuote } from '@/components/quote/quote';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Check, Package, MapPin, Truck, Clock, AlertCircle, X, MessageCircle, Mail, PackageSearch } from 'lucide-react';
+import { Check, Package, MapPin, Truck, Clock, AlertCircle, X, MessageCircle, Mail, PackageSearch, Download } from 'lucide-react';
 import { SUPPORT_EMAIL, supportPhoneDisplay, whatsappLink } from '@/lib/site';
 import { LocationInput } from '@/components/LocationInput';
 import PhoneInput from '@/components/PhoneInput';
 import DocumentPicker from '@/components/shipments/DocumentPicker';
 import { asDataUrl, type PendingDocument, uploadFailureReason } from '@/lib/shipmentDocuments';
+import { printShipmentSummary } from '@/lib/shipmentSummaryPdf';
 
 // Arriving from the public quote page (?pickup_city=…&delivery_city=…&weight=4.5): start with that route and weight.
 const subscribeNothing = () => () => {};
@@ -343,6 +344,44 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
       }
       setDocStatus({ done: i + 1, total: pendingDocs.length, failed: [...failed] });
     }
+  };
+
+  /**
+   * The review screen as a document, for keeping or sending on.
+   *
+   * Built from the same values the screen is showing rather than fetched
+   * again, so the paper and the page can never disagree about the price.
+   */
+  const downloadSummary = () => {
+    if (!selected) return;
+    const place = (a: { line1?: string; city?: string; state?: string; country?: string; name?: string; contact_name?: string; phone?: string }) =>
+      [a.name || a.contact_name, a.line1, [a.city, a.state].filter(Boolean).join(', '), a.country, a.phone].filter(Boolean) as string[];
+
+    const charges = selected.base_price && selected.service_charge
+      ? [
+          { label: 'Delivery', value: formatMoney(selected.base_price, 'NGN') },
+          { label: chargeLabel(selected), value: formatMoney(selected.service_charge, 'NGN') },
+          { label: 'Total', value: formatMoney(selected.price, 'NGN'), strong: true },
+        ]
+      : [{ label: 'Shipping cost', value: formatMoney(selected.price, 'NGN'), strong: true }];
+
+    const opened = printShipmentSummary({
+      reference: newShipmentInfo?.shipment_reference ?? null,
+      route: `${formData.pickup_address.city}, ${formData.pickup_address.state} → ${formData.delivery_address.city}, ${formData.delivery_address.state}`,
+      service: serviceLabel(selected),
+      weight: `${shipmentWeight.toFixed(2)} kg`,
+      charges,
+      pickup: place(formData.pickup_address),
+      delivery: place(formData.delivery_address),
+      items: formData.items
+        .filter((i) => i.name.trim())
+        .map((i) => ({
+          name: i.name.trim(),
+          weight: `${parseFloat(i.weight) || 0} kg`,
+          value: i.price ? formatMoney(parseFloat(i.price) || 0, 'NGN') : '—',
+        })),
+    });
+    if (!opened) showError('Your browser blocked the download window. Allow pop-ups for this site and try again.');
   };
 
   const handleCreateShipment = async () => {
@@ -1041,6 +1080,14 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                 >
                   ✓ Confirm & Create Shipment
                 </Button>
+                <button
+                  type="button"
+                  onClick={downloadSummary}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border-2 border-slate-300 px-4 py-3 font-semibold text-slate-700 text-sm transition-colors hover:bg-slate-50"
+                >
+                  <Download className="h-4 w-4" aria-hidden />
+                  Download summary (PDF)
+                </button>
                 <Button onClick={() => setStep('match')} fullWidth variant="secondary">
                   ← Back to Prices
                 </Button>

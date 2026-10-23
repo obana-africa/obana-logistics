@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText } from "lucide-react";
+import { Download, FileText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { apiClient } from "@/lib/api";
 import {
@@ -9,7 +9,8 @@ import {
 	type ShipmentDocument,
 	asDataUrl,
 	documentDate,
-	isImage,
+	canPreview,
+	downloadUrl,
 	overSize,
 	thumbUrl,
 	uploadFailureReason,
@@ -143,13 +144,13 @@ export function ShipmentDocuments({
 			) : (
 				<ul className="divide-y rounded-lg border">
 					{docs.map((d) => {
-						const picture = isImage(d);
+						const shows = canPreview(d);
 						return (
 							<li key={d.id} className="flex items-center gap-3 px-3 py-2.5">
 								{/* A thumbnail says what a file is faster than its name does.
 								    Clicking a picture opens it here; a PDF goes to its own
 								    tab, which is where a browser reads one properly. */}
-								{picture ? (
+								{shows ? (
 									<button
 										type="button"
 										onClick={() => setViewing(d)}
@@ -174,7 +175,7 @@ export function ShipmentDocuments({
 									<span className="inline-block rounded bg-muted px-1.5 py-0.5 font-medium text-[11px] uppercase tracking-wide">
 										{d.kind || "Doc"}
 									</span>
-									{picture ? (
+									{shows ? (
 										<button
 											type="button"
 											onClick={() => setViewing(d)}
@@ -198,6 +199,15 @@ export function ShipmentDocuments({
 										</p>
 									)}
 								</div>
+								<a
+									href={downloadUrl(d.url)}
+									download={d.name}
+									aria-label={`Download ${d.name}`}
+									title="Download"
+									className="shrink-0 rounded-md p-2 text-slate-400 transition-colors hover:bg-muted hover:text-slate-700"
+								>
+									<Download className="h-4 w-4" aria-hidden />
+								</a>
 								{canEdit && (
 									<button
 										type="button"
