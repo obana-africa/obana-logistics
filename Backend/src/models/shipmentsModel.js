@@ -134,6 +134,15 @@ module.exports = (sequelize, DataTypes) => {
             ),
             defaultValue: 'pending'
         },
+        /* Air waybills, invoices, photographs of the goods — the papers a
+           shipment is about, kept with the shipment rather than in a chat
+           thread one person can see.
+           Each: { id, url, name, kind, note, uploadedAt, uploadedBy }. */
+        documents: {
+            type: DataTypes.JSONB,
+            allowNull: false,
+            defaultValue: []
+        },
         // // Timestamps for tracking
         // pickup_scheduled_at: {
         //     type: DataTypes.DATE,

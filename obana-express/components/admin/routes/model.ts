@@ -1,7 +1,15 @@
 // Route template types, display helpers, validation and the API payload for the admin Routes & pricing screen.
 import type { Tone } from "@/lib/shipments";
 
-export type Place = { city: string; state: string; country: string; countryCode: string; stateCode: string };
+export type Place = {
+	city: string;
+	state: string;
+	country: string;
+	countryCode: string;
+	stateCode: string;
+	/** This end serves the whole country, not only the state named. */
+	anyState?: boolean;
+};
 
 export interface RawBracket {
 	min?: number | string | null;
@@ -20,6 +28,12 @@ export interface RouteMetadata {
 	destination_country?: string;
 	destination_country_code?: string;
 	destination_state_code?: string;
+	/* This end covers the whole country, not just the state named above.
+	   Pricing already honours these — endFit in routesController reads them —
+	   but nothing could set them, so "we deliver anywhere in Nigeria" was
+	   true of the quote engine and not of any route anyone could create. */
+	origin_any_state?: boolean;
+	destination_any_state?: boolean;
 }
 
 export interface DriverSummary {
@@ -149,6 +163,7 @@ export function formFromRoute(route: RouteTemplate | null): RouteForm {
 	return {
 		origin: {
 			city: route.origin_city,
+			anyState: Boolean(route.metadata?.origin_any_state),
 			state: route.metadata?.origin_state || "",
 			country: route.metadata?.origin_country || "",
 			countryCode: route.metadata?.origin_country_code || "",
@@ -156,6 +171,7 @@ export function formFromRoute(route: RouteTemplate | null): RouteForm {
 		},
 		destination: {
 			city: route.destination_city,
+			anyState: Boolean(route.metadata?.destination_any_state),
 			state: route.metadata?.destination_state || "",
 			country: route.metadata?.destination_country || "",
 			countryCode: route.metadata?.destination_country_code || "",
@@ -256,6 +272,8 @@ export function buildPayload(form: RouteForm) {
 			destination_country: form.destination.country,
 			destination_country_code: form.destination.countryCode,
 			destination_state_code: form.destination.stateCode,
+			origin_any_state: form.origin.anyState || undefined,
+			destination_any_state: form.destination.anyState || undefined,
 		},
 		preferred_driver_id: form.preferred_driver_id || null,
 	};

@@ -1,4 +1,5 @@
 const { Op } = require('sequelize');
+const { uploadDocument } = require('../helpers/cloudinary')
 const crypto = require('crypto');
 const axios = require('axios');
 const { displayStatus } = require('../helpers/shipmentStatus');
@@ -1922,6 +1923,123 @@ const shipmentController = {
     /**
      * Assign driver to shipment
      */
+    /**
+     * The papers a shipment is about: air waybills, invoices, photographs.
+     *
+     * Kept on the shipment so everyone who can see the shipment can see them.
+     * The file is sent as a data URL and goes to Cloudinary the same way an
+     * agent's documents already do — `resource_type: auto`, so a PDF arrives
+     * as a PDF rather than a broken image.
+     */
+    addShipmentDocument: async (req, res) => {
+        try {
+            const { shipment_id } = req.params;
+            const { file, name, kind, note, url } = req.body ?? {};
+
+            if (!file && !url) {
+                return res.status(400).json({ success: false, message: 'Attach a file, or give a link to one' });
+            }
+
+            const shipment = await db.shippings.findByPk(shipment_id);
+            if (!shipment) {
+                return res.status(404).json({ success: false, message: 'Shipment not found' });
+            }
+
+            /* An agent sees only their own shipments, here as everywhere. */
+            if (req.user.role === 'agent') {
+                const agent = await db.agents.findOne({ where: { user_id: req.user.id } });
+                if (!agent || shipment.agent_id !== agent.id) {
+                    return res.status(403).json({ success: false, message: 'Unauthorized access to this shipment' });
+                }
+            }
+
+            let stored = url;
+            if (file) {
+                try {
+                    stored = await uploadDocument(file, `shipments/${shipment.shipment_reference || shipment.id}`);
+                } catch (err) {
+                    console.error('Shipment document upload failed:', err);
+                    return res.status(502).json({ success: false, message: 'That file could not be uploaded. Please try again.' });
+                }
+            }
+
+            const entry = {
+                id: `doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+                url: stored,
+                name: String(name || '').trim() || 'Document',
+                kind: String(kind || '').trim() || 'Other',
+                note: String(note || '').trim() || null,
+                uploadedAt: new Date().toISOString(),
+                uploadedBy: req.user ? `user_${req.user.id}` : 'system',
+            };
+
+            const documents = Array.isArray(shipment.documents) ? shipment.documents : [];
+            shipment.documents = [...documents, entry];
+            /* JSONB: Sequelize does not notice a mutated array, and a replaced
+               one is only saved when the field is marked changed. */
+            shipment.changed('documents', true);
+            await shipment.save();
+
+            /* On the timeline too, so the history says when the waybill
+               arrived and not only that the shipment moved. */
+            await db.shipment_tracking.create({
+                shipment_id: shipment.id,
+                status: shipment.status,
+                description: `${entry.kind} attached: ${entry.name}`,
+                performed_by: entry.uploadedBy,
+            });
+
+            return res.status(201).json({ success: true, data: entry, documents: shipment.documents });
+        } catch (error) {
+            console.error('Error attaching shipment document:', error);
+            return res.status(500).json({ success: false, message: 'Error attaching the document' });
+        }
+    },
+
+    /** Everything attached to a shipment, newest last. */
+    listShipmentDocuments: async (req, res) => {
+        try {
+            const { shipment_id } = req.params;
+            const shipment = await db.shippings.findByPk(shipment_id);
+            if (!shipment) {
+                return res.status(404).json({ success: false, message: 'Shipment not found' });
+            }
+            if (req.user.role === 'agent') {
+                const agent = await db.agents.findOne({ where: { user_id: req.user.id } });
+                if (!agent || shipment.agent_id !== agent.id) {
+                    return res.status(403).json({ success: false, message: 'Unauthorized access to this shipment' });
+                }
+            }
+            return res.status(200).json({ success: true, data: Array.isArray(shipment.documents) ? shipment.documents : [] });
+        } catch (error) {
+            console.error('Error listing shipment documents:', error);
+            return res.status(500).json({ success: false, message: 'Error reading the documents' });
+        }
+    },
+
+    /** Take one off. The file stays in Cloudinary; the shipment stops citing it. */
+    removeShipmentDocument: async (req, res) => {
+        try {
+            const { shipment_id, document_id } = req.params;
+            const shipment = await db.shippings.findByPk(shipment_id);
+            if (!shipment) {
+                return res.status(404).json({ success: false, message: 'Shipment not found' });
+            }
+            const documents = Array.isArray(shipment.documents) ? shipment.documents : [];
+            const next = documents.filter((d) => d.id !== document_id);
+            if (next.length === documents.length) {
+                return res.status(404).json({ success: false, message: 'Document not found on this shipment' });
+            }
+            shipment.documents = next;
+            shipment.changed('documents', true);
+            await shipment.save();
+            return res.status(200).json({ success: true, data: next });
+        } catch (error) {
+            console.error('Error removing shipment document:', error);
+            return res.status(500).json({ success: false, message: 'Error removing the document' });
+        }
+    },
+
     assignDriver: async (req, res) => {
         try {
             const { shipment_id } = req.params;
