@@ -13,6 +13,8 @@ import Link from 'next/link';
 import { Check, Package, MapPin, Truck, Clock, AlertCircle, X } from 'lucide-react';
 import { LocationInput } from '@/components/LocationInput';
 import PhoneInput from '@/components/PhoneInput';
+import DocumentPicker from '@/components/shipments/DocumentPicker';
+import { asDataUrl, type PendingDocument } from '@/lib/shipmentDocuments';
 
 // Arriving from the public quote page (?pickup_city=…&delivery_city=…&weight=4.5): start with that route and weight.
 const subscribeNothing = () => () => {};
@@ -96,6 +98,9 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [newShipmentInfo, setNewShipmentInfo] = useState<any>(null);
+  /* Chosen while booking, uploaded the moment the shipment has an id. */
+  const [pendingDocs, setPendingDocs] = useState<PendingDocument[]>([]);
+  const [docStatus, setDocStatus] = useState<{ done: number; total: number; failed: string[] } | null>(null);
   const [booksResult, setBooksResult] = useState<any>(null);
   const [matchedRoute, setMatchedRoute] = useState<any>(null);
   // The price picked on step 2; null means the first (cheapest) one.
@@ -192,6 +197,8 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
     setShowFieldErrors(false);
     setShowSuccessModal(false);
     setNewShipmentInfo(null);
+    setPendingDocs([]);
+    setDocStatus(null);
     setBooksResult(null);
   };
 
@@ -255,6 +262,33 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
     }
   };
 
+  /**
+   * Put the chosen files on the shipment that now exists.
+   *
+   * One at a time, and a failure is reported rather than thrown: the shipment
+   * is already booked by this point, and losing that behind "could not upload
+   * document 2" would be the worse outcome. Whatever did not go up can be
+   * attached from the shipment page.
+   */
+  const attachPendingDocs = async (shipmentId: string | number) => {
+    const failed: string[] = [];
+    setDocStatus({ done: 0, total: pendingDocs.length, failed });
+    for (let i = 0; i < pendingDocs.length; i++) {
+      const d = pendingDocs[i];
+      try {
+        await apiClient.addShipmentDocument(shipmentId, {
+          file: await asDataUrl(d.file),
+          name: d.file.name,
+          kind: d.kind,
+          note: d.note || undefined,
+        });
+      } catch {
+        failed.push(d.file.name);
+      }
+      setDocStatus({ done: i + 1, total: pendingDocs.length, failed: [...failed] });
+    }
+  };
+
   const handleCreateShipment = async () => {
     if (!matchedRoute || !selected) return;
 
@@ -286,6 +320,11 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
         setBooksResult((response as { invoice?: unknown }).invoice ?? null);
         setShowSuccessModal(true);
         setError('');
+        /* The shipment is booked and shown before this starts: the papers are
+           an addition to it, not a condition of it. */
+        if (pendingDocs.length && response.data.shipment_id) {
+          await attachPendingDocs(response.data.shipment_id);
+        }
       } else {
         showError(response.message || 'Error creating shipment. Please try again.');
       }
@@ -397,6 +436,18 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                     <span className="font-semibold">Status:</span>
                     <span className="capitalize ml-1">{newShipmentInfo.status}</span>
                   </p>
+                  {/* What happened to the papers. Said here because the upload
+                      runs after the shipment is already booked and shown. */}
+                  {docStatus && (
+                    <p className={docStatus.failed.length ? 'text-amber-700' : 'text-gray-700'}>
+                      <span className="font-semibold">Documents:</span>{' '}
+                      {docStatus.done < docStatus.total
+                        ? `attaching ${docStatus.done + 1} of ${docStatus.total}…`
+                        : docStatus.failed.length === 0
+                          ? `${docStatus.total} attached`
+                          : `${docStatus.total - docStatus.failed.length} of ${docStatus.total} attached — ${docStatus.failed.join(', ')} did not upload. Add it from the shipment page.`}
+                    </p>
+                  )}
                 </div>
 
                 {role === 'admin' && booksResult && (
@@ -649,6 +700,8 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                   + Add something else
                 </Button>
               </div>
+
+              <DocumentPicker value={pendingDocs} onChange={setPendingDocs} disabled={loading} />
 
               {errorCount > 0 && (
                 <Alert type="error">

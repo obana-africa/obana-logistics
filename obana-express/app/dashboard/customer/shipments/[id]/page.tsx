@@ -8,6 +8,8 @@ import { apiClient } from '@/lib/api';
 import Link from 'next/link';
 import { ArrowLeft, Package, Truck, MapPin, User, FileText, Clock, Calendar, Weight, Tag } from 'lucide-react';
 import { statusMeta, whenText } from "@/lib/shipments";
+import { ShipmentDocuments } from "@/components/shipments/ShipmentDocuments";
+import type { ShipmentDocument } from "@/lib/shipmentDocuments";
 
 interface Address {
   name: string;
@@ -72,6 +74,8 @@ interface ShipmentDetail {
   pickup_address: Address;
   items: ShipmentItem[];
   tracking_events: TrackingEvent[];
+  /** Waybills, invoices, photographs — what the sender and our staff attached. */
+  documents?: ShipmentDocument[];
   /** The three stages, as the public tracking page shows them. */
   timeline?: { label: string; at: string | null; done: boolean; current: boolean }[];
   driver: Driver | null;
@@ -188,8 +192,11 @@ export default function ShipmentDetailsPage({ params }: { params: Promise<{ id: 
         </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Tracking History */}
-          <div className="lg:col-span-2">
+          {/* Left Column - Documents, then tracking history */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* The sender's own invoice and packing list belong to them, so
+                they can add and read them here rather than ask us to. */}
+            <ShipmentDocuments shipmentId={shipment.id} initial={shipment.documents} />
             <Card className="p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-6 flex items-center">
                 <Clock className="w-5 h-5 mr-2 text-gray-500" />

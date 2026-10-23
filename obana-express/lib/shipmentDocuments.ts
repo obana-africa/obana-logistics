@@ -1,0 +1,77 @@
+/**
+ * The papers a shipment is about — the parts both places need.
+ *
+ * Two screens attach documents: the shipment page, where the shipment already
+ * exists and a file can go straight up, and the booking form, where it does
+ * not exist yet and the files wait for it. They agree on what a document is,
+ * what may be attached and how a picture of one is shown, so that lives here
+ * rather than twice.
+ */
+
+export type ShipmentDocument = {
+	id: string;
+	url: string;
+	name: string;
+	kind?: string | null;
+	note?: string | null;
+	uploadedAt?: string;
+	uploadedBy?: string;
+};
+
+/** A file chosen before the shipment exists, waiting for its id. */
+export type PendingDocument = {
+	file: File;
+	kind: string;
+	note: string;
+};
+
+/* The ones people actually attach. Free text underneath, because the next kind
+   nobody has thought of should not need a deploy. */
+export const DOCUMENT_KINDS = ["AWB", "Invoice", "Packing list", "Photo", "Customs", "Other"];
+
+export const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
+export const DOCUMENT_ACCEPT = "application/pdf,image/*";
+
+export const overSize = (file: File) => file.size > MAX_DOCUMENT_BYTES;
+
+/** A data URL, which is what the API takes. */
+export const asDataUrl = (file: File) =>
+	new Promise<string>((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => resolve(String(reader.result));
+		reader.onerror = () => reject(new Error("That file could not be read"));
+		reader.readAsDataURL(file);
+	});
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|heic|heif|tiff?)(\?|#|$)/i;
+
+/** Is this one worth showing rather than only linking? */
+export const isImage = (doc: { url?: string; name?: string }) =>
+	IMAGE_EXT.test(doc.url ?? "") ||
+	IMAGE_EXT.test(doc.name ?? "") ||
+	/res\.cloudinary\.com\/[^/]+\/image\/upload\//.test(doc.url ?? "");
+
+/**
+ * A small version of a picture, for the list.
+ *
+ * Cloudinary will cut one to size on delivery, so a 4 MB photograph of a pallet
+ * does not travel in full to fill a 56px square. Anything hosted elsewhere is
+ * used as it is and sized by CSS.
+ */
+export const thumbUrl = (url: string, px = 112) =>
+	/res\.cloudinary\.com\/[^/]+\/image\/upload\//.test(url)
+		? url.replace("/upload/", `/upload/c_fill,g_auto,w_${px},h_${px},q_auto,f_auto/`)
+		: url;
+
+/** The date a document arrived, as a person writes it. */
+export const documentDate = (iso?: string) => {
+	if (!iso) return "";
+	const d = new Date(iso);
+	return Number.isNaN(d.getTime())
+		? ""
+		: d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+};
+
+/** "2.4 MB" — so somebody who has hit the limit can see which file did it. */
+export const fileSize = (bytes: number) =>
+	bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
