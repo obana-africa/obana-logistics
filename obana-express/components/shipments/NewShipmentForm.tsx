@@ -201,8 +201,11 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
       name: item.name.trim(),
       quantity: parseInt(item.quantity) || 1,
       weight: parseFloat(item.weight) || 0.5,
-      price: parseFloat(item.price),
-      total_price: parseFloat(item.price),
+      /* Zero, never NaN: JSON turns NaN into null and the columns behind these
+         two are NOT NULL, so a blank box would be refused by the database
+         rather than simply left unsaid. */
+      price: parseFloat(item.price) || 0,
+      total_price: parseFloat(item.price) || 0,
     }));
 
   /* What the sender is trying to do, in a sentence — so a message to us
@@ -271,7 +274,10 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
     if (!emailOk(d.email)) e['delivery.email'] = 'Enter a valid email address.';
     formData.items.forEach((item, i) => {
       if (!item.name.trim()) e[`item.${i}.name`] = 'Enter what this item is.';
-      if (!(parseFloat(item.price) > 0)) e[`item.${i}.price`] = 'Enter the item value.';
+      /* What it is worth is not asked for. It buys cover if the parcel goes
+         missing and nothing else — it does not price the delivery, which is
+         done on weight — so a sender who does not know, or would rather not
+         say, is not stopped at the door for it. */
       if (!(parseFloat(item.weight) > 0)) e[`item.${i}.weight`] = 'Enter the weight in kg.';
     });
     return e;
@@ -789,7 +795,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                   <Package className="h-5 w-5 text-purple-600" />
                   What you&apos;re sending
                 </h3>
-                <p className="text-sm text-gray-600 mb-5">Weight sets the price, so give us the packed weight if you can. Value is what we cover if it goes missing.</p>
+                <p className="text-sm text-gray-600 mb-5">Weight sets the price, so give us the packed weight if you can. Value is optional — it is what we cover if the parcel goes missing.</p>
 
                 <div className="space-y-4">
                   {formData.items.map((item, index) => (
@@ -829,14 +835,13 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                           required
                         />
                         <Input
-                          label="What is it worth? (₦)"
+                          label="What is it worth? (₦, optional)"
                           error={fieldErrors[`item.${index}.price`]}
                           type="number"
                           step="0.01"
-                          placeholder="0.00"
+                          placeholder="Leave blank if you'd rather not say"
                           value={item.price}
                           onChange={(e) => setItem(index, { price: e.target.value })}
-                          required
                         />
                       </div>
                     </div>
@@ -1063,7 +1068,11 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                       </div>
                       <div className="text-right text-sm ml-4">
                         <p className="font-semibold text-gray-900">{item.weight} kg</p>
-                        <p className="text-gray-600 mt-1">{formatMoney(parseFloat(item.price || '0'), 'NGN')} each</p>
+                        {/* Blank rather than ₦0.00: an unstated value is not a
+                            worthless parcel. */}
+                        {parseFloat(item.price) > 0 && (
+                          <p className="text-gray-600 mt-1">{formatMoney(parseFloat(item.price), 'NGN')} each</p>
+                        )}
                       </div>
                     </div>
                   ))}
