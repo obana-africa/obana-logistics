@@ -235,6 +235,31 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
     }
 };
 
+/**
+ * May this person see, or add to, this shipment's papers?
+ *
+ * Each role is tied to the shipments it is actually part of: an agent to the
+ * ones booked through them, a driver to the ones they are carrying, a customer
+ * to their own. Written once because the three document handlers each need the
+ * same answer, and the first draft of them checked agents only — which left a
+ * signed-in customer able to read the invoices on any shipment whose id they
+ * could guess.
+ */
+const mayTouchShipment = async (req, shipment) => {
+    const user = req.user
+    if (!user) return false
+    if (user.role === 'admin' || user.email === (process.env.LOGISTICS_EMAIL || 'shipment@obana.africa')) return true
+    if (user.role === 'agent') {
+        const agent = await db.agents.findOne({ where: { user_id: user.id } })
+        return Boolean(agent) && String(shipment.agent_id) === String(agent.id)
+    }
+    if (user.role === 'driver') {
+        const driver = await db.drivers.findOne({ where: { user_id: user.id } })
+        return Boolean(driver) && String(shipment.driver_id) === String(driver.id)
+    }
+    return String(shipment.user_id) === String(user.id)
+}
+
 const calculateShipmentTotals = (items) => {
     let totalWeight = 0;
     let totalValue = 0;
@@ -1945,12 +1970,8 @@ const shipmentController = {
                 return res.status(404).json({ success: false, message: 'Shipment not found' });
             }
 
-            /* An agent sees only their own shipments, here as everywhere. */
-            if (req.user.role === 'agent') {
-                const agent = await db.agents.findOne({ where: { user_id: req.user.id } });
-                if (!agent || shipment.agent_id !== agent.id) {
-                    return res.status(403).json({ success: false, message: 'Unauthorized access to this shipment' });
-                }
+            if (!(await mayTouchShipment(req, shipment))) {
+                return res.status(403).json({ success: false, message: 'You can only attach documents to your own shipments' });
             }
 
             let stored = url;
@@ -2004,11 +2025,8 @@ const shipmentController = {
             if (!shipment) {
                 return res.status(404).json({ success: false, message: 'Shipment not found' });
             }
-            if (req.user.role === 'agent') {
-                const agent = await db.agents.findOne({ where: { user_id: req.user.id } });
-                if (!agent || shipment.agent_id !== agent.id) {
-                    return res.status(403).json({ success: false, message: 'Unauthorized access to this shipment' });
-                }
+            if (!(await mayTouchShipment(req, shipment))) {
+                return res.status(403).json({ success: false, message: 'Unauthorized access to this shipment' });
             }
             return res.status(200).json({ success: true, data: Array.isArray(shipment.documents) ? shipment.documents : [] });
         } catch (error) {
@@ -2025,11 +2043,23 @@ const shipmentController = {
             if (!shipment) {
                 return res.status(404).json({ success: false, message: 'Shipment not found' });
             }
+            if (!(await mayTouchShipment(req, shipment))) {
+                return res.status(403).json({ success: false, message: 'Unauthorized access to this shipment' });
+            }
+
             const documents = Array.isArray(shipment.documents) ? shipment.documents : [];
-            const next = documents.filter((d) => d.id !== document_id);
-            if (next.length === documents.length) {
+            const doomed = documents.find((d) => d.id === document_id);
+            if (!doomed) {
                 return res.status(404).json({ success: false, message: 'Document not found on this shipment' });
             }
+            /* A customer may take back what they attached themselves, and only
+               that: a customs form or an invoice our own staff put on the
+               shipment is not theirs to remove. */
+            const staff = req.user.role === 'admin' || req.user.role === 'agent'
+            if (!staff && doomed.uploadedBy !== `user_${req.user.id}`) {
+                return res.status(403).json({ success: false, message: 'You can only remove documents you attached yourself' });
+            }
+            const next = documents.filter((d) => d.id !== document_id);
             shipment.documents = next;
             shipment.changed('documents', true);
             await shipment.save();
