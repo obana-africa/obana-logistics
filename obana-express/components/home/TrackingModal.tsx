@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { PublicDocuments } from "@/components/shipments/PublicDocuments";
 import { StageRail } from "@/components/shipments/StageRail";
 import Link from "next/link";
 import { ArrowRight, Loader2, MapPin, Package, Search, X } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { statusMeta, whenText as when } from "@/lib/shipments";
+import type { ShipmentDocument } from "@/lib/shipmentDocuments";
 
 type TrackingEvent = { id: number | string; status: string; createdAt: string; description?: string; location?: string };
 type Address = { city?: string; state?: string };
@@ -25,6 +27,8 @@ export type TrackedShipment = {
 	transport_mode?: string;
 	total_items?: number;
 	tracking_events?: TrackingEvent[];
+	/** Waybills, invoices, photographs — whatever is attached to the shipment. */
+	documents?: ShipmentDocument[];
 };
 
 type Lookup = { kind: "found"; shipment: TrackedShipment } | { kind: "error"; message: string };
@@ -247,6 +251,10 @@ function Result({ shipment, onReset }: { shipment: TrackedShipment; onReset: () 
 			</div>
 
 			<StageRail stages={shipment.timeline ?? []} />
+
+			{/* Above the history, because somebody who came here from a
+			    notification about a receipt came to see the receipt. */}
+			<PublicDocuments documents={shipment.documents} />
 
 			{events.length > 0 && (
 				<ol className="max-h-60 overflow-y-auto pr-1">

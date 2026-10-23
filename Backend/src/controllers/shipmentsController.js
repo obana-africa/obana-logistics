@@ -1748,6 +1748,11 @@ const shipmentController = {
                     'total_items',
                     'createdAt',
                     'actual_delivery_at',
+                    /* The papers, so the link in a WhatsApp notification has
+                       somewhere to lead. A customer who attached a receipt is
+                       reading that message on a phone, not signed in to a
+                       dashboard. */
+                    'documents',
                     // Selected for the Zoho reference below and removed again
                     // before the response — it holds the original checkout
                     // payload, which is nobody's business on a public page.
@@ -1771,6 +1776,17 @@ const shipmentController = {
                 ? { system: 'Zoho', order_number: zohoMeta.salesorder_number, ordered_at: zohoMeta.order_date ?? null }
                 : null;
             delete plain.metadata;
+
+            /* The file, what it is and the note on it — not who uploaded it,
+               which is an internal user id and tells a stranger nothing. */
+            plain.documents = (Array.isArray(plain.documents) ? plain.documents : []).map((d) => ({
+                id: d.id,
+                url: d.url,
+                name: d.name,
+                kind: d.kind ?? null,
+                note: d.note ?? null,
+                uploadedAt: d.uploadedAt ?? null
+            }));
 
             plain.timeline = buildTimeline(plain);
 
