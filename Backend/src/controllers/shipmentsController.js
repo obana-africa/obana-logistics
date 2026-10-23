@@ -7,6 +7,8 @@ const db = require('../models/db');
 const mailer = require('../mailer/kudisms');
 const { sendWhatsApp } = require('../notifications/whatsapp');
 const querystring = require('node:querystring');
+const { getCode: getCountryCode } = require('country-list');
+const countryLookup = require('country-code-lookup');
 
 const TERMINAL_AFRICA_BASE_URL = process.env.TERMINAL_AFRICA_BASE_URL;
 const TERMINAL_AFRICA_SECRET_KEY = process.env.TERMINAL_AFRICA_SECRET_KEY;
@@ -293,6 +295,23 @@ const breakdownOf = (source, fee) => {
     const derivedBase = Math.round((total / (1 + fallback / 100)) * 100) / 100
     return { base: derivedBase, service_charge: Math.round((total - derivedBase) * 100) / 100, percent: fallback, derived: true }
 }
+
+/**
+ * "IT" for an address in Italy — the two letters a lane key is built from.
+ *
+ * An address stores the country as a name, and the same country arrives spelt
+ * several ways ("Italy", "italy", "IT"). Two lists, because neither alone is
+ * enough: country-list does not answer to "United Kingdom", and this is the
+ * pair the route matcher already relies on for exactly that reason.
+ */
+const countryCodeOf = (address) => {
+    const raw = String(address?.country ?? '').trim();
+    if (!raw) return '';
+    if (/^[A-Za-z]{2}$/.test(raw)) return raw.toUpperCase();
+    const titled = raw.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+    const code = getCountryCode(titled) || getCountryCode(raw) || countryLookup.byCountry(titled)?.iso2;
+    return String(code || '').toUpperCase();
+};
 
 const calculateShipmentTotals = (items) => {
     let totalWeight = 0;
@@ -1112,7 +1131,26 @@ const shipmentController = {
 
                 try {
                     if (isInternal && !shipment.driver_id) {
-                        const availableAgent = await db.agents.findOne({
+                        /* The agent for this lane, where one is set for it.
+                         *
+                         * A cross-border job is handled on the ground by the
+                         * vendor who works that corridor — Italy to Nigeria is
+                         * Mahil Cargo Service — and that pairing belongs in the
+                         * data rather than in a condition here. An agent's
+                         * assigned_zone holds the lane as "IT>NG", and it is
+                         * already an editable field on an agent, so a new
+                         * corridor or a change of vendor is a row an admin
+                         * edits instead of a deploy.
+                         *
+                         * Nothing else moves: a lane with no agent set for it,
+                         * or an address whose country will not resolve, falls
+                         * through to the agent this has always used. */
+                        const laneZone = `${countryCodeOf(pickupAddress)}>${countryCodeOf(deliveryAddress)}`;
+                        const laneAgent = !laneZone.startsWith('>') && !laneZone.endsWith('>')
+                            ? await db.agents.findOne({ where: { assigned_zone: laneZone, status: 'active' } })
+                            : null;
+
+                        const availableAgent = laneAgent || await db.agents.findOne({
                             where: {
                                 // status: 'active',
                                 // state: pickupAddress.state,
@@ -1131,7 +1169,10 @@ const shipmentController = {
                             shipment.agent_id = availableAgent.id;
                             await shipment.save({ transaction });
 
-                            console.log(`[AGENT ASSIGNMENT] Assigned agent ${availableAgent.agent_code} to shipment ${shipmentReference}`);
+                            console.log(
+                                `[AGENT ASSIGNMENT] Assigned agent ${availableAgent.agent_code} to shipment ${shipmentReference}` +
+                                    (laneAgent ? ` for lane ${laneZone}` : '')
+                            );
                         } else {
                             console.warn(`[AGENT ASSIGNMENT] No available agent found for location: ${pickupAddress.city}, ${pickupAddress.state}`);
                         }
