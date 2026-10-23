@@ -1,7 +1,19 @@
 "use client";
 
+import { FileText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { apiClient } from "@/lib/api";
+import {
+	DOCUMENT_ACCEPT,
+	DOCUMENT_KINDS,
+	type ShipmentDocument,
+	asDataUrl,
+	documentDate,
+	isImage,
+	overSize,
+	thumbUrl,
+} from "@/lib/shipmentDocuments";
+import { DocumentViewer } from "./DocumentViewer";
 
 /**
  * The papers a shipment is about, on the shipment.
@@ -9,46 +21,25 @@ import { apiClient } from "@/lib/api";
  * Air waybills, commercial invoices, a photograph of the goods on the pallet.
  * These were being passed around on WhatsApp, which means the number everybody
  * needs sits in a thread one person can see and the shipment record says
- * nothing about it. Anyone who can open the shipment can now read them; the
- * people who handle it can add them.
+ * nothing about it. Anyone who is part of the shipment can now read them and
+ * add to them — the sender included, since the invoice and the packing list
+ * usually come from them.
  *
  * Uploads go to Cloudinary through the API, which holds the credentials — the
  * browser never gets them. A PDF stays a PDF.
  */
 
-export type ShipmentDocument = {
-	id: string;
-	url: string;
-	name: string;
-	kind?: string | null;
-	note?: string | null;
-	uploadedAt?: string;
-	uploadedBy?: string;
+export type { ShipmentDocument };
+
+/* What the document endpoints answer with, and what a failed call carries —
+   named so the handlers below do not have to say `any` and lose it. */
+type DocumentsReply = { data?: unknown; documents?: unknown };
+type RequestFailure = { response?: { data?: { message?: string } }; message?: string };
+const messageFrom = (err: unknown, fallback: string) => {
+	const e = err as RequestFailure;
+	return e?.response?.data?.message ?? e?.message ?? fallback;
 };
-
-/* The ones people actually attach. Free text underneath, because the next
-   kind nobody has thought of should not need a deploy. */
-const KINDS = ["AWB", "Invoice", "Packing list", "Photo", "Customs", "Other"];
-
-const MAX_BYTES = 15 * 1024 * 1024;
-const ACCEPT = "application/pdf,image/*";
-
-const when = (iso?: string) => {
-	if (!iso) return "";
-	const d = new Date(iso);
-	return Number.isNaN(d.getTime())
-		? ""
-		: d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-};
-
-/** A data URL, which is what the API takes. */
-const asDataUrl = (file: File) =>
-	new Promise<string>((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => resolve(String(reader.result));
-		reader.onerror = () => reject(new Error("That file could not be read"));
-		reader.readAsDataURL(file);
-	});
+const asDocs = (value: unknown) => (Array.isArray(value) ? (value as ShipmentDocument[]) : null);
 
 export function ShipmentDocuments({
 	shipmentId,
@@ -64,8 +55,10 @@ export function ShipmentDocuments({
 	const [loading, setLoading] = useState(!initial);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const [kind, setKind] = useState(KINDS[0]);
+	const [kind, setKind] = useState(DOCUMENT_KINDS[0]);
 	const [note, setNote] = useState("");
+	/* The one open over the page, if any. */
+	const [viewing, setViewing] = useState<ShipmentDocument | null>(null);
 	const input = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
@@ -73,8 +66,8 @@ export function ShipmentDocuments({
 		let cancelled = false;
 		apiClient
 			.listShipmentDocuments(shipmentId)
-			.then((res: any) => {
-				if (!cancelled) setDocs(Array.isArray(res?.data) ? res.data : []);
+			.then((res: DocumentsReply) => {
+				if (!cancelled) setDocs(asDocs(res?.data) ?? []);
 			})
 			.catch(() => {
 				/* A shipment must still read when its documents will not. */
@@ -90,23 +83,23 @@ export function ShipmentDocuments({
 
 	const attach = async (file: File | undefined) => {
 		if (!file) return;
-		if (file.size > MAX_BYTES) {
+		if (overSize(file)) {
 			setError("That file is over 15 MB. Send a smaller copy.");
 			return;
 		}
 		setBusy(true);
 		setError(null);
 		try {
-			const res: any = await apiClient.addShipmentDocument(shipmentId, {
+			const res: DocumentsReply = await apiClient.addShipmentDocument(shipmentId, {
 				file: await asDataUrl(file),
 				name: file.name,
 				kind,
 				note: note.trim() || undefined,
 			});
-			setDocs(Array.isArray(res?.documents) ? res.documents : [...docs, res.data]);
+			setDocs(asDocs(res?.documents) ?? [...docs, res.data as ShipmentDocument]);
 			setNote("");
-		} catch (err: any) {
-			setError(err?.response?.data?.message ?? err?.message ?? "That did not attach. Please try again.");
+		} catch (err) {
+			setError(messageFrom(err, "That did not attach. Please try again."));
 		} finally {
 			setBusy(false);
 		}
@@ -116,10 +109,10 @@ export function ShipmentDocuments({
 		setBusy(true);
 		setError(null);
 		try {
-			const res: any = await apiClient.removeShipmentDocument(shipmentId, id);
-			setDocs(Array.isArray(res?.data) ? res.data : docs.filter((d) => d.id !== id));
-		} catch (err: any) {
-			setError(err?.response?.data?.message ?? "That did not come off. Please try again.");
+			const res: DocumentsReply = await apiClient.removeShipmentDocument(shipmentId, id);
+			setDocs(asDocs(res?.data) ?? docs.filter((d) => d.id !== id));
+		} catch (err) {
+			setError(messageFrom(err, "That did not come off. Please try again."));
 		} finally {
 			setBusy(false);
 		}
@@ -148,38 +141,75 @@ export function ShipmentDocuments({
 				</p>
 			) : (
 				<ul className="divide-y rounded-lg border">
-					{docs.map((d) => (
-						<li key={d.id} className="flex items-center gap-3 px-3 py-2.5">
-							<span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-medium text-[11px] uppercase tracking-wide">
-								{d.kind || "Doc"}
-							</span>
-							<div className="min-w-0 flex-1">
-								<a
-									href={d.url}
-									target="_blank"
-									rel="noopener noreferrer"
-									className="block truncate font-medium text-sm hover:underline"
-								>
-									{d.name}
-								</a>
-								{(d.note || d.uploadedAt) && (
-									<p className="truncate text-muted-foreground text-xs">
-										{[d.note, when(d.uploadedAt)].filter(Boolean).join(" · ")}
-									</p>
+					{docs.map((d) => {
+						const picture = isImage(d);
+						return (
+							<li key={d.id} className="flex items-center gap-3 px-3 py-2.5">
+								{/* A thumbnail says what a file is faster than its name does.
+								    Clicking a picture opens it here; a PDF goes to its own
+								    tab, which is where a browser reads one properly. */}
+								{picture ? (
+									<button
+										type="button"
+										onClick={() => setViewing(d)}
+										className="shrink-0 overflow-hidden rounded-md border transition-opacity hover:opacity-80"
+										aria-label={`View ${d.name}`}
+									>
+										{/* eslint-disable-next-line @next/next/no-img-element */}
+										<img src={thumbUrl(d.url)} alt="" className="h-12 w-12 object-cover" />
+									</button>
+								) : (
+									<a
+										href={d.url}
+										target="_blank"
+										rel="noopener noreferrer"
+										className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border bg-muted/50 transition-colors hover:bg-muted"
+										aria-label={`Open ${d.name}`}
+									>
+										<FileText className="h-5 w-5 text-slate-500" aria-hidden />
+									</a>
 								)}
-							</div>
-							{canEdit && (
-								<button
-									type="button"
-									onClick={() => remove(d.id)}
-									disabled={busy}
-									className="shrink-0 text-rose-600 text-xs hover:underline disabled:opacity-50"
-								>
-									Remove
-								</button>
-							)}
-						</li>
-					))}
+								<div className="min-w-0 flex-1">
+									<span className="inline-block rounded bg-muted px-1.5 py-0.5 font-medium text-[11px] uppercase tracking-wide">
+										{d.kind || "Doc"}
+									</span>
+									{picture ? (
+										<button
+											type="button"
+											onClick={() => setViewing(d)}
+											className="block max-w-full truncate text-left font-medium text-sm hover:underline"
+										>
+											{d.name}
+										</button>
+									) : (
+										<a
+											href={d.url}
+											target="_blank"
+											rel="noopener noreferrer"
+											className="block truncate font-medium text-sm hover:underline"
+										>
+											{d.name}
+										</a>
+									)}
+									{(d.note || d.uploadedAt) && (
+										<p className="truncate text-muted-foreground text-xs">
+											{[d.note, documentDate(d.uploadedAt)].filter(Boolean).join(" \u00b7 ")}
+										</p>
+									)}
+								</div>
+								{canEdit && (
+									<button
+										type="button"
+										onClick={() => remove(d.id)}
+										disabled={busy}
+										className="shrink-0 text-rose-600 text-xs hover:underline disabled:opacity-50"
+									>
+										Remove
+									</button>
+								)}
+							</li>
+						);
+					})}
 				</ul>
 			)}
 
@@ -193,7 +223,7 @@ export function ShipmentDocuments({
 							disabled={busy}
 							className="h-9 rounded-md border px-2 text-sm"
 						>
-							{KINDS.map((k) => (
+							{DOCUMENT_KINDS.map((k) => (
 								<option key={k} value={k}>
 									{k}
 								</option>
@@ -213,7 +243,7 @@ export function ShipmentDocuments({
 					<input
 						ref={input}
 						type="file"
-						accept={ACCEPT}
+						accept={DOCUMENT_ACCEPT}
 						hidden
 						onChange={(e) => {
 							attach(e.target.files?.[0]);
@@ -232,6 +262,8 @@ export function ShipmentDocuments({
 			)}
 
 			{error && <p className="mt-2 text-rose-600 text-sm">{error}</p>}
+
+			{viewing && <DocumentViewer doc={viewing} onClose={() => setViewing(null)} />}
 		</section>
 	);
 }
