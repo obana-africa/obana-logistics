@@ -43,6 +43,51 @@ const laneName = (origin, destination) => {
 };
 
 /**
+ * The same failure, told to the person who can actually act on it.
+ *
+ * A lane we do not run is a gap in the route table: an admin can close it in a
+ * minute, a customer cannot do anything about it at all. Sending both the same
+ * sentence meant customers were reading "Add a route for this lane, or a
+ * Nigeria-wide route with any_state set on both ends" — instructions for
+ * somebody else's job, written in the words of our schema — when what they
+ * needed was a person to talk to. Staff keep the instruction; everyone else
+ * gets the plain fact and the contact. The log keeps the full detail either
+ * way, because that is where it belongs.
+ */
+const isStaff = (req) =>
+    req.user?.role === 'admin' || req.user?.email === (process.env.LOGISTICS_EMAIL || 'shipment@obana.africa');
+
+/* The contact already published on the site and in the docs, so a customer
+   told to get in touch reaches the same inbox either way. */
+const SUPPORT = {
+    email: process.env.SUPPORT_EMAIL || 'logistics@obana.africa',
+    phone: process.env.SUPPORT_PHONE || '+234 809 033 5245'
+};
+
+const talkToUs = `call or WhatsApp ${SUPPORT.phone}, or email ${SUPPORT.email}`;
+
+/** "Port Harcourt, Rivers" — how a person says where they are. */
+const placeName = (a) => {
+    const parts = [a?.city, a?.state].map((v) => String(v ?? '').trim()).filter(Boolean);
+    return parts.length ? parts.join(', ') : 'that address';
+};
+
+/**
+ * What to say when no route covers the lane.
+ * `pairs` is [{ origin, destination }, …] — one shipment can span several.
+ */
+const noRouteMessage = (req, pairs) => {
+    if (isStaff(req)) {
+        /* An arrow reads fine to someone who works with the route table. */
+        const lanes = pairs.map(({ origin, destination }) => `${placeName(origin)} → ${placeName(destination)}`).join('; ');
+        return `No route covers ${lanes} yet. Add one under Routes → New route — and tick "Serves the whole country" on an end that should cover everywhere.`;
+    }
+    /* A sentence, for someone who is simply trying to send something. */
+    const lanes = pairs.map(({ origin, destination }) => `from ${placeName(origin)} to ${placeName(destination)}`).join(', and ');
+    return `We don't deliver ${lanes} yet. Our team can still arrange it — ${talkToUs}.`;
+};
+
+/**
  * Every route template, held briefly in memory.
  *
  * Matching walks the whole table — a lane is decided by comparing metadata, not
@@ -812,18 +857,15 @@ const matchTemplate = async (req, res) => {
         return res.status(200).send(utils.responseSuccess(shipmentResults))
     }
 
-    /* No Obana route for this lane, and partners are not being offered. Say
-       which lane, because the fix is a route template and nobody could act on
-       "no routes available" — it reads as an outage when it is a gap. */
+    /* No Obana route for this lane, and partners are not being offered. The
+       log names the lane, because the fix is a route template and nobody could
+       act on "no routes available" — it reads as an outage when it is a gap.
+       What the caller is told depends on who they are: see noRouteMessage. */
     if (!EXTERNAL_FALLBACK) {
         const lanes = externalGroups.map((g) => laneName(g.pickup_address, delivery_address))
         console.log(`[routes] no Obana route for ${lanes.join('; ')} — external fallback is off`)
-        return res.status(404).send(
-            utils.responseError(
-                `No Obana route for ${lanes.join('; ')}. Add a route for this lane, ` +
-                    'or a Nigeria-wide route with any_state set on both ends.'
-            )
-        )
+        const pairs = externalGroups.map((g) => ({ origin: g.pickup_address, destination: delivery_address }))
+        return res.status(404).send(utils.responseError(noRouteMessage(req, pairs), 'route_unavailable'))
     }
 
     try {
@@ -874,7 +916,8 @@ const matchTemplate = async (req, res) => {
         }
         const lanes = externalGroups.map((g) => laneName(g.pickup_address, delivery_address))
         console.log(`[routes] no Obana route and no partner rate for ${lanes.join('; ')}`)
-        return res.status(404).send(utils.responseError(`No route available for ${lanes.join('; ')}`))
+        const pairs = externalGroups.map((g) => ({ origin: g.pickup_address, destination: delivery_address }))
+        return res.status(404).send(utils.responseError(noRouteMessage(req, pairs), 'route_unavailable'))
     } catch (error) {
         /* A carrier that refused us is not the same as a lane nobody runs, and
            reporting both as "no routes available" sent every investigation at
@@ -883,7 +926,12 @@ const matchTemplate = async (req, res) => {
         const detail = error?.response?.data?.message || error?.message || String(error)
         console.error('[routes] partner carrier lookup failed:', error?.response?.data || detail)
         return res.status(502).send(
-            utils.responseError(`Could not reach the partner carrier for a rate: ${detail}`)
+            utils.responseError(
+                isStaff(req)
+                    ? `Could not reach the partner carrier for a rate: ${detail}`
+                    : `We couldn't price this delivery just now — the carrier we check didn't answer. Please try again in a few minutes, or ${talkToUs}.`,
+                'carrier_unreachable'
+            )
         )
     }
 }
@@ -1145,10 +1193,11 @@ const publicQuote = async (req, res) => {
             if (quoteCache.size > 500) quoteCache.delete(quoteCache.keys().next().value)
         }
         if (!cached.options.length) {
-            // Name the lane. "No routes available" reads as an outage; this is
-            // a gap in the route table, and saying so is what makes it fixable.
+            // The log names the lane: "no routes available" reads as an outage,
+            // and this is a gap in the route table. The caller here is a
+            // visitor on the public site, so they get the plain version.
             console.log(`[routes] quote: no Obana route for ${laneName(origin, destination)}`)
-            return res.status(404).send(utils.responseError(`No Obana route for ${laneName(origin, destination)}`))
+            return res.status(404).send(utils.responseError(noRouteMessage(req, [{ origin, destination }]), 'route_unavailable'))
         }
 
         const fx = await ngnRate(wanted)

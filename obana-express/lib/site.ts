@@ -11,6 +11,18 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost
    Gmail today — the address changes, the person reading it does not. */
 export const SUPPORT_EMAIL = "logistics@obana.africa";
 
+/* The number for the same team, for the moments when an email will not do:
+   a parcel we cannot route, a price we could not fetch. Overridable per
+   environment so the person on duty can change without a deploy. */
+export const SUPPORT_PHONE = process.env.NEXT_PUBLIC_SUPPORT_PHONE || "+2348090335245";
+
+/** Spaced for reading; `tel:` and WhatsApp both want it bare. */
+export const supportPhoneDisplay = () => SUPPORT_PHONE.replace(/^(\+\d{3})(\d{3})(\d{3})(\d+)$/, "$1 $2 $3 $4");
+
+/** A WhatsApp chat with the message already written. */
+export const whatsappLink = (message: string) =>
+	`https://wa.me/${SUPPORT_PHONE.replace(/\D/g, "")}?text=${encodeURIComponent(message)}`;
+
 // Falls back to Obana's Cloudinary account so a missing env var can never crash a page.
 const CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dbewrzeuj";
 
