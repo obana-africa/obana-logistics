@@ -10,7 +10,8 @@ import { useRemote } from '@/lib/useRemote';
 import { clearPendingQuote } from '@/components/quote/quote';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Check, Package, MapPin, Truck, Clock, AlertCircle, X } from 'lucide-react';
+import { Check, Package, MapPin, Truck, Clock, AlertCircle, X, MessageCircle, Mail, PackageSearch } from 'lucide-react';
+import { SUPPORT_EMAIL, supportPhoneDisplay, whatsappLink } from '@/lib/site';
 import { LocationInput } from '@/components/LocationInput';
 import PhoneInput from '@/components/PhoneInput';
 
@@ -93,6 +94,10 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  /* Which kind of failure, from the API's `code`. A route we don't run is not
+     the same event as a form mistake or a carrier timing out, and the way out
+     of each one is different — so the modal needs to know which it is. */
+  const [errorCode, setErrorCode] = useState('');
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [newShipmentInfo, setNewShipmentInfo] = useState<any>(null);
@@ -173,8 +178,33 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
       total_price: parseFloat(item.price),
     }));
 
-  const showError = (message: string) => {
+  /* What the sender is trying to do, in a sentence — so a message to us
+     arrives with the route already in it and nobody has to ask for it. */
+  const laneText = () => {
+    const where = (a: { city: string; state: string }) => [a.city, a.state].filter(Boolean).join(', ') || 'somewhere';
+    return `${where(formData.pickup_address)} to ${where(formData.delivery_address)}`;
+  };
+  const askText = () =>
+    `Hello Obana, I'd like to send a shipment from ${laneText()}` +
+    (shipmentWeight > 0 ? ` (about ${shipmentWeight}kg)` : '') +
+    '. Can your team arrange it?';
+
+  /* A route gap and a carrier that didn't answer both leave the sender stuck,
+     and both are fixed by a person — so both get the contact. */
+  const canContactUs = errorCode === 'route_unavailable' || errorCode === 'carrier_unreachable';
+
+  const errorTitle =
+    errorCode === 'route_unavailable'
+      ? role === 'admin'
+        ? 'No route covers this yet'
+        : "We don't cover this route yet"
+      : errorCode === 'carrier_unreachable'
+        ? "We couldn't get a price just now"
+        : 'That didn\u2019t go through';
+
+  const showError = (message: string, code = '') => {
     setError(message);
+    setErrorCode(code);
     setShowErrorModal(true);
   };
 
@@ -246,10 +276,13 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
         setStep('match');
         setError('');
       } else {
-        showError("We don't deliver on this route yet. Contact us and we'll look for a way to move it.");
+        showError("We don't deliver on this route yet. Our team can still arrange it.", 'route_unavailable');
       }
     } catch (err: any) {
-      showError(err.response?.data?.message || 'Error getting prices. Please try again.');
+      showError(
+        err.response?.data?.message || "We couldn't get prices just now. Please try again.",
+        err.response?.data?.code || ''
+      );
     } finally {
       setLoading(false);
     }
@@ -287,10 +320,13 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
         setShowSuccessModal(true);
         setError('');
       } else {
-        showError(response.message || 'Error creating shipment. Please try again.');
+        showError(response.message || "That shipment wasn't created. Please try again.");
       }
     } catch (err: any) {
-      showError(err.response?.data?.message || 'Error creating shipment. Please check your connection and try again.');
+      showError(
+        err.response?.data?.message || "That shipment wasn't created — we couldn't reach the server. Check your connection and try again.",
+        err.response?.data?.code || ''
+      );
     } finally {
       setLoading(false);
     }
@@ -344,36 +380,81 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
               <div className="p-6">
                 <div className="flex items-start gap-4">
                   <div className="shrink-0">
-                    <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
-                      <AlertCircle className="h-6 w-6 text-red-600" />
+                    {/* A route we don't run is not a fault. Red is for things
+                        that broke; this one is simply something we don't do
+                        yet, and the sender has somewhere to go. */}
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${canContactUs ? 'bg-[#1B3B5F]/10' : 'bg-red-100'}`}>
+                      {canContactUs ? (
+                        <PackageSearch className="h-6 w-6 text-[#1B3B5F]" />
+                      ) : (
+                        <AlertCircle className="h-6 w-6 text-red-600" />
+                      )}
                     </div>
                   </div>
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                      Oops! Something went wrong
+                      {errorTitle}
                     </h3>
                     <p className="text-gray-600 text-sm leading-relaxed">
                       {error}
                     </p>
+                    {canContactUs && role !== 'admin' && (
+                      <p className="mt-3 text-sm text-slate-500">
+                        {supportPhoneDisplay()} · {SUPPORT_EMAIL}
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={closeErrorModal}
+                    aria-label="Close"
                     className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
                   >
                     <X className="h-5 w-5" />
                   </button>
                 </div>
 
-                <div className="mt-6 flex gap-3">
-                  <Button
-                    onClick={closeErrorModal}
-                    fullWidth
-                    variant="primary"
-                    className="bg-red-600 hover:bg-red-700"
-                  >
-                    Continue
-                  </Button>
-                </div>
+                {/* An admin can close the gap themselves; a customer needs a
+                    person. Neither is served by a button saying "Continue". */}
+                {canContactUs && role === 'admin' ? (
+                  <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                    <Link
+                      href="/dashboard/admin/routes"
+                      className="inline-flex h-11 flex-1 items-center justify-center rounded-lg bg-[#1B3B5F] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#16314e]"
+                    >
+                      Open routes
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={closeErrorModal}
+                      className="inline-flex h-11 flex-1 items-center justify-center rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                    >
+                      Back to the form
+                    </button>
+                  </div>
+                ) : canContactUs ? (
+                  <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                    <a
+                      href={whatsappLink(askText())}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-[#1B3B5F] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#16314e]"
+                    >
+                      <MessageCircle className="h-4 w-4" aria-hidden /> WhatsApp us
+                    </a>
+                    <a
+                      href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Shipment request: ${laneText()}`)}&body=${encodeURIComponent(askText())}`}
+                      className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                    >
+                      <Mail className="h-4 w-4" aria-hidden /> Email us
+                    </a>
+                  </div>
+                ) : (
+                  <div className="mt-6 flex gap-3">
+                    <Button onClick={closeErrorModal} fullWidth variant="primary">
+                      Back to the form
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
