@@ -541,9 +541,22 @@ const priceTemplate = (template, weight) => {
     } else {
         match.price = basePrice;
     }
-    // Obana's margin on its own routes, applied once to the total (partner rates have their own markup).
-    // Round to kobo first so float noise (11000 × 1.1 = 12100.000000000002) doesn't add a naira.
-    match.price = Math.ceil(Math.round(match.price * (1 + routeMarkupPercent() / 100) * 100) / 100);
+    /* Obana's margin on its own routes, applied once to the total (partner
+       rates have their own markup). Round to kobo first so float noise
+       (11000 × 1.1 = 12100.000000000002) doesn't add a naira.
+       
+       Not on a cross-border lane. An international price is quoted to us per
+       kilo by the forwarder and entered as what the job costs — freight, last
+       mile and service charge, all of it already in the number. Adding ten per
+       cent on top of that charged the margin twice: a 131 kg job from Italy
+       entered at ₦2,157,557 was quoted at ₦2,373,313, and the difference was
+       ours twice over. Inside Nigeria the route price is a rate card rather
+       than a quote, and the margin still belongs on it. */
+    const meta = template.metadata || {};
+    const sameCountry = normalizeText(formatCountryCode(meta.origin_country_code || meta.origin_country))
+        === normalizeText(formatCountryCode(meta.destination_country_code || meta.destination_country));
+    const markup = sameCountry ? routeMarkupPercent() : 0;
+    match.price = Math.ceil(Math.round(match.price * (1 + markup / 100) * 100) / 100);
     return match;
 };
 
