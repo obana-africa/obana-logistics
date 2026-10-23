@@ -75,3 +75,25 @@ export const documentDate = (iso?: string) => {
 /** "2.4 MB" — so somebody who has hit the limit can see which file did it. */
 export const fileSize = (bytes: number) =>
 	bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+/**
+ * Why a document did not go up, in words that name the next move.
+ *
+ * "That did not upload" is the message a person can do nothing with, and it
+ * hid a 413 for every real waybill: the server was refusing the request body
+ * before the route ran, and nothing on the screen said so. The status is the
+ * most reliable thing an upload failure carries, so it is read first and the
+ * server's own message only used when it says more.
+ */
+export const uploadFailureReason = (err: unknown) => {
+	const e = err as { response?: { status?: number; data?: { message?: string } }; message?: string };
+	const status = e?.response?.status;
+	const said = e?.response?.data?.message;
+	if (status === 413) return "the file is too large to send — attach a smaller copy";
+	if (status === 403) return "you cannot attach to this shipment";
+	if (status === 404) return "the shipment could not be found";
+	if (status === 502) return "the upload service refused it — try again";
+	if (said) return said;
+	if (!status) return "we could not reach the server";
+	return `the server answered ${status}`;
+};

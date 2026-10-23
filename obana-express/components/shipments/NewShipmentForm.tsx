@@ -15,7 +15,7 @@ import { SUPPORT_EMAIL, supportPhoneDisplay, whatsappLink } from '@/lib/site';
 import { LocationInput } from '@/components/LocationInput';
 import PhoneInput from '@/components/PhoneInput';
 import DocumentPicker from '@/components/shipments/DocumentPicker';
-import { asDataUrl, type PendingDocument } from '@/lib/shipmentDocuments';
+import { asDataUrl, type PendingDocument, uploadFailureReason } from '@/lib/shipmentDocuments';
 
 // Arriving from the public quote page (?pickup_city=…&delivery_city=…&weight=4.5): start with that route and weight.
 const subscribeNothing = () => () => {};
@@ -336,8 +336,10 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
           kind: d.kind,
           note: d.note || undefined,
         });
-      } catch {
-        failed.push(d.file.name);
+      } catch (err) {
+        /* Name the file and say why. A list of names alone sent people to the
+           shipment page to try the same thing and fail the same way. */
+        failed.push(`${d.file.name} — ${uploadFailureReason(err)}`);
       }
       setDocStatus({ done: i + 1, total: pendingDocs.length, failed: [...failed] });
     }

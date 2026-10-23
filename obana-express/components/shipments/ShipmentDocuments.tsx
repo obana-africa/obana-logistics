@@ -12,6 +12,7 @@ import {
 	isImage,
 	overSize,
 	thumbUrl,
+	uploadFailureReason,
 } from "@/lib/shipmentDocuments";
 import { DocumentViewer } from "./DocumentViewer";
 
@@ -99,7 +100,7 @@ export function ShipmentDocuments({
 			setDocs(asDocs(res?.documents) ?? [...docs, res.data as ShipmentDocument]);
 			setNote("");
 		} catch (err) {
-			setError(messageFrom(err, "That did not attach. Please try again."));
+			setError(`That did not attach: ${uploadFailureReason(err)}.`);
 		} finally {
 			setBusy(false);
 		}

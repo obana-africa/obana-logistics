@@ -28,6 +28,23 @@ app.set("trust proxy", 1);
    gains a bigger surface than it needs. */
 app.use("/zoho", express.json({ limit: "10mb" }));
 app.use("/zoho", express.urlencoded({ extended: false, limit: "10mb" }));
+
+/* The same trap, one endpoint along. A shipment document is posted as a data
+   URL, which is base64 — so a 1 MB waybill arrives as about 1.4 MB of request
+   body, and the picker accepts files up to 15 MB. Against the 100 kb default
+   every real document was rejected with a 413 before the route ran, which is
+   what "0 of 1 attached — the file did not upload" was: not Cloudinary, not
+   permissions, just a body Express refused to read.
+
+   Scoped to POSTs at that one path so nothing else gains the surface, and
+   mounted ahead of the parser below because body-parser marks a request once
+   it has read it and the later instance then stands aside. */
+app.use("/shipments", (req, res, next) =>
+    req.method === "POST" && /\/documents\/?$/.test(req.path)
+        ? express.json({ limit: "25mb" })(req, res, next)
+        : next()
+);
+
 app.use(express.json());
 const http = require("http");
 
