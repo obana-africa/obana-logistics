@@ -31,9 +31,16 @@ type State = { kind: "loading" } | { kind: "found"; shipment: Shipment } | { kin
 export default function ShipmentDocumentsPage({ params }: { params: Promise<{ reference: string }> }) {
 	const { reference } = use(params);
 	const [state, setState] = useState<State>({ kind: "loading" });
+	/* The API sleeps when it is idle and takes the better part of a minute to
+	   wake. A bare "Loading…" through that reads as a page that has hung, so
+	   after five seconds it says what is happening instead. */
+	const [slow, setSlow] = useState(false);
 
 	useEffect(() => {
 		let cancelled = false;
+		const slowTimer = setTimeout(() => {
+			if (!cancelled) setSlow(true);
+		}, 5000);
 		const ref = decodeURIComponent(reference).trim();
 		apiClient
 			.getPublicShipment(ref)
@@ -55,6 +62,7 @@ export default function ShipmentDocumentsPage({ params }: { params: Promise<{ re
 			});
 		return () => {
 			cancelled = true;
+			clearTimeout(slowTimer);
 		};
 	}, [reference]);
 
@@ -72,9 +80,16 @@ export default function ShipmentDocumentsPage({ params }: { params: Promise<{ re
 				</div>
 
 				{state.kind === "loading" && (
-					<p className="flex items-center gap-2 py-8 text-slate-500 text-sm">
-						<Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading…
-					</p>
+					<div className="py-8">
+						<p className="flex items-center gap-2 text-slate-500 text-sm">
+							<Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading…
+						</p>
+						{slow && (
+							<p className="mt-2 text-slate-400 text-xs">
+								This can take up to a minute if the service has been idle. It is still trying.
+							</p>
+						)}
+					</div>
 				)}
 
 				{state.kind === "error" && <p className="py-6 text-rose-600 text-sm">{state.message}</p>}
