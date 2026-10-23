@@ -629,6 +629,15 @@ const priceTemplate = (template, weight) => {
     match.service_charge_percent = percent;
     match.service_charge = Math.ceil(kobo((match.base_price * percent) / 100));
     match.price = match.base_price + match.service_charge;
+
+    /* Supersedes the cross-border exemption merged in #96. That removed the ten
+       per cent from an international lane entirely, because it was being
+       multiplied into a price that already included the forwarder's quote. The
+       charge was never the problem — hiding it was. So it is charged again, on
+       every lane, as a line of its own that the customer can see: a job entered
+       at ₦2,157,557 quotes ₦2,157,557 plus ₦215,778, totalling what it always
+       did. To take it off international again, this is the one line:
+       percent = sameCountry ? routeMarkupPercent() : 0. */
     return match;
 };
 
