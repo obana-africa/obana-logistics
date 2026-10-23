@@ -260,6 +260,40 @@ const mayTouchShipment = async (req, shipment) => {
     return String(shipment.user_id) === String(user.id)
 }
 
+/**
+ * The two halves of a shipping fee: the delivery, and Obana's service charge.
+ *
+ * Takes whatever the source offered — a quote option, a saved quote, the
+ * booking form — and accepts its split only when the two parts add up to the
+ * fee being charged. They come from different places, one of them a browser,
+ * and a split that disagrees with the total would put a wrong number on a Zoho
+ * estimate, which is the one place it would be believed. When it does not add
+ * up, or nothing was offered, the charge is worked back out of the total at the
+ * percentage: fee = base × (1 + p/100), so base = fee ÷ (1 + p/100).
+ *
+ * Returns null when there is no charge to speak of — a partner rate, or the
+ * percentage set to zero — so nothing downstream shows an empty line.
+ */
+const breakdownOf = (source, fee) => {
+    const total = Number(fee) || 0
+    if (!(total > 0)) return null
+
+    const base = Number(source?.base_price)
+    const charge = Number(source?.service_charge)
+    const percent = Number(source?.service_charge_percent)
+    if (base > 0 && charge >= 0 && Math.abs(base + charge - total) <= 1) {
+        return charge > 0 ? { base, service_charge: charge, percent: percent > 0 ? percent : null } : null
+    }
+
+    /* Nothing usable was offered. Fall back to the percentage in force, and say
+       so, because a figure derived after the fact is not the same as the one the
+       customer was shown. */
+    const fallback = Number(process.env.ROUTE_MARKUP_PERCENT ?? 10)
+    if (!(fallback > 0)) return null
+    const derivedBase = Math.round((total / (1 + fallback / 100)) * 100) / 100
+    return { base: derivedBase, service_charge: Math.round((total - derivedBase) * 100) / 100, percent: fallback, derived: true }
+}
+
 const calculateShipmentTotals = (items) => {
     let totalWeight = 0;
     let totalValue = 0;
@@ -927,6 +961,7 @@ const shipmentController = {
                 const chosen = (payload.quote_option_id && options.find((o) => o.id === payload.quote_option_id)) || options[0];
                 storeQuoteOption = chosen.id;
                 payload.shipping_fee = chosen.price;
+                feeBreakdown = breakdownOf(chosen, chosen.price);
                 payload.carrier_slug = 'obana'; // Obana books the carrier (our fleet or a partner) once it's in our queue.
                 payload.dispatcher = undefined;
                 payload.vendor_name = payload.vendor_name || req.store.name;
@@ -940,6 +975,13 @@ const shipmentController = {
                 };
             }
 
+            /* How the fee splits between the delivery and Obana's service
+               charge. Carried from whichever source priced the booking, so the
+               Books estimate can put the charge on its own line instead of
+               burying it in the delivery, and so the split recorded is the one
+               the customer was actually shown. */
+            let feeBreakdown = null;
+
             // Booked from a saved quote: the server sets the price from the quote (24 hours, same route,
             // no heavier than quoted), never from the browser. Otherwise the booking is priced as before.
             let bookedQuote = null;
@@ -951,10 +993,19 @@ const shipmentController = {
                 if (option) {
                     bookedQuote = quote;
                     payload.shipping_fee = option.price;
+                    feeBreakdown = breakdownOf(option, option.price);
                     payload.transport_mode = option.transport_mode;
                     payload.service_level = option.service_level;
                     payload.carrier_slug = 'obana';
                 }
+            }
+
+            /* Booked from the dashboard, where the figures come from the form
+               that showed them. Trusted only as a split: the total is the fee,
+               and a split that does not add up to it is ignored in favour of
+               one worked out from the percentage. */
+            if (!feeBreakdown) {
+                feeBreakdown = breakdownOf(payload, payload.shipping_fee);
             }
 
             const transaction = await db.sequelize.transaction();
@@ -1045,6 +1096,7 @@ const shipmentController = {
                         store_customer: storeCustomer,
                         store_quote_option: storeQuoteOption,
                         quote_reference: bookedQuote ? bookedQuote.reference : null,
+                        fee_breakdown: feeBreakdown,
                         carrier_details: {
                             carrier_name: payload.dispatcher?.carrier_name,
                             carrier_logo: payload.dispatcher?.carrier_logo,

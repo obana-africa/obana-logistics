@@ -64,6 +64,11 @@ type PriceOption = {
   transport_mode: string;
   service_level: string;
   price: number;
+  /* The two halves of that price: the delivery, and Obana's service charge.
+     Shown apart because a total nobody can take apart cannot be checked. */
+  base_price?: number;
+  service_charge?: number;
+  service_charge_percent?: number;
   eta?: string | null;
   estimated_delivery?: string | null;
   preferred_driver?: { id: number | string; driver_code?: string; vehicle_type?: string } | null;
@@ -157,12 +162,28 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   const priceOptions: PriceOption[] = !matchedRoute
     ? []
     : matchedRoute.options?.length
-      ? matchedRoute.options.map((o: PriceOption) => (heldOption && o.id === heldOption.id ? { ...o, price: heldOption.price, held: true } : o))
+      ? matchedRoute.options.map((o: PriceOption) =>
+          heldOption && o.id === heldOption.id
+            ? {
+                ...o,
+                price: heldOption.price,
+                /* The quoted price came with its own split; using this option's
+                   would show parts that do not add up to the total charged. */
+                base_price: heldOption.base_price ?? o.base_price,
+                service_charge: heldOption.service_charge ?? o.service_charge,
+                service_charge_percent: heldOption.service_charge_percent ?? o.service_charge_percent,
+                held: true,
+              }
+            : o,
+        )
       : [{
           id: 'only',
           transport_mode: matchedRoute.service?.transport_mode || (crossBorder ? 'air' : 'road'),
           service_level: matchedRoute.service?.service_level || 'Standard',
           price: Number(matchedRoute.match?.price),
+          base_price: matchedRoute.match?.base_price,
+          service_charge: matchedRoute.match?.service_charge,
+          service_charge_percent: matchedRoute.match?.service_charge_percent,
           eta: matchedRoute.match?.eta,
           estimated_delivery: matchedRoute.match?.estimated_delivery,
           preferred_driver: matchedRoute.external ? null : matchedRoute.preferred_driver,
@@ -340,6 +361,11 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
         external_shipment_id: matchedRoute.shipment_id,
         rate_id: matchedRoute.rate_id,
         shipping_fee: selected.price,
+        /* The split as it was shown. The server only takes it when the parts
+           add up to the fee, and works it out itself otherwise. */
+        base_price: selected.base_price,
+        service_charge: selected.service_charge,
+        service_charge_percent: selected.service_charge_percent,
         estimated_delivery: selected.estimated_delivery,
         preferred_driver_id: selected.preferred_driver?.id,
         // The server charges the quoted price only if this quote still holds for this booking.
@@ -370,6 +396,10 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
       setLoading(false);
     }
   };
+
+  /* "10% service charge" when we know the rate, plain otherwise. */
+  const chargeLabel = (o: PriceOption) =>
+    o.service_charge_percent ? `${o.service_charge_percent}% service charge` : 'Service charge';
 
   const serviceLabel = (o: PriceOption) => o.carrier || `${o.transport_mode.charAt(0).toUpperCase()}${o.transport_mode.slice(1)} · ${o.service_level}`;
 
@@ -820,7 +850,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                   return (
                     <label
                       key={o.id}
-                      className={`flex cursor-pointer items-center justify-between gap-4 rounded-xl border-2 bg-white p-4 transition ${active ? 'border-[#1B3B5F] shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}
+                      className={`flex cursor-pointer flex-col items-start gap-3 rounded-xl border-2 bg-white p-4 transition sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${active ? 'border-[#1B3B5F] shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}
                     >
                       <span className="flex min-w-0 items-center gap-3">
                         <input
@@ -846,7 +876,17 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                           </span>
                         </span>
                       </span>
-                      <span className="shrink-0 text-lg font-bold tabular-nums text-gray-900">{formatMoney(o.price, 'NGN')}</span>
+                      {/* The price, and what it is made of. On a phone this sits
+                          under the service rather than beside it, so neither
+                          number has to shrink to fit. */}
+                      <span className="w-full shrink-0 text-left sm:w-auto sm:text-right">
+                        <span className="block text-lg font-bold tabular-nums text-gray-900">{formatMoney(o.price, 'NGN')}</span>
+                        {!!o.service_charge && !!o.base_price && (
+                          <span className="mt-0.5 block text-xs text-gray-500 tabular-nums">
+                            {formatMoney(o.base_price, 'NGN')} delivery + {formatMoney(o.service_charge, 'NGN')} {chargeLabel(o)}
+                          </span>
+                        )}
+                      </span>
                     </label>
                   );
                 })}
@@ -910,10 +950,30 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                     <p className="font-semibold text-gray-900">{shipmentWeight.toFixed(2)} kg</p>
                   </div>
                   <div>
-                    <p className="text-gray-600">Shipping Cost</p>
+                    <p className="text-gray-600">Shipping cost</p>
                     <p className="font-bold text-green-600 text-lg">{formatMoney(selected.price, 'NGN')}</p>
                   </div>
                 </div>
+
+                {/* What that total is made of, where somebody is about to agree
+                    to it. The charge is a line on Obana's own quotes and on the
+                    Books estimate; it should not be the one place it is hidden. */}
+                {!!selected.service_charge && !!selected.base_price && (
+                  <dl className="mt-4 space-y-1.5 border-t border-blue-200/70 pt-4 text-sm">
+                    <div className="flex items-baseline justify-between gap-4">
+                      <dt className="text-gray-600">Delivery</dt>
+                      <dd className="font-medium text-gray-900 tabular-nums">{formatMoney(selected.base_price, 'NGN')}</dd>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-4">
+                      <dt className="text-gray-600">{chargeLabel(selected)}</dt>
+                      <dd className="font-medium text-gray-900 tabular-nums">{formatMoney(selected.service_charge, 'NGN')}</dd>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-4 border-t border-blue-200/70 pt-1.5">
+                      <dt className="font-semibold text-gray-900">Total</dt>
+                      <dd className="font-bold text-gray-900 tabular-nums">{formatMoney(selected.price, 'NGN')}</dd>
+                    </div>
+                  </dl>
+                )}
               </div>
 
               {/* Addresses */}

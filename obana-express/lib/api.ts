@@ -42,6 +42,10 @@ interface PublicQuoteOption {
   service_level: string | null;
   eta: string | null;
   price: number;
+  /** The delivery and Obana's service charge, which together make `price`. */
+  base_price?: number;
+  service_charge?: number;
+  service_charge_percent?: number;
   display_price: number | null;
 }
 
