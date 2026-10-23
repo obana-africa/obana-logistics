@@ -373,6 +373,9 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
 
     const opened = printShipmentSummary({
       reference: newShipmentInfo?.shipment_reference ?? null,
+      /* The waybill if one was attached while booking — the note beside an AWB
+         is where the number is written. */
+      awbNumber: pendingDocs.find((d) => d.kind.toUpperCase() === 'AWB')?.note || null,
       route: `${formData.pickup_address.city}, ${formData.pickup_address.state} → ${formData.delivery_address.city}, ${formData.delivery_address.state}`,
       service: serviceLabel(selected),
       weight: `${shipmentWeight.toFixed(2)} kg`,

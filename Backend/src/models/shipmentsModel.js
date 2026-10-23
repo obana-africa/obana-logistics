@@ -175,6 +175,12 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: true
         },
         
+        awb_number: {
+            type: DataTypes.STRING(64),
+            allowNull: true,
+            comment: 'Air waybill number, taken from the AWB document attached to the shipment.'
+        },
+
         metadata: {
             type: DataTypes.JSON,
             allowNull: true,

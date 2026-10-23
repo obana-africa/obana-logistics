@@ -1,5 +1,10 @@
 const { Op } = require('sequelize');
 const { uploadDocument } = require('../helpers/cloudinary')
+const { buildShipmentSummaryPdf, money } = require('../helpers/shipmentSummaryDocument')
+
+/* What Obana's own generated summary is filed as, so it can be told apart from
+   anything a customer attached — and replaced rather than piled up. */
+const SUMMARY_KIND = 'Summary'
 const crypto = require('crypto');
 const axios = require('axios');
 const { displayStatus } = require('../helpers/shipmentStatus');
@@ -383,6 +388,101 @@ const mayTouchShipment = async (req, shipment) => {
  * Returns null when there is no charge to speak of — a partner rate, or the
  * percentage set to zero — so nothing downstream shows an empty line.
  */
+/**
+ * The waybill number out of what somebody typed beside the file.
+ *
+ * It arrives as a note — "AWS566687", "AWB 123-45678901, RwandAir", sometimes
+ * the bare number — so the leading label is dropped and the first run that
+ * looks like a reference is taken. A trailing carrier or date is not part of
+ * the number and is left behind.
+ */
+const awbFromNote = (note) => {
+    const text = String(note ?? '').trim()
+    if (!text) return null
+    /* Strip a leading "AWB"/"air waybill" only where a separator follows it:
+       the \b keeps "AWS566687" whole, which is a number, not a label and a
+       number. */
+    const withoutLabel = text.replace(/^(air\s*way\s*bill|awb)\b[\s:#.\-]*(number|no\.?)?[\s:#.\-]*/i, '')
+    const candidates = withoutLabel.match(/[A-Za-z0-9][A-Za-z0-9\-/]{3,30}/g) || []
+    /* A waybill has digits in it. Without that, "arriving Tuesday" becomes a
+       waybill number of "arriving". */
+    return candidates.find((c) => /\d/.test(c)) || null
+}
+
+/**
+ * The summary Obana issues for a shipment, generated and kept with it.
+ *
+ * Not the customer's own upload — ours. It is built from the shipment record,
+ * uploaded like any other document and attached to it, so the link in a
+ * WhatsApp message opens a document on Obana's paper rather than whatever the
+ * sender happened to photograph. Regenerating replaces the previous one, which
+ * is what should happen when an air waybill arrives after booking.
+ *
+ * Never throws. A shipment without its summary is a gap somebody can fill; a
+ * booking that failed because a PDF would not upload is not.
+ */
+const attachShipmentSummary = async (shipment, { pickup, delivery, items } = {}) => {
+    try {
+        const pickupAddress = pickup || (shipment.pickup_address_id ? await db.addresses.findByPk(shipment.pickup_address_id) : null)
+        const deliveryAddress = delivery || (shipment.delivery_address_id ? await db.addresses.findByPk(shipment.delivery_address_id) : null)
+        const currency = shipment.currency || 'NGN'
+        const split = shipment.metadata?.fee_breakdown
+        const charges = split?.service_charge > 0
+            ? [
+                { label: 'Delivery', value: money(split.base, currency) },
+                { label: split.percent ? `${split.percent}% service charge` : 'Service charge', value: money(split.service_charge, currency) },
+                { label: 'Total', value: money(shipment.shipping_fee, currency), strong: true }
+            ]
+            : [{ label: 'Shipping cost', value: money(shipment.shipping_fee, currency), strong: true }]
+
+        const place = (a) => [a?.city, a?.state].filter(Boolean).join(', ') + (a?.country ? ` (${a.country})` : '')
+        const pdf = await buildShipmentSummaryPdf({
+            reference: shipment.shipment_reference,
+            awbNumber: shipment.awb_number,
+            route: `${place(pickupAddress)} \u2192 ${place(deliveryAddress)}`,
+            service: [shipment.transport_mode, shipment.service_level].filter(Boolean).join(' \u00b7 '),
+            weight: `${Number(shipment.total_weight || 0)} kg`,
+            trackingUrl: buildTrackingUrl(shipment.shipment_reference),
+            charges,
+            pickup: pickupAddress,
+            delivery: deliveryAddress,
+            items: (items || []).map((i) => ({
+                name: i.name,
+                weight: `${Number(i.weight) || 0} kg`,
+                value: Number(i.total_price ?? i.price) > 0 ? money(i.total_price ?? i.price, currency) : ''
+            }))
+        })
+
+        const url = await uploadDocument(
+            `data:application/pdf;base64,${pdf.toString('base64')}`,
+            `shipments/${shipment.shipment_reference}`
+        )
+
+        const entry = {
+            id: `doc-summary-${Date.now().toString(36)}`,
+            url,
+            name: `Shipment summary ${shipment.shipment_reference}.pdf`,
+            kind: SUMMARY_KIND,
+            note: null,
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: 'obana',
+            generated: true
+        }
+
+        /* One summary at a time: the newest replaces the one it supersedes, so
+           nobody has to work out which of three is current. */
+        const kept = (Array.isArray(shipment.documents) ? shipment.documents : []).filter((d) => d?.kind !== SUMMARY_KIND)
+        shipment.documents = [entry, ...kept]
+        shipment.changed('documents', true)
+        await shipment.save()
+        console.log(`[SUMMARY] Attached ${entry.name}`)
+        return entry
+    } catch (error) {
+        console.error(`[SUMMARY] Could not attach a summary to ${shipment?.shipment_reference}:`, error?.reason || error?.message || error)
+        return null
+    }
+}
+
 const breakdownOf = (source, fee) => {
     const total = Number(fee) || 0
     if (!(total > 0)) return null
@@ -1335,6 +1435,13 @@ const shipmentController = {
 
                 await transaction.commit();
 
+                /* Before the customer is told anything, so the link in that
+                   message already has a document behind it. */
+                await attachShipmentSummary(shipment, {
+                    pickup: pickupAddress,
+                    delivery: deliveryAddress,
+                    items: payload.items
+                });
 
                 /* Awaited, so the outcome can be reported rather than guessed
                    at. This was fire-and-forget, which meant a create that sent
@@ -2225,6 +2332,21 @@ const shipmentController = {
                one is only saved when the field is marked changed. */
             shipment.changed('documents', true);
             await shipment.save();
+
+            /* An air waybill carries a number, and a number inside a note can
+               be read by a person and by nothing else. Lift it onto the
+               shipment and reissue the summary, which should carry it. */
+            if (String(entry.kind).trim().toUpperCase() === 'AWB') {
+                const number = awbFromNote(entry.note) || awbFromNote(entry.name);
+                if (number && number !== shipment.awb_number) {
+                    shipment.awb_number = number;
+                    await shipment.save();
+                    console.log(`[AWB] ${shipment.shipment_reference} -> ${number}`);
+                }
+                /* Not awaited: the attachment has succeeded and the caller is
+                   waiting on it. A summary that fails to reissue is logged. */
+                attachShipmentSummary(shipment).catch(() => {});
+            }
 
             /* On the timeline too, so the history says when the waybill
                arrived and not only that the shipment moved. */

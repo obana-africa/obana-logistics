@@ -11,6 +11,16 @@
  * Nothing here is sent anywhere. The window is built, printed and closed.
  */
 
+/* The footer, as Obana writes it. */
+const TAGLINE =
+	"www.obana.africa — One Platform Powering your Business. Marketplace | Financing | Logistics | Thaja";
+
+/* Where payment goes. The same two accounts the issued summary carries. */
+const ACCOUNTS = [
+	{ name: "Icon Tech & Ecommerce Service Limited", bank: "Sterling Bank", number: "0118874437", currency: "NGN" },
+	{ name: "Icon Tech & Ecommerce Service Limited", bank: "Carbon MicroFinance Bank", number: "9932489664", currency: "NGN" },
+];
+
 export type SummaryLine = { label: string; value: string; strong?: boolean };
 
 export type ShipmentSummary = {
@@ -19,6 +29,8 @@ export type ShipmentSummary = {
 	route: string;
 	service: string;
 	weight: string;
+	/** Printed only when there is one. */
+	awbNumber?: string | null;
 	/** Delivery, service charge, total — whatever the screen showed. */
 	charges: SummaryLine[];
 	pickup: string[];
@@ -69,11 +81,13 @@ const documentHtml = (s: ShipmentSummary) => `<!doctype html>
   .party { flex: 1; }
   .party h3 { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin: 0 0 6px; }
   .party p { margin: 0 0 2px; }
+  .party p.strong { font-weight: 700; }
   table.items { width: 100%; border-collapse: collapse; }
   table.items th { text-align: left; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; border-bottom: 1px solid #e5e7eb; padding: 0 0 5px; }
   table.items td { padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
   table.items .num { text-align: right; font-variant-numeric: tabular-nums; }
   footer { margin-top: 26px; border-top: 1px solid #e5e7eb; padding-top: 10px; font-size: 10px; color: #94a3b8; }
+  footer .tagline { display: block; margin-top: 6px; text-align: center; }
 </style>
 </head>
 <body>
@@ -90,6 +104,7 @@ const documentHtml = (s: ShipmentSummary) => `<!doctype html>
     <tr><td>Route</td><td>${esc(s.route)}</td></tr>
     <tr><td>Service</td><td>${esc(s.service)}</td></tr>
     <tr><td>Total weight</td><td>${esc(s.weight)}</td></tr>
+    ${s.awbNumber ? `<tr><td>Air waybill</td><td>${esc(s.awbNumber)}</td></tr>` : ""}
   </table>
 
   <h2>Charges</h2>
@@ -116,9 +131,20 @@ const documentHtml = (s: ShipmentSummary) => `<!doctype html>
 			: ""
 	}
 
+  <h2>Payment</h2>
+  <div class="parties">
+    ${ACCOUNTS.map(
+			(a) => `<div class="party">
+      <p class="strong">${esc(a.name)}</p>
+      <p>${esc(a.bank)}</p>
+      <p class="strong">${esc(a.number)} (${esc(a.currency)})</p>
+    </div>`,
+		).join("")}
+  </div>
+
   <footer>
-    ${s.reference ? "Obana Logistics." : "This is a summary of a shipment being booked, not a receipt."}
     Customs duties and clearance charges at the destination are not included unless stated above.
+    <span class="tagline">${esc(TAGLINE)}</span>
   </footer>
 </body>
 </html>`;
