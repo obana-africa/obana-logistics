@@ -116,3 +116,19 @@ export function placeLabel(place: Place) {
 export function routeLabel(from: Place, to: Place) {
 	return `${placeLabel(from)} → ${placeLabel(to)}`;
 }
+
+/**
+ * A phone number with its country code visible.
+ *
+ * Numbers are stored as they were entered, so an international one arrives as
+ * "39445858835" and reads like a local number with an odd prefix. A leading +
+ * is the only thing that says which country it belongs to.
+ *
+ * Not added to a number starting with 0: that is a national number with its
+ * trunk code, and "+08090335245" is not a phone number anywhere.
+ */
+export const showPhone = (phone?: string | null) => {
+	const value = String(phone ?? "").trim();
+	if (!value) return "";
+	return /^\d{10,15}$/.test(value) && !value.startsWith("0") ? `+${value}` : value;
+};

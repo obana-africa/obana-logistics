@@ -5,7 +5,7 @@ import React, { useState, useSyncExternalStore } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Alert, Card, Button, Input } from '@/components/ui';
 import { apiClient, type SavedQuote } from '@/lib/api';
-import { formatMoney } from '@/lib/shipments';
+import { formatMoney, showPhone } from '@/lib/shipments';
 import { useRemote } from '@/lib/useRemote';
 import { clearPendingQuote } from '@/components/quote/quote';
 import { useRouter } from 'next/navigation';
@@ -361,7 +361,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   const downloadSummary = () => {
     if (!selected) return;
     const place = (a: { line1?: string; city?: string; state?: string; country?: string; name?: string; contact_name?: string; phone?: string }) =>
-      [a.name || a.contact_name, a.line1, [a.city, a.state].filter(Boolean).join(', '), a.country, a.phone].filter(Boolean) as string[];
+      [a.name || a.contact_name, a.line1, [a.city, a.state].filter(Boolean).join(', '), a.country, showPhone(a.phone)].filter(Boolean) as string[];
 
     const charges = selected.base_price && selected.service_charge
       ? [
@@ -1037,7 +1037,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                     <p>{formData.pickup_address.line1}</p>
                     <p>{formData.pickup_address.city}, {formData.pickup_address.state}</p>
                     <p>{formData.pickup_address.country}</p>
-                    <p className="pt-1 font-medium">{formData.pickup_address.phone}</p>
+                    <p className="pt-1 font-medium">{showPhone(formData.pickup_address.phone)}</p>
                   </div>
                 </div>
 
@@ -1051,7 +1051,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                     <p>{formData.delivery_address.line1}</p>
                     <p>{formData.delivery_address.city}, {formData.delivery_address.state}</p>
                     <p>{formData.delivery_address.country}</p>
-                    <p className="pt-1 font-medium">{formData.delivery_address.phone}</p>
+                    <p className="pt-1 font-medium">{showPhone(formData.delivery_address.phone)}</p>
                   </div>
                 </div>
               </div>

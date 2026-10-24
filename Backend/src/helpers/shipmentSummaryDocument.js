@@ -63,6 +63,21 @@ const money = (amount, currency = 'NGN') => {
     return `${str(currency).toUpperCase() || 'NGN'} ${figure}`
 }
 
+/**
+ * A phone number with its country code visible.
+ *
+ * Stored as entered, so an international number arrives as "39445858835" and
+ * reads like a local one with an odd prefix. The + is what says which country
+ * it belongs to — and it is not added to a number starting with 0, which is a
+ * national number with its trunk code: "+08090335245" is not a phone number
+ * anywhere.
+ */
+const showPhone = (phone) => {
+    const value = str(phone)
+    if (!value) return ''
+    return /^\d{10,15}$/.test(value) && !value.startsWith('0') ? `+${value}` : value
+}
+
 const placeLines = (address) =>
     [
         str(address?.name) || [str(address?.first_name), str(address?.last_name)].filter(Boolean).join(' '),
@@ -70,7 +85,7 @@ const placeLines = (address) =>
         str(address?.line2),
         [str(address?.city), str(address?.state)].filter(Boolean).join(', '),
         str(address?.country),
-        str(address?.phone)
+        showPhone(address?.phone)
     ].filter(Boolean)
 
 /**
