@@ -547,6 +547,12 @@ class ApiClient {
   /* The papers a shipment is about: waybills, invoices, photographs of the
      goods. `file` is a data URL; the API puts it in Cloudinary and keeps the
      link on the shipment. */
+  /** Record the air waybill number, with or without a file behind it. */
+  async setShipmentAwb(shipmentId: string | number, awbNumber: string) {
+    const response = await this.client.put<ApiResponse>(`/shipments/${shipmentId}/awb`, { awb_number: awbNumber });
+    return response.data;
+  }
+
   async listShipmentDocuments(shipmentId: string | number) {
     const response = await this.client.get<ApiResponse>(`/shipments/${shipmentId}/documents`);
     return response.data;

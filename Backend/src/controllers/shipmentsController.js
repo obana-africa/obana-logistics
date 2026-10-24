@@ -204,15 +204,19 @@ const waPlace = (address, fallback) => {
  *
  * Nobody types an AWB into a field at booking — it does not exist yet. It
  * arrives when the forwarder issues it, which is when somebody attaches the
- * waybill and writes the number in the note beside it. So that is read first,
- * then the carrier reference an external booking carries, and failing both the
- * message says so: a WhatsApp template cannot be sent with an empty variable.
+ * waybill and writes the number in the note beside it, or types it on the
+ * shipment. So the number kept on the shipment is read first, then the note,
+ * then the carrier reference an external booking carries. Failing all three
+ * the message says "AWB not available" — a WhatsApp template cannot carry an
+ * empty variable, and a domestic shipment has no waybill to begin with.
  */
 const waAirWaybill = (shipment) => {
+    const stored = String(shipment.awb_number ?? '').trim();
+    if (stored) return stored;
     const documents = Array.isArray(shipment.documents) ? shipment.documents : [];
     const awb = documents.find((d) => String(d?.kind ?? '').trim().toUpperCase() === 'AWB');
     const fromNote = String(awb?.note ?? '').trim();
-    return fromNote || String(shipment.external_carrier_reference ?? '').trim() || 'Not yet issued';
+    return fromNote || String(shipment.external_carrier_reference ?? '').trim() || 'AWB not available';
 };
 
 const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
@@ -258,8 +262,14 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
         if (intlTemplate) {
             const pickup = shipment.pickup_address
                 || (shipment.pickup_address_id ? await db.addresses.findByPk(shipment.pickup_address_id) : null);
-            const country = (a) => String(a?.country ?? '').trim().toLowerCase();
-            if (pickup && address && country(pickup) && country(address) && country(pickup) !== country(address)) {
+            /* Every lane, not only the ones that cross a border. A customer
+               sending Lagos to Kano was getting three lines while a customer
+               sending Italy to Port Harcourt got the route, the waybill and
+               the price broken out — the same event told two different ways
+               for no reason the customer could see. The waybill line simply
+               reads "AWB not available" where there is no waybill, which is
+               honest and keeps the two messages the same shape. */
+            if (pickup && address) {
                 const split = shipment.metadata?.fee_breakdown;
                 const charge = Number(split?.service_charge) || 0;
                 const delivery = Number(split?.base) || Number(shipment.shipping_fee) || 0;
@@ -2286,6 +2296,56 @@ const shipmentController = {
      * agent's documents already do — `resource_type: auto`, so a PDF arrives
      * as a PDF rather than a broken image.
      */
+    /**
+     * Record the air waybill number on its own.
+     *
+     * It was only ever picked up from the note beside an attached file, so
+     * typing the number and not attaching anything lost it — and the summary
+     * went out without a waybill on it. The number and the paperwork arrive at
+     * different moments and should not depend on each other.
+     *
+     * Reissues the summary, which is the document that carries the number.
+     */
+    setShipmentAwb: async (req, res) => {
+        try {
+            const { shipment_id } = req.params;
+            const number = String(req.body?.awb_number ?? '').trim();
+
+            const shipment = /^\d+$/.test(String(shipment_id))
+                ? await db.shippings.findByPk(shipment_id)
+                : await db.shippings.findOne({ where: { shipment_reference: shipment_id } });
+            if (!shipment) {
+                return res.status(404).json({ success: false, message: 'Shipment not found' });
+            }
+            if (!(await mayTouchShipment(req, shipment))) {
+                return res.status(403).json({ success: false, message: 'You cannot change this shipment' });
+            }
+            if (number.length > 64) {
+                return res.status(400).json({ success: false, message: 'That waybill number is too long' });
+            }
+
+            /* An empty value clears it, which is how a number entered by
+               mistake is taken back. */
+            await shipment.update({ awb_number: number || null });
+
+            await db.shipment_tracking.create({
+                shipment_id: shipment.id,
+                status: shipment.status,
+                description: number ? `Air waybill recorded: ${number}` : 'Air waybill number cleared',
+                performed_by: req.user ? `user_${req.user.id}` : 'system'
+            }).catch(() => {});
+
+            /* Not awaited: the number is saved and the caller is waiting on
+               that. A summary that fails to reissue is logged, not fatal. */
+            attachShipmentSummary(shipment).catch(() => {});
+
+            return res.status(200).json({ success: true, data: { awb_number: shipment.awb_number } });
+        } catch (error) {
+            console.error('Error setting the air waybill:', error);
+            return res.status(500).json({ success: false, message: 'Error saving the waybill number' });
+        }
+    },
+
     addShipmentDocument: async (req, res) => {
         try {
             const { shipment_id } = req.params;

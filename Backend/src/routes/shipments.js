@@ -30,6 +30,9 @@ router.get('/track/:shipment_reference', auth.authenticateToken, controller.getS
     router.post('/:shipment_id/documents', auth.authenticateToken, auth.verifyRole(['admin', 'agent', 'driver', 'customer']), controller.addShipmentDocument);
     router.delete('/:shipment_id/documents/:document_id', auth.authenticateToken, auth.verifyRole(['admin', 'agent', 'customer']), controller.removeShipmentDocument);
 
+    /* The waybill number, with or without the paperwork behind it. */
+    router.put('/:shipment_id/awb', auth.authenticateToken, auth.verifyRole(['admin', 'agent', 'driver']), controller.setShipmentAwb);
+
     router.put('/:shipment_id/assign-driver', auth.authenticateToken, auth.verifyRole(['admin', 'agent']), controller.assignDriver);
     router.post('/confirm-external/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin']), controller.confirmExternalShipment);
     router.post('/push-to-partner/:shipment_id', auth.authenticateToken, auth.verifyRole(['admin']), controller.pushToPartner);
