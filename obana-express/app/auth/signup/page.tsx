@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useState, useSyncExternalStore } from "react";
+import React, { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { type ReadonlyURLSearchParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ChevronRight, Eye, EyeOff, Lock, Mail, Package, PlugZap, Shield, Truck, Upload, UserRound } from "lucide-react";
 import { AuthShell } from "@/components/AuthShell";
 import { LocationInput } from "@/components/LocationInput";
@@ -21,37 +21,32 @@ const readNext = () => safeNextPath(new URLSearchParams(window.location.search).
 /**
  * What Google handed over, carried in the query string by the callback page.
  *
- * Read once on mount rather than with useSearchParams, matching how `next` is
- * already read here — and so the fields are filled on the first paint instead
- * of appearing a moment later.
  */
-let googleSnapshot: { token: string; email: string; first_name: string; last_name: string; role: string } | null | undefined;
-
-const readGoogle = () => {
-	if (typeof window === "undefined") return null;
-	/* Read once and hold the same object.
-	
-	   useSyncExternalStore compares snapshots by identity, so a fresh object
-	   on every call reads as "changed every render" — React calls that an
-	   infinite loop and throws, which is the client-side exception this page
-	   was showing. readNext above gets away with it by returning a string.
-	   The query string does not change under us, so one read is correct as
-	   well as necessary. */
-	if (googleSnapshot !== undefined) return googleSnapshot;
-	const q = new URLSearchParams(window.location.search);
-	const token = q.get("google_token");
-	googleSnapshot = token
-		? {
-				token,
-				email: q.get("email") ?? "",
-				first_name: q.get("first_name") ?? "",
-				last_name: q.get("last_name") ?? "",
-				/* The account kind chosen before going to Google, carried out
-				   and back so nobody is asked it twice. */
-				role: q.get("role") ?? "",
-			}
-		: null;
-	return googleSnapshot;
+/**
+ * What Google handed over, read from the router rather than from window.
+ *
+ * This used to read window.location.search once and keep the answer. Landing
+ * here directly worked; arriving from the callback did not, and that is the
+ * whole bug: router.replace renders this page before the address bar has
+ * caught up, so the first read saw the callback's own query, cached "nothing
+ * from Google", and never looked again. A hard reload made it work, which is
+ * not a fix anybody can be asked to perform.
+ *
+ * useSearchParams is the router's own value and updates with it, so there is
+ * nothing to cache and nothing to be early for.
+ */
+const googleFrom = (params: URLSearchParams | ReadonlyURLSearchParams) => {
+	const token = params.get("google_token");
+	if (!token) return null;
+	return {
+		token,
+		email: params.get("email") ?? "",
+		first_name: params.get("first_name") ?? "",
+		last_name: params.get("last_name") ?? "",
+		/* The account kind chosen before going to Google, carried out and back
+		   so nobody is asked it twice. */
+		role: params.get("role") ?? "",
+	};
 };
 
 type Role = "customer" | "driver" | "agent";
@@ -95,7 +90,7 @@ function FilePick({ label, file, onPick }: { label: string; file: File | null; o
 	);
 }
 
-export default function SignupPage() {
+function SignupForm() {
 	const router = useRouter();
 	const { signup, error, clearError } = useAuth();
 	/* Coming back from Google, the account kind is assumed rather than asked.
@@ -108,7 +103,10 @@ export default function SignupPage() {
 	/* Arriving from Google: the address is already proved, so the form opens
 	   filled in and asks only for what Google cannot give. The token stands in
 	   for the password, which is why both password fields disappear. */
-	const google = useSyncExternalStore(subscribeNothing, readGoogle, () => null);
+	const searchParams = useSearchParams();
+	/* Memoised so the object identity only changes when the query does — the
+	   effect below depends on it. */
+	const google = useMemo(() => googleFrom(searchParams), [searchParams]);
 	/* The account kind the person already chose, carried to Google in `state`
 	   and handed back on the way in. Asking "How will you use Obana?" a second
 	   time, after they answered it and after Google confirmed who they are, is
@@ -414,5 +412,14 @@ export default function SignupPage() {
 				</>
 			)}
 		</AuthShell>
+	);
+}
+
+export default function SignupPage() {
+	/* useSearchParams needs a boundary, or the route cannot be prerendered. */
+	return (
+		<Suspense fallback={null}>
+			<SignupForm />
+		</Suspense>
 	);
 }
