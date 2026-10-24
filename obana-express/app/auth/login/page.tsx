@@ -9,6 +9,7 @@ import { Alert, Button, Checkbox, Input } from "@/components/ui";
 import { useAuth } from "@/lib/authContext";
 import { dashboardFor } from "@/lib/site";
 import { safeNextPath, withNext } from "@/components/quote/quote";
+import { GoogleButton } from "@/components/auth/GoogleButton";
 
 const subscribeNothing = () => () => {};
 // ?next=/… returns people to where they were (e.g. booking a quote); anything unsafe is ignored.
@@ -49,6 +50,9 @@ export default function LoginPage() {
 				</Alert>
 			)}
 
+			<div className="mt-8">
+				<GoogleButton label="Continue with Google" />
+			</div>
 			<form onSubmit={handleSubmit} className="mt-8 space-y-5">
 				<Input
 					label="Email or phone number"

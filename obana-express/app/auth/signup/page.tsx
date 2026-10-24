@@ -12,10 +12,31 @@ import { useAuth } from "@/lib/authContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { dashboardFor } from "@/lib/site";
 import { safeNextPath, withNext } from "@/components/quote/quote";
+import { GoogleButton } from "@/components/auth/GoogleButton";
 
 const subscribeNothing = () => () => {};
 // ?next=/… returns people to where they were (e.g. booking a quote); anything unsafe is ignored.
 const readNext = () => safeNextPath(new URLSearchParams(window.location.search).get("next"));
+
+/**
+ * What Google handed over, carried in the query string by the callback page.
+ *
+ * Read once on mount rather than with useSearchParams, matching how `next` is
+ * already read here — and so the fields are filled on the first paint instead
+ * of appearing a moment later.
+ */
+const readGoogle = () => {
+	if (typeof window === "undefined") return null;
+	const q = new URLSearchParams(window.location.search);
+	const token = q.get("google_token");
+	if (!token) return null;
+	return {
+		token,
+		email: q.get("email") ?? "",
+		first_name: q.get("first_name") ?? "",
+		last_name: q.get("last_name") ?? "",
+	};
+};
 
 type Role = "customer" | "driver" | "agent";
 
@@ -63,7 +84,18 @@ export default function SignupPage() {
 	const { signup, error, clearError } = useAuth();
 	const [role, setRole] = useState<Role | null>(null);
 	const next = useSyncExternalStore(subscribeNothing, readNext, () => null);
-	const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", password: "", confirm: "" });
+	/* Arriving from Google: the address is already proved, so the form opens
+	   filled in and asks only for what Google cannot give. The token stands in
+	   for the password, which is why both password fields disappear. */
+	const google = useSyncExternalStore(subscribeNothing, readGoogle, () => null);
+	const [form, setForm] = useState({
+		first_name: google?.first_name ?? "",
+		last_name: google?.last_name ?? "",
+		email: google?.email ?? "",
+		phone: "",
+		password: "",
+		confirm: "",
+	});
 	const [show, setShow] = useState({ password: false, confirm: false });
 	const [agent, setAgent] = useState({
 		government_id_type: "NIN",
@@ -86,8 +118,10 @@ export default function SignupPage() {
 		if (!form.last_name.trim()) e.last_name = "Enter your last name.";
 		if (!EMAIL.test(form.email.trim())) e.email = "Enter a valid email address.";
 		if (form.phone.replace(/\D/g, "").length < 8) e.phone = "Enter a valid phone number.";
-		if (form.password.length < MIN_PASSWORD) e.password = `Use at least ${MIN_PASSWORD} characters.`;
-		if (form.confirm !== form.password) e.confirm = "The passwords don't match.";
+		if (!google) {
+			if (form.password.length < MIN_PASSWORD) e.password = `Use at least ${MIN_PASSWORD} characters.`;
+			if (form.confirm !== form.password) e.confirm = "The passwords don't match.";
+		}
 		if (role === "agent") {
 			if (!agent.government_id_number.trim()) e.id_number = "Enter your ID number.";
 			if (!agent.location.state || !agent.location.city) e.location = "Choose your state and city.";
@@ -135,7 +169,15 @@ export default function SignupPage() {
 					profile_photo,
 				};
 			}
-			const response = await signup(form.first_name.trim(), form.last_name.trim(), form.email.trim(), form.phone.trim(), form.password, role, additional);
+			const response = await signup(
+				form.first_name.trim(),
+				form.last_name.trim(),
+				form.email.trim(),
+				form.phone.trim(),
+				form.password,
+				role,
+				google ? { ...additional, google_token: google.token } : additional,
+			);
 			router.replace(next ?? dashboardFor(response?.data?.user ?? { role }));
 		} catch (err) {
 			/* The server names the field it rejected, so the message lands on that
@@ -217,6 +259,9 @@ export default function SignupPage() {
 						</Alert>
 					)}
 
+					<div className="mt-8">
+						<GoogleButton label="Sign up with Google" />
+					</div>
 					<form onSubmit={handleSubmit} className="mt-8 space-y-5" noValidate>
 						<div className="grid gap-5 sm:grid-cols-2">
 							<Input label="First name" autoComplete="given-name" required value={form.first_name} onChange={(e) => update("first_name", e.target.value)} error={errors.first_name} icon={<UserRound />} />
@@ -272,29 +317,36 @@ export default function SignupPage() {
 							</fieldset>
 						)}
 
-						<Input
-							label="Password"
-							type={show.password ? "text" : "password"}
-							autoComplete="new-password"
-							required
-							value={form.password}
-							onChange={(e) => update("password", e.target.value)}
-							error={errors.password}
-							helperText={`At least ${MIN_PASSWORD} characters.`}
-							icon={<Lock />}
-							trailing={<RevealButton shown={show.password} onToggle={() => setShow((s) => ({ ...s, password: !s.password }))} />}
-						/>
-						<Input
-							label="Confirm password"
-							type={show.confirm ? "text" : "password"}
-							autoComplete="new-password"
-							required
-							value={form.confirm}
-							onChange={(e) => update("confirm", e.target.value)}
-							error={errors.confirm}
-							icon={<Lock />}
-							trailing={<RevealButton shown={show.confirm} onToggle={() => setShow((s) => ({ ...s, confirm: !s.confirm }))} />}
-						/>
+						{/* Google has already proved the address, and the account is
+						    created without a password — so there is nothing to ask for
+						    here, and asking anyway would be a field that does nothing. */}
+						{!google && (
+							<>
+							<Input
+								label="Password"
+								type={show.password ? "text" : "password"}
+								autoComplete="new-password"
+								required
+								value={form.password}
+								onChange={(e) => update("password", e.target.value)}
+								error={errors.password}
+								helperText={`At least ${MIN_PASSWORD} characters.`}
+								icon={<Lock />}
+								trailing={<RevealButton shown={show.password} onToggle={() => setShow((s) => ({ ...s, password: !s.password }))} />}
+							/>
+							<Input
+								label="Confirm password"
+								type={show.confirm ? "text" : "password"}
+								autoComplete="new-password"
+								required
+								value={form.confirm}
+								onChange={(e) => update("confirm", e.target.value)}
+								error={errors.confirm}
+								icon={<Lock />}
+								trailing={<RevealButton shown={show.confirm} onToggle={() => setShow((s) => ({ ...s, confirm: !s.confirm }))} />}
+							/>
+							</>
+						)}
 
 						<Button type="submit" size="lg" fullWidth loading={loading}>
 							{loading ? "Creating your account…" : "Create account"}

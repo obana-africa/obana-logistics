@@ -54,7 +54,28 @@ router.post('/google_token/callback', async (req, res) => {
     }
 
     if (!user) {
-      return res.status(401).json({ error: 'User not found. Please register.' });
+      /* No account yet. Refusing here was the whole of "sign up with Google":
+         Google had just proved who they are, and we sent them away to type it
+         all in again. Hand back what Google told us, with a short-lived token
+         that says we verified this address, and let the signup form open
+         already filled in. The token is what makes a password unnecessary —
+         it cannot be minted by anyone who has not been through Google. */
+      const [first_name = '', ...rest] = String(profile.name || '').trim().split(/\s+/);
+      const googleToken = jwt.sign(
+        { email, provider: 'google', purpose: 'signup' },
+        process.env.ACCESS_TOKEN_SECRET,
+        { expiresIn: '20m' }
+      );
+      return res.status(200).json({
+        needs_signup: true,
+        google_token: googleToken,
+        profile: {
+          email,
+          first_name: profile.given_name || first_name,
+          last_name: profile.family_name || rest.join(' '),
+          picture: profile.picture || null
+        }
+      });
     }    // Optionally update user info from Google profile
 
     // 4. Generate your app's tokens (JWT, etc.)

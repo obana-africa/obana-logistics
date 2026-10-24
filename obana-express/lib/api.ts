@@ -284,6 +284,24 @@ class ApiClient {
     return response;
   }
 
+  /**
+   * Hand Google's one-time code to the API.
+   *
+   * Comes back either signed in, or with `needs_signup` and the profile Google
+   * gave us — the form is then filled in from it rather than from memory.
+   */
+  async googleExchange(code: string, redirectUri: string) {
+    const response = await this.client.post<{
+      access_token?: string;
+      refresh_token?: string;
+      user?: unknown;
+      needs_signup?: boolean;
+      google_token?: string;
+      profile?: { email: string; first_name: string; last_name: string; picture?: string | null };
+    }>('/auth/google_token/callback', { code, redirect_uri: redirectUri });
+    return response.data;
+  }
+
   async login(userIdentification: string, password: string, rememberMe: boolean = false) {
     const response = await this.client.post<ApiResponse>('/users/login', {
       user_identification: userIdentification,
