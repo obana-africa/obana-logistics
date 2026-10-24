@@ -19,6 +19,11 @@
  *
  *   3. A known test address is on it, as the vendor or the pickup contact.
  *
+ *   4. Its order reference is a quote — QT-… — rather than a sales order. A
+ *      quote is what somebody was offered, not something they bought, so a
+ *      shipment booked against one was never a real order. True of both Zohos,
+ *      so the rule does not care which.
+ *
  * Order matters. Nothing in this schema declares onDelete, so the database
  * refuses to remove a shipment while anything still points at it. Items and
  * tracking events carry shipment_id NOT NULL and describe the shipment, so
@@ -35,6 +40,10 @@ const STAGING_ZOHO_PREFIX = '6519617';
 const TEST_PHONES = ['2347035599433', '07035599433', '+2347035599433', '7035599433'];
 
 const TEST_CONTACTS = ['op@gmail.com', 'opmail.com'];
+
+/* A shipment whose order reference is a quote number was booked against an
+   offer rather than an order. Same in either Zoho. */
+const QUOTE_PREFIX = 'QT';
 
 module.exports = {
     async up(queryInterface) {
@@ -53,6 +62,7 @@ module.exports = {
                       WHEN (s.metadata #>> '{zoho,salesorder_id}') LIKE :stagingPrefix THEN 'staging Zoho'
                       WHEN right(regexp_replace(COALESCE(d.phone, ''), '\\D', '', 'g'), 10) = :phoneTail THEN 'delivery phone'
                       WHEN right(regexp_replace(COALESCE(p.phone, ''), '\\D', '', 'g'), 10) = :phoneTail THEN 'pickup phone'
+                      WHEN s.order_reference ILIKE :quotePrefix THEN 'booked against a quote, not an order'
                       ELSE 'test contact'
                     END AS reason
                FROM shippings s
@@ -65,11 +75,13 @@ module.exports = {
                  OR lower(COALESCE(d.name, '')) IN (:contacts)
                  OR lower(COALESCE(p.name, '')) IN (:contacts)
                  OR lower(COALESCE(d.contact_email, '')) IN (:contacts)
-                 OR lower(COALESCE(p.contact_email, '')) IN (:contacts)`,
+                 OR lower(COALESCE(p.contact_email, '')) IN (:contacts)
+                 OR s.order_reference ILIKE :quotePrefix`,
             {
                 replacements: {
                     stagingPrefix: `${STAGING_ZOHO_PREFIX}%`,
                     phoneTail,
+                    quotePrefix: `${QUOTE_PREFIX}%`,
                     contacts: TEST_CONTACTS.map((c) => c.toLowerCase())
                 },
                 type: QueryTypes.SELECT
