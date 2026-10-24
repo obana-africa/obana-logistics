@@ -33,6 +33,29 @@ const Agents = db.agents
 const createUserRequest = async (req, res) => {
     try {
     req.body.email = req.body.email.toLowerCase()
+
+    /* Signing up through Google. The token was minted by our own Google
+       callback after Google confirmed the address, so it stands in for a
+       password: the account is created without one, and the login path
+       already knows to send such an account back to "Continue with Google".
+       The email is taken from the token rather than the body — otherwise
+       anyone holding a token for their own address could open an account on
+       somebody else's. */
+    if (req.body.google_token) {
+        let claims
+        try {
+            claims = jwt.verify(req.body.google_token, process.env.ACCESS_TOKEN_SECRET)
+        } catch {
+            return res.status(401).send(
+                utils.responseError('That Google sign-in has expired. Start again with "Continue with Google".')
+            )
+        }
+        if (claims?.purpose !== 'signup' || claims?.provider !== 'google' || !claims?.email) {
+            return res.status(401).send(utils.responseError('That sign-in could not be verified. Please try again.'))
+        }
+        req.body.email = String(claims.email).toLowerCase()
+        delete req.body.password
+    }
     // normalize phone if present
     if (req.body.phone && req.body.phone.length > 50) {
         return res.status(400).send(utils.responseError('Phone number too long. Maximum 50 characters.'))
@@ -88,7 +111,10 @@ const createUser = async (payload, req, res) => {
     }
     const { first_name, last_name, vehicle_type, vehicle_registration, role,  ...userData } = payload
     
-    const hashedPassword = await hashPassword(userData.password)
+    /* An account opened through Google has no password to hash. bcrypt throws
+       on undefined, and the login path already answers such an account with
+       "This account signs in with Google". */
+    const hashedPassword = userData.password ? await hashPassword(userData.password) : null
     /* Stored canonical so the variants shrink to one over time. Falls back to
        what was typed when it is not a number we recognise, rather than
        dropping it. */
