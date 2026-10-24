@@ -899,6 +899,7 @@ const shipmentController = {
             startOfMonth.setHours(0, 0, 0, 0);
 
             const [
+                totalShipments,
                 totalRoutes,
                 activeDrivers,
                 pendingShipments,
@@ -907,6 +908,11 @@ const shipmentController = {
                 recentUsers,
                 recentRoutes
             ] = await Promise.all([
+                /* Every shipment ever booked. The dashboard showed how many are
+                   waiting and how much came in this month, but never the size
+                   of the thing — and "how many have we done" is the first
+                   question anyone asks of it. */
+                db.shippings.count(),
                 db.route_templates.count(),
                 db.drivers.count({ where: { status: 'active' } }),
                 db.shippings.count({ where: { status: 'pending' } }),
@@ -975,6 +981,7 @@ const shipmentController = {
             return res.status(200).json({
                 success: true,
                 data: {
+                    totalShipments,
                     totalRoutes,
                     activeDrivers,
                     pendingShipments,

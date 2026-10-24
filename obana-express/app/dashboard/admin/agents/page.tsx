@@ -2,10 +2,10 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Search, ShieldAlert, ShieldCheck, Trash2, UserCheck, Users, X } from "lucide-react";
+import { ChevronRight, Plus, Search, ShieldAlert, ShieldCheck, Trash2, UserCheck, Users, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { EmptyState, ErrorState, ListSkeleton, PageHeader, Pager, Panel, StatCard, ToneBadge } from "@/components/dashboard/kit";
-import { Alert, Button } from "@/components/ui";
+import { Alert, Button, Input } from "@/components/ui";
 import { apiClient } from "@/lib/api";
 import { formatDate, type Tone } from "@/lib/shipments";
 import { errorMessage, useRemote } from "@/lib/useRemote";
@@ -121,6 +121,12 @@ function Chips({ label, options, value, onChange, counts }: { label: string; opt
 }
 
 export default function ManageAgentsPage() {
+	/* Taking on an agent: the one thing this page could not do. */
+	const [adding, setAdding] = useState(false);
+	const [form, setForm] = useState({ email: "", first_name: "", last_name: "", phone: "", country: "", state: "", city: "", assigned_zone: "" });
+	const [saving, setSaving] = useState(false);
+	const [addError, setAddError] = useState("");
+
 	const { data, loading, error, retry } = useRemote<Agent[]>("admin-agents", async () => {
 		const response = await apiClient.listAgents();
 		if (response.status !== "success") throw new Error(response.message || "Failed to fetch agents.");
@@ -193,10 +199,45 @@ export default function ManageAgentsPage() {
 		);
 	};
 
+	const submitAgent = async () => {
+		setSaving(true);
+		setAddError("");
+		try {
+			const res = await apiClient.createAgent({
+				email: form.email.trim(),
+				first_name: form.first_name.trim(),
+				last_name: form.last_name.trim() || undefined,
+				phone: form.phone.trim() || undefined,
+				country: form.country.trim() || undefined,
+				state: form.state.trim() || undefined,
+				city: form.city.trim() || undefined,
+				assigned_zone: form.assigned_zone.trim().toUpperCase() || undefined,
+			});
+			if (res.status !== "success") throw new Error(res.message || "That agent was not created.");
+			setNotice(`${form.first_name || form.email} was added as an agent.`);
+			setAdding(false);
+			setForm({ email: "", first_name: "", last_name: "", phone: "", country: "", state: "", city: "", assigned_zone: "" });
+			retry();
+		} catch (err) {
+			setAddError(errorMessage(err));
+		} finally {
+			setSaving(false);
+		}
+	};
+
 	return (
 		<DashboardLayout role="admin">
 			<div className="space-y-5">
-				<PageHeader title="Agents" description="Review new agents' ID documents and manage who can handle shipments in their area." />
+				<div className="flex flex-wrap items-start justify-between gap-3">
+					<PageHeader title="Agents" description="Review new agents' ID documents and manage who can handle shipments in their area." />
+					<button
+						type="button"
+						onClick={() => setAdding(true)}
+						className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-[#1b3b5f] px-4 font-semibold text-sm text-white transition-colors hover:bg-[#16314e]"
+					>
+						<Plus className="h-4 w-4" aria-hidden /> Add agent
+					</button>
+				</div>
 
 				{notice && (
 					<Alert type="success" role="status">
@@ -272,6 +313,53 @@ export default function ManageAgentsPage() {
 						</select>
 					</div>
 				</div>
+
+				{adding && (
+					<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 backdrop-blur-sm sm:items-center">
+						<div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
+							<div className="mb-4 flex items-start justify-between gap-3">
+								<div>
+									<h2 className="font-semibold text-lg text-slate-900">Add agent</h2>
+									<p className="text-slate-500 text-sm">They set their own password from the email we send.</p>
+								</div>
+								<button type="button" onClick={() => setAdding(false)} aria-label="Close" className="-m-1 rounded p-1 text-slate-400 hover:bg-slate-100">
+									<X className="h-5 w-5" />
+								</button>
+							</div>
+
+							{addError && <Alert type="error">{addError}</Alert>}
+
+							<div className="mt-3 grid gap-3 sm:grid-cols-2">
+								<Input label="First name" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} required />
+								<Input label="Last name" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
+								<div className="sm:col-span-2">
+									<Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+								</div>
+								<Input label="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+								<Input label="City" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+								<Input label="State" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} />
+								<Input label="Country" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
+								<div className="sm:col-span-2">
+									{/* The lane, as the matcher reads it: a cross-border shipment
+									    on this corridor is assigned to them automatically. */}
+									<Input
+										label="Lane (optional)"
+										placeholder="IT>NG — Italy to Nigeria"
+										value={form.assigned_zone}
+										onChange={(e) => setForm({ ...form, assigned_zone: e.target.value })}
+									/>
+								</div>
+							</div>
+
+							<div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+								<Button onClick={() => setAdding(false)} variant="secondary">Cancel</Button>
+								<Button onClick={submitAgent} loading={saving} variant="primary" disabled={!form.email.trim() || !form.first_name.trim()}>
+									{saving ? "Adding…" : "Add agent"}
+								</Button>
+							</div>
+						</div>
+					</div>
+				)}
 
 				<Panel flush>
 					{loading ? (

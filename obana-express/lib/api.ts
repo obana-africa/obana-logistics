@@ -611,6 +611,21 @@ class ApiClient {
     return response.data;
   }
 
+  /** Take on an agent: the login, the role and the agent record, in one call. */
+  async createAgent(data: {
+    email: string;
+    first_name: string;
+    last_name?: string;
+    phone?: string;
+    country?: string;
+    state?: string;
+    city?: string;
+    assigned_zone?: string;
+  }) {
+    const response = await this.client.post<ApiResponse>('/agents', data);
+    return response.data;
+  }
+
   async createDriver(data: any) {
     const response = await this.client.post<ApiResponse>('/users', {
       ...data,
