@@ -53,7 +53,11 @@ const zohoRule = flag("zoho-org");
    because the address it was typed into varies: pickup contact, delivery
    contact, the store customer, the original payload. */
 const testEmail = String(arg("test-email", "") || "").toLowerCase();
-const needsDetail = zohoRule || Boolean(testEmail);
+/* A number is a number whichever end of the shipment it is on: a test booking
+   is just as much a test when it was sent from that phone as when it was sent
+   to it. The list does not carry pickup phones, so matching both ends means
+   reading each shipment in full. */
+const needsDetail = zohoRule || Boolean(testEmail) || Boolean(deletePhone) || Boolean(keepPhone);
 const before = arg("before") ? new Date(arg("before")) : null;
 const reallyDelete = flag("delete") && flag("yes-delete-them");
 
@@ -103,7 +107,11 @@ const testReason = (s) => {
 		}
 	}
 
-	if (deletePhone) return sameNumber(phone, deletePhone) ? `delivery phone ${phone}` : null;
+	if (deletePhone) {
+		if (sameNumber(phone, deletePhone)) return `delivery phone ${phone}`;
+		if (sameNumber(s.pickup_phone, deletePhone)) return `pickup phone ${s.pickup_phone}`;
+		return null;
+	}
 
 	/* --keep-phone: everything that is not the real customer's number. */
 	if (sameNumber(phone, keepPhone)) return null;
@@ -135,6 +143,10 @@ const testReason = (s) => {
 				const detail = await get(`/shipments/${encodeURIComponent(s.shipment_reference)}`);
 				const body = (detail?.data ?? detail) ?? {};
 				s.metadata = body.metadata ?? null;
+				s.pickup_phone = body.pickup_address?.phone ?? null;
+				if (!s.delivery_address?.phone && body.delivery_address?.phone) {
+					s.delivery_address = { ...(s.delivery_address ?? {}), phone: body.delivery_address.phone };
+				}
 				s.__raw = JSON.stringify(body);
 			} catch {
 				s.metadata = null;
