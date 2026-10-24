@@ -47,12 +47,17 @@ function Landing() {
 				   opens filled in and asks only for what Google cannot give —
 				   a phone number, and what kind of account this is. */
 				if (data?.needs_signup && data.google_token) {
+					/* The account kind they chose before leaving rode along in
+					   `state`; hand it back so the form opens on their answer
+					   instead of asking it again. Sign-in has no such choice,
+					   and that path still shows the question once. */
+					const chosen = new URLSearchParams(safeReturn(returnTo, "").split("?")[1] ?? "").get("role") ?? "";
 					const q = new URLSearchParams({
 						google_token: data.google_token,
 						email: data.profile?.email ?? "",
 						first_name: data.profile?.first_name ?? "",
 						last_name: data.profile?.last_name ?? "",
-						...(returnTo ? { returnTo } : {}),
+						...(chosen ? { role: chosen } : {}),
 					});
 					router.replace(`/auth/signup?${q.toString()}`);
 					return;

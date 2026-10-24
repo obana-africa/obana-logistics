@@ -25,7 +25,7 @@ const readNext = () => safeNextPath(new URLSearchParams(window.location.search).
  * already read here — and so the fields are filled on the first paint instead
  * of appearing a moment later.
  */
-let googleSnapshot: { token: string; email: string; first_name: string; last_name: string } | null | undefined;
+let googleSnapshot: { token: string; email: string; first_name: string; last_name: string; role: string } | null | undefined;
 
 const readGoogle = () => {
 	if (typeof window === "undefined") return null;
@@ -46,6 +46,9 @@ const readGoogle = () => {
 				email: q.get("email") ?? "",
 				first_name: q.get("first_name") ?? "",
 				last_name: q.get("last_name") ?? "",
+				/* The account kind chosen before going to Google, carried out
+				   and back so nobody is asked it twice. */
+				role: q.get("role") ?? "",
 			}
 		: null;
 	return googleSnapshot;
@@ -106,17 +109,16 @@ export default function SignupPage() {
 	   filled in and asks only for what Google cannot give. The token stands in
 	   for the password, which is why both password fields disappear. */
 	const google = useSyncExternalStore(subscribeNothing, readGoogle, () => null);
-	/* Coming back from Google, the account kind is assumed rather than asked.
-	   Being made to answer "How will you use Obana?" after Google has already
-	   confirmed who you are is a step for our benefit, not theirs, and the
-	   answer is "send shipments" for nearly everyone arriving this way. It is
-	   still changeable on the next screen.
+	/* The account kind the person already chose, carried to Google in `state`
+	   and handed back on the way in. Asking "How will you use Obana?" a second
+	   time, after they answered it and after Google confirmed who they are, is
+	   the thing that made this feel broken.
 
 	   Derived rather than seeded into state: the server has no window to read
-	   the query string from, so a seeded value would differ between the server
-	   and the browser and hydrate wrong. useSyncExternalStore already handles
-	   that difference, so reading through it keeps the two in step. */
-	const role: Role | null = chosenRole ?? (google ? "customer" : null);
+	   a query string from, so a seeded value renders empty on the server and
+	   full in the browser, and React hydrates the first of the two. */
+	const fromGoogle = ROLES.some((r) => r.id === google?.role) ? (google?.role as Role) : null;
+	const role: Role | null = chosenRole ?? fromGoogle;
 	const setRole = setChosenRole;
 
 	const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", password: "", confirm: "" });
@@ -309,7 +311,7 @@ export default function SignupPage() {
 					)}
 
 					<div className="mt-8">
-						<GoogleButton label="Sign up with Google" />
+						<GoogleButton label="Sign up with Google" returnTo={`/auth/signup?role=${role}`} />
 					</div>
 					<form onSubmit={handleSubmit} className="mt-8 space-y-5" noValidate>
 						<div className="grid gap-5 sm:grid-cols-2">
