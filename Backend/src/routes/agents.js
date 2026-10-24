@@ -8,6 +8,7 @@ const agentController = require('../controllers/agentController');
 const auth = require('./auth');
 router.use(auth.authenticateToken, auth.verifyRole(['admin']));
 
+router.post('/', agentController.createAgent);
 router.get('/', agentController.listAgents);
 router.get('/:id', agentController.getAgent);
 router.put('/:id', agentController.updateAgent);

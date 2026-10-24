@@ -94,6 +94,7 @@ export function StatCard({
 	tone = "neutral",
 	hint,
 	loading,
+	className = "",
 }: {
 	label: string;
 	value: React.ReactNode;
@@ -101,9 +102,11 @@ export function StatCard({
 	tone?: Tone;
 	hint?: string;
 	loading?: boolean;
+	/** For a card that spans differently to the rest of the row. */
+	className?: string;
 }) {
 	return (
-		<div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+		<div className={`rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 ${className}`}>
 			<div className="flex items-start justify-between gap-3">
 				<p className="text-sm font-medium text-slate-600">{label}</p>
 				<span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${STAT_ICON[tone]}`}>
