@@ -12,10 +12,41 @@
  * rather than on a dashboard they did not ask for.
  */
 
+import { API_BASE_URL } from "@/lib/site";
+
 const AUTHORIZE = "https://accounts.google.com/o/oauth2/v2/auth";
 const NONCE_KEY = "obana_google_nonce";
 
-export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
+/**
+ * Who we tell Google we are.
+ *
+ * Taken from the API rather than from a build-time variable, so nothing has to
+ * be set on the hosting platform and a wrong value cannot be baked into the
+ * JavaScript — which is exactly what happened: a placeholder reached Vercel
+ * and every sign-in came back "invalid_client" until a rebuild.
+ *
+ * A client id is public by design; it travels in the query string of every
+ * Google sign-in. The secret never leaves the server.
+ *
+ * NEXT_PUBLIC_GOOGLE_CLIENT_ID still wins if it is set, which is convenient
+ * when working locally against a different client.
+ */
+const ENV_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
+
+let cached: string | null | undefined;
+
+export async function googleClientId(): Promise<string | null> {
+	if (ENV_CLIENT_ID) return ENV_CLIENT_ID;
+	if (cached !== undefined) return cached;
+	try {
+		const res = await fetch(`${API_BASE_URL}/auth/google/config`);
+		const body = (await res.json()) as { client_id?: string | null };
+		cached = body?.client_id || null;
+	} catch {
+		cached = null;
+	}
+	return cached;
+}
 
 /** Where Google sends people back. Must match a redirect URI in the console. */
 export const googleRedirectUri = () =>
@@ -77,10 +108,11 @@ export const safeReturn = (value: string | null | undefined, fallback: string) =
 };
 
 /** Send the browser to Google. */
-export function startGoogleSignIn(returnTo: string) {
-	if (!GOOGLE_CLIENT_ID) return false;
+export async function startGoogleSignIn(returnTo: string) {
+	const clientId = await googleClientId();
+	if (!clientId) return false;
 	const params = new URLSearchParams({
-		client_id: GOOGLE_CLIENT_ID,
+		client_id: clientId,
 		redirect_uri: googleRedirectUri(),
 		response_type: "code",
 		scope: "openid email profile",

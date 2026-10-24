@@ -16,6 +16,25 @@ const db = require('../models/db.js');
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
+/**
+ * GET /auth/google/config — the client id, for the browser to use.
+ *
+ * So the front end needs nothing configured at all. A client id is public by
+ * design: it travels in the query string of every Google sign-in and is
+ * readable in any browser that has ever done one. The secret stays here and
+ * never leaves.
+ *
+ * This is what lets the redirect come back to logistics.obana.africa rather
+ * than to the API: the browser still talks to Google directly, it just asks us
+ * who to say it is first. Nothing is set in the hosting platform, and changing
+ * the id is an environment variable on this service and a restart.
+ */
+router.get('/google/config', (req, res) => {
+  const clientId = String(process.env.GOOGLE_CLIENT_ID || '').trim();
+  res.set('Cache-Control', 'public, max-age=300');
+  return res.json({ client_id: clientId || null, enabled: Boolean(clientId) });
+});
+
 // POST /auth/google_token/callback
 router.post('/google_token/callback', async (req, res) => {
   const { code, redirect_uri } = req.body;

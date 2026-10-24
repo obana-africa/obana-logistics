@@ -1,6 +1,7 @@
 "use client";
 
-import { startGoogleSignIn } from "@/lib/googleAuth";
+import { useEffect, useState } from "react";
+import { googleClientId, startGoogleSignIn } from "@/lib/googleAuth";
 
 /**
  * Continue with Google.
@@ -10,13 +11,35 @@ import { startGoogleSignIn } from "@/lib/googleAuth";
  * look like a site that does not do Google, not like one that is broken.
  */
 export function GoogleButton({ label, returnTo = "" }: { label: string; returnTo?: string }) {
-	if (!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) return null;
+	/* Whether Google is configured at all is the server's answer, so nothing
+	   needs setting on the hosting platform. Until it replies the button stays
+	   hidden rather than flashing and disappearing. */
+	const [available, setAvailable] = useState(false);
+	const [busy, setBusy] = useState(false);
+
+	useEffect(() => {
+		let cancelled = false;
+		googleClientId().then((id) => {
+			if (!cancelled) setAvailable(Boolean(id));
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	if (!available) return null;
 
 	return (
 		<div className="space-y-4">
 			<button
 				type="button"
-				onClick={() => startGoogleSignIn(returnTo)}
+				onClick={() => {
+					setBusy(true);
+					startGoogleSignIn(returnTo).then((started) => {
+						if (!started) setBusy(false);
+					});
+				}}
+				disabled={busy}
 				className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white font-semibold text-slate-700 text-sm transition-colors hover:bg-slate-50"
 			>
 				{/* Google's mark as their brand terms require it: drawn, not
@@ -27,7 +50,7 @@ export function GoogleButton({ label, returnTo = "" }: { label: string; returnTo
 					<path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
 					<path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
 				</svg>
-				{label}
+				{busy ? "Taking you to Google…" : label}
 			</button>
 
 			<div className="flex items-center gap-3">
