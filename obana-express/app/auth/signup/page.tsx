@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useSyncExternalStore } from "react";
+import React, { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronRight, Eye, EyeOff, Lock, Mail, Package, PlugZap, Shield, Truck, Upload, UserRound } from "lucide-react";
@@ -95,20 +95,46 @@ function FilePick({ label, file, onPick }: { label: string; file: File | null; o
 export default function SignupPage() {
 	const router = useRouter();
 	const { signup, error, clearError } = useAuth();
-	const [role, setRole] = useState<Role | null>(null);
+	/* Coming back from Google, the account kind is assumed rather than asked.
+	   Being made to answer "How will you use Obana?" after Google has already
+	   confirmed who you are is a step for our benefit, not theirs — and the
+	   answer is "send shipments" for almost everyone who signs up this way.
+	   It is still changeable on the next screen. */
+	const [chosenRole, setChosenRole] = useState<Role | null>(null);
 	const next = useSyncExternalStore(subscribeNothing, readNext, () => null);
 	/* Arriving from Google: the address is already proved, so the form opens
 	   filled in and asks only for what Google cannot give. The token stands in
 	   for the password, which is why both password fields disappear. */
 	const google = useSyncExternalStore(subscribeNothing, readGoogle, () => null);
-	const [form, setForm] = useState({
-		first_name: google?.first_name ?? "",
-		last_name: google?.last_name ?? "",
-		email: google?.email ?? "",
-		phone: "",
-		password: "",
-		confirm: "",
-	});
+	/* Coming back from Google, the account kind is assumed rather than asked.
+	   Being made to answer "How will you use Obana?" after Google has already
+	   confirmed who you are is a step for our benefit, not theirs, and the
+	   answer is "send shipments" for nearly everyone arriving this way. It is
+	   still changeable on the next screen.
+
+	   Derived rather than seeded into state: the server has no window to read
+	   the query string from, so a seeded value would differ between the server
+	   and the browser and hydrate wrong. useSyncExternalStore already handles
+	   that difference, so reading through it keeps the two in step. */
+	const role: Role | null = chosenRole ?? (google ? "customer" : null);
+	const setRole = setChosenRole;
+
+	const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", password: "", confirm: "" });
+
+	/* Filled in once Google's details are readable — which is on the browser,
+	   not the server. Putting them in the initial state instead would have the
+	   server render empty inputs and the browser render full ones, and React
+	   hydrates the first of those. Only empty fields are touched, so anything
+	   already typed survives. */
+	useEffect(() => {
+		if (!google) return;
+		setForm((f) => ({
+			...f,
+			first_name: f.first_name || google.first_name,
+			last_name: f.last_name || google.last_name,
+			email: f.email || google.email,
+		}));
+	}, [google]);
 	const [show, setShow] = useState({ password: false, confirm: false });
 	const [agent, setAgent] = useState({
 		government_id_type: "NIN",
@@ -261,10 +287,20 @@ export default function SignupPage() {
 					<button type="button" onClick={() => setRole(null)} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-[#1B3B5F]">
 						<ArrowLeft className="h-4 w-4" /> Change account type
 					</button>
-					<p className="mt-6 text-sm font-semibold text-[#1B3B5F]">Step 2 of 2 · {selected?.label}</p>
+					<p className="mt-6 text-sm font-semibold text-[#1B3B5F]">
+						{google ? selected?.label : `Step 2 of 2 · ${selected?.label}`}
+					</p>
 					<h2 className="mt-1 text-3xl font-bold text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
-						Your details
+						{google ? "Almost done" : "Your details"}
 					</h2>
+					{/* Say what came from Google and what is still wanted, so the
+					    filled-in fields read as already handled rather than as
+					    something to check. */}
+					{google && (
+						<p className="mt-2 text-slate-600 text-sm">
+							We got your name and email from Google. Add your phone number and you're in.
+						</p>
+					)}
 
 					{(error || formError) && (
 						<Alert type="error" className="mt-6">
@@ -290,6 +326,11 @@ export default function SignupPage() {
 							value={form.email}
 							onChange={(e) => update("email", e.target.value)}
 							error={errors.email}
+							/* Google confirmed this address and the server takes it
+							   from the token regardless, so editing it here would
+							   change nothing. Shown, locked, and explained. */
+							readOnly={Boolean(google)}
+							helperText={google ? "From your Google account" : undefined}
 							icon={<Mail />}
 						/>
 						<PhoneInput label="Phone number" required value={form.phone} onChange={(v) => update("phone", v)} error={errors.phone} helperText="We send delivery updates to this number." />
