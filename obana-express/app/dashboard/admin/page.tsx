@@ -49,10 +49,15 @@ export default function AdminDashboard() {
 						<ErrorState text={error} onRetry={retry} />
 					</Panel>
 				) : (
-					<div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
-						{/* The size of the thing, first: "how many have we done" is
-						    what anyone asks of this page before anything else. */}
-						<StatCard label="Total shipments" value={data?.totalShipments ?? 0} icon={Package} tone="info" loading={loading} className="col-span-2 lg:col-span-1" />
+					<div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-5">
+						{/* Two across on a phone, three on a tablet, five only where
+						    five fit: at lg each card was narrow enough to wrap every
+						    label and crowd the revenue figure.
+
+						    The size of the thing first, because "how many have we
+						    done" is what anyone asks of this page before anything
+						    else. */}
+						<StatCard label="Total shipments" value={data?.totalShipments ?? 0} icon={Package} tone="info" loading={loading} className="col-span-2 md:col-span-1" />
 						<StatCard label="Awaiting pickup" value={data?.pendingShipments ?? 0} icon={Clock} tone="warning" loading={loading} />
 						<StatCard label="Active drivers" value={data?.activeDrivers ?? 0} icon={Truck} tone="success" loading={loading} />
 						<StatCard label="Route templates" value={data?.totalRoutes ?? 0} icon={Route} tone="info" loading={loading} />
