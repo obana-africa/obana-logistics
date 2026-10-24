@@ -10,6 +10,7 @@ import { Alert, Button, Input, Select, Textarea } from "@/components/ui";
 import { apiClient } from "@/lib/api";
 import { CLOSED_STATUSES, STATUS_OPTIONS, formatDate, formatMoney, statusMeta, type ShipmentStatus } from "@/lib/shipments";
 import { errorMessage, useRemote } from "@/lib/useRemote";
+import { AwbNumber } from "@/components/shipments/AwbNumber";
 import { ShipmentDocuments, type ShipmentDocument } from "@/components/shipments/ShipmentDocuments";
 
 type Address = { name?: string; first_name?: string; last_name?: string; contact_name?: string; line1?: string; line2?: string; city?: string; state?: string; country?: string; phone?: string; email?: string; contact_email?: string } | null;
@@ -238,6 +239,9 @@ export default function AdminShipmentDetailPage() {
 					<div className="space-y-6 lg:col-span-2">
 						{/* Above the timeline: the waybill is what somebody opens this
 						    page for while a shipment is in the air. */}
+						{/* Above the papers: the number usually arrives before the
+						    paperwork does. */}
+						<AwbNumber shipmentId={s.id} initial={(s as { awb_number?: string | null }).awb_number} />
 						<ShipmentDocuments
 							shipmentId={s.id}
 							initial={(s as { documents?: ShipmentDocument[] }).documents}
