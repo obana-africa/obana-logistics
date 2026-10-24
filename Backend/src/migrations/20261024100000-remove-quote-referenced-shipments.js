@@ -9,7 +9,11 @@
  * and deleting nothing — which is exactly what was reported. A new rule needs
  * a new file.
  *
- * Two rules:
+ * Three rules. Shipments booked on the logistics platform itself —
+ * ORDER-<timestamp>, no sales order behind them — are not touched by any of
+ * them, deliberately: those are ours and they stay.
+ *
+ * The rules:
  *
  *   1. The vendor is a staging Zoho id. Every Zoho record id is prefixed with
  *      its organisation — production ids begin 6536807, staging ids begin
@@ -19,6 +23,9 @@
  *      found nothing, because for these it is in vendor_name instead.
  *
  *   2. The order reference is a quote number rather than a sales order number.
+ *
+ *   3. The sales order number is above anything production has issued. See
+ *      PRODUCTION_MAX_SO below for why that line can be drawn safely.
  *
  * On the live data the two rules agree exactly: four shipments, QT-000386,
  * QT-000408, QT-000434 and QT-000456, each with a 6519617 vendor id. Worth
@@ -37,6 +44,22 @@
 /* Zoho ids carry their organisation in the first seven digits. */
 const STAGING_ZOHO_PREFIX = '6519617';
 
+/**
+ * The highest sales order production Zoho has issued.
+ *
+ * Production and staging number their sales orders independently, and on this
+ * data the two sequences do not overlap at all: production runs to SO-00702
+ * (22 October 2026, verified against the Books API) and every shipment above
+ * it starts at SO-00827 and runs to SO-01515. SO-01515 and SO-01431 were each
+ * queried against production and returned nothing.
+ *
+ * So a sales order number above this came from the other Zoho. The gap between
+ * 702 and 827 is what makes the line safe to draw — there is nothing near it
+ * to get wrong. It is a fixed number because this migration runs once, against
+ * the data as it stands today; it is not a rule for the future.
+ */
+const PRODUCTION_MAX_SO = 702;
+
 const QUOTE_PREFIX = 'QT';
 
 module.exports = {
@@ -48,16 +71,22 @@ module.exports = {
             `SELECT id, shipment_reference, order_reference, status, vendor_name,
                     CASE
                       WHEN COALESCE(vendor_name, '') LIKE :stagingPrefix THEN 'staging Zoho vendor'
-                      ELSE 'booked against a quote'
+                      WHEN order_reference ILIKE :quotePrefix THEN 'booked against a quote'
+                      ELSE 'sales order above production''s range'
                     END AS reason
                FROM shippings
               WHERE COALESCE(vendor_name, '') LIKE :stagingPrefix
                  OR (metadata #>> '{zoho,salesorder_id}') LIKE :stagingPrefix
-                 OR order_reference ILIKE :quotePrefix`,
+                 OR order_reference ILIKE :quotePrefix
+                 OR (
+                      order_reference ~* '^SO-[0-9]+$'
+                      AND CAST(regexp_replace(order_reference, '\\D', '', 'g') AS bigint) > :productionMaxSo
+                    )`,
             {
                 replacements: {
                     quotePrefix: `${QUOTE_PREFIX}%`,
-                    stagingPrefix: `${STAGING_ZOHO_PREFIX}%`
+                    stagingPrefix: `${STAGING_ZOHO_PREFIX}%`,
+                    productionMaxSo: PRODUCTION_MAX_SO
                 },
                 type: QueryTypes.SELECT
             }
