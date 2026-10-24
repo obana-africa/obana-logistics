@@ -25,17 +25,30 @@ const readNext = () => safeNextPath(new URLSearchParams(window.location.search).
  * already read here — and so the fields are filled on the first paint instead
  * of appearing a moment later.
  */
+let googleSnapshot: { token: string; email: string; first_name: string; last_name: string } | null | undefined;
+
 const readGoogle = () => {
 	if (typeof window === "undefined") return null;
+	/* Read once and hold the same object.
+	
+	   useSyncExternalStore compares snapshots by identity, so a fresh object
+	   on every call reads as "changed every render" — React calls that an
+	   infinite loop and throws, which is the client-side exception this page
+	   was showing. readNext above gets away with it by returning a string.
+	   The query string does not change under us, so one read is correct as
+	   well as necessary. */
+	if (googleSnapshot !== undefined) return googleSnapshot;
 	const q = new URLSearchParams(window.location.search);
 	const token = q.get("google_token");
-	if (!token) return null;
-	return {
-		token,
-		email: q.get("email") ?? "",
-		first_name: q.get("first_name") ?? "",
-		last_name: q.get("last_name") ?? "",
-	};
+	googleSnapshot = token
+		? {
+				token,
+				email: q.get("email") ?? "",
+				first_name: q.get("first_name") ?? "",
+				last_name: q.get("last_name") ?? "",
+			}
+		: null;
+	return googleSnapshot;
 };
 
 type Role = "customer" | "driver" | "agent";
