@@ -363,13 +363,24 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
     const place = (a: { line1?: string; city?: string; state?: string; country?: string; name?: string; contact_name?: string; phone?: string }) =>
       [a.name || a.contact_name, a.line1, [a.city, a.state].filter(Boolean).join(', '), a.country, showPhone(a.phone)].filter(Boolean) as string[];
 
+    /* What a kilo costs, before what the whole thing costs — the figure a
+       customer can check against the quote and against anyone else's price.
+       Taken from the delivery rather than the total: the service charge is on
+       the job, not on each kilo. */
+    const deliveryPart = selected.base_price ?? selected.price;
+    const perKilo =
+      shipmentWeight > 0
+        ? [{ label: `Rate per kg (${shipmentWeight.toFixed(2)} kg)`, value: formatMoney(deliveryPart / shipmentWeight, 'NGN') }]
+        : [];
+
     const charges = selected.base_price && selected.service_charge
       ? [
+          ...perKilo,
           { label: 'Delivery', value: formatMoney(selected.base_price, 'NGN') },
           { label: chargeLabel(selected), value: formatMoney(selected.service_charge, 'NGN') },
           { label: 'Total', value: formatMoney(selected.price, 'NGN'), strong: true },
         ]
-      : [{ label: 'Shipping cost', value: formatMoney(selected.price, 'NGN'), strong: true }];
+      : [...perKilo, { label: 'Shipping cost', value: formatMoney(selected.price, 'NGN'), strong: true }];
 
     const opened = printShipmentSummary({
       reference: newShipmentInfo?.shipment_reference ?? null,
