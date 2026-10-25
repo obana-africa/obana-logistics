@@ -112,6 +112,9 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   /* Chosen while booking, uploaded the moment the shipment has an id. */
   const [pendingDocs, setPendingDocs] = useState<PendingDocument[]>([]);
   const [docStatus, setDocStatus] = useState<{ done: number; total: number; failed: string[] } | null>(null);
+  /* The waybill number as typed in the documents box, which travels with the
+     booking whether or not a file is ever chosen. */
+  const [typedAwb, setTypedAwb] = useState("");
   const [booksResult, setBooksResult] = useState<any>(null);
   const [matchedRoute, setMatchedRoute] = useState<any>(null);
   // The price picked on step 2; null means the first (cheapest) one.
@@ -386,7 +389,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
       reference: newShipmentInfo?.shipment_reference ?? null,
       /* The waybill if one was attached while booking — the note beside an AWB
          is where the number is written. */
-      awbNumber: pendingDocs.find((d) => d.kind.toUpperCase() === 'AWB')?.note || null,
+      awbNumber: typedAwb || pendingDocs.find((d) => d.kind.toUpperCase() === 'AWB')?.note || null,
       route: `${formData.pickup_address.city}, ${formData.pickup_address.state} → ${formData.delivery_address.city}, ${formData.delivery_address.state}`,
       service: serviceLabel(selected),
       weight: `${shipmentWeight.toFixed(2)} kg`,
@@ -421,6 +424,9 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
         carrier_slug: matchedRoute.external ? (matchedRoute.carrier.slug || 'external') : 'obana',
         external_shipment_id: matchedRoute.shipment_id,
         rate_id: matchedRoute.rate_id,
+        /* Kept on the shipment, not only inside a document's note: the summary
+           and the message that goes out both want it as a value. */
+        awb_number: typedAwb || undefined,
         shipping_fee: selected.price,
         /* The split as it was shown. The server only takes it when the parts
            add up to the fee, and works it out itself otherwise. */
@@ -872,7 +878,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                 </Button>
               </div>
 
-              <DocumentPicker value={pendingDocs} onChange={setPendingDocs} disabled={loading} />
+              <DocumentPicker value={pendingDocs} onChange={setPendingDocs} onAwbTyped={setTypedAwb} disabled={loading} />
 
               {errorCount > 0 && (
                 <Alert type="error">

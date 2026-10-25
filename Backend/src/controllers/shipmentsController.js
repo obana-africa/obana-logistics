@@ -1331,6 +1331,10 @@ const shipmentController = {
                     delivery_address_id: deliveryAddress.id,
                     pickup_address_id: pickupAddress.id,
                     product_value: totalValue,
+                    /* Typed while booking, usually before the paperwork exists.
+                       Kept on the shipment so the summary and the message read
+                       it as a value rather than digging it out of a note. */
+                    awb_number: String(payload.awb_number ?? '').trim().slice(0, 64) || null,
                     shipping_fee: payload.shipping_fee || 0,
                     currency: payload.currency?.symbol || 'NGN',
                     total_weight: totalWeight,
