@@ -36,10 +36,20 @@ function LocalThumb({ file }: { file: File }) {
 export function DocumentPicker({
 	value,
 	onChange,
+	onAwbTyped,
 	disabled = false,
 }: {
 	value: PendingDocument[];
 	onChange: (next: PendingDocument[]) => void;
+	/**
+	 * The waybill number as it is typed, before any file is chosen.
+	 *
+	 * The note only travels attached to a file, so somebody who had the number
+	 * but not yet the paperwork typed it, picked nothing, and lost it. The
+	 * number usually arrives first, so it is reported as it is typed and goes
+	 * with the booking on its own.
+	 */
+	onAwbTyped?: (awb: string) => void;
 	disabled?: boolean;
 }) {
 	const [kind, setKind] = useState(DOCUMENT_KINDS[0]);
@@ -60,6 +70,9 @@ export function DocumentPicker({
 			.map((file) => ({ file, kind, note: note.trim() }));
 		if (keep.length) {
 			onChange([...value, ...keep]);
+			/* The note is cleared for the next file; the waybill number it held
+			   stays reported, because it belongs to the shipment rather than to
+			   the file that happened to carry it. */
 			setNote("");
 		}
 	};
@@ -118,7 +131,10 @@ export function DocumentPicker({
 					<select
 						id="document-kind"
 						value={kind}
-						onChange={(e) => setKind(e.target.value)}
+						onChange={(e) => {
+							setKind(e.target.value);
+							onAwbTyped?.(e.target.value.toUpperCase() === "AWB" ? note.trim() : "");
+						}}
 						disabled={disabled}
 						className="h-10 rounded-lg border-2 border-slate-200 px-2 text-sm"
 					>
@@ -134,7 +150,12 @@ export function DocumentPicker({
 					<input
 						id="document-note"
 						value={note}
-						onChange={(e) => setNote(e.target.value)}
+						onChange={(e) => {
+							setNote(e.target.value);
+							/* Only when it is a waybill: a note on an invoice is a
+							   note, not a number anything else should read. */
+							if (kind.toUpperCase() === "AWB") onAwbTyped?.(e.target.value.trim());
+						}}
 						placeholder="e.g. AWB 123-45678901, RwandAir"
 						disabled={disabled}
 						className="h-10 rounded-lg border-2 border-slate-200 px-3 text-sm"
