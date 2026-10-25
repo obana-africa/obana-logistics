@@ -437,13 +437,25 @@ const attachShipmentSummary = async (shipment, { pickup, delivery, items } = {})
         const deliveryAddress = delivery || (shipment.delivery_address_id ? await db.addresses.findByPk(shipment.delivery_address_id) : null)
         const currency = shipment.currency || 'NGN'
         const split = shipment.metadata?.fee_breakdown
+        /* What a kilo costs, before what the whole thing costs.
+        
+           A total is a number to accept or refuse; a rate is one a customer can
+           check against the quote they were given and against what anyone else
+           charges. It is the delivery divided by the weight, not the total
+           divided by the weight — the service charge is on the job, not on each
+           kilo, and mixing them would state a rate nobody quoted. */
+        const weight = Number(shipment.total_weight) || 0
+        const deliveryPart = Number(split?.base ?? shipment.shipping_fee) || 0
+        const perKilo = weight > 0 ? [{ label: `Rate per kg (${weight} kg)`, value: money(deliveryPart / weight, currency) }] : []
+
         const charges = split?.service_charge > 0
             ? [
+                ...perKilo,
                 { label: 'Delivery', value: money(split.base, currency) },
                 { label: split.percent ? `${split.percent}% service charge` : 'Service charge', value: money(split.service_charge, currency) },
                 { label: 'Total', value: money(shipment.shipping_fee, currency), strong: true }
             ]
-            : [{ label: 'Shipping cost', value: money(shipment.shipping_fee, currency), strong: true }]
+            : [...perKilo, { label: 'Shipping cost', value: money(shipment.shipping_fee, currency), strong: true }]
 
         const place = (a) => [a?.city, a?.state].filter(Boolean).join(', ') + (a?.country ? ` (${a.country})` : '')
         const pdf = await buildShipmentSummaryPdf({
