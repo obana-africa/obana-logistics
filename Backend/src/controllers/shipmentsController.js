@@ -14,6 +14,9 @@ const { sendWhatsApp } = require('../notifications/whatsapp');
 const querystring = require('node:querystring');
 const { getCode: getCountryCode } = require('country-list');
 const countryLookup = require('country-code-lookup');
+/* Zoho only for the rate it holds — the same one the shipping charge is
+   written back at, so a message and an invoice cannot disagree. */
+const zohoInventory = require('../helpers/zohoInventory');
 
 const TERMINAL_AFRICA_BASE_URL = process.env.TERMINAL_AFRICA_BASE_URL;
 const TERMINAL_AFRICA_SECRET_KEY = process.env.TERMINAL_AFRICA_SECRET_KEY;
@@ -175,6 +178,17 @@ const buildTimeline = (plain) => {
    is how a replacement template gets used without a code change. */
 const DEFAULT_INTL_CREATED_TEMPLATE = '1828513205';
 
+/* The same message with the rate per kg, the rate per unit and the transit
+   window added: eleven variables where the approved one takes eight.
+ *
+ * No default, and that is the point. A template's variables are fixed when Meta
+ * approves it, so sending eleven to a template that takes eight fails every
+ * message. This stays unset until the replacement is approved, and the moment
+ * KUDISMS_WA_CREATED_INTL_V2_TEMPLATE holds its code the longer message takes
+ * over. Nothing to deploy on the day it is approved, and nothing breaks on the
+ * day this ships. */
+const INTL_CREATED_V2_TEMPLATE = () => templateCodeFor('KUDISMS_WA_CREATED_INTL_V2_TEMPLATE');
+
 /**
  * "\u20a62 157 777" — the naira sign, not the three letters.
  *
@@ -198,6 +212,77 @@ const waPlace = (address, fallback) => {
     if (city && country) return `${city} (${country})`;
     return city || country || fallback;
 };
+
+/* ── What a kilo and a unit cost, in naira and in dollars ─────────────────────
+ *
+ * A total is a number to accept or refuse. A rate is one a customer can check
+ * against the quote they were given and against what anyone else charges, which
+ * is why it goes above the total rather than below it.
+ *
+ * The dollar figure uses Zoho's rate, not a public feed. The shipping charge we
+ * write lands in Zoho's books, so a message quoting a different rate than the
+ * books use would disagree with the customer's own invoice — and of the two
+ * numbers, the one in the accounts is the one that has to be right. The team
+ * already sets that rate in Zoho under Currencies; nothing new to maintain.
+ *
+ * getNairaRate refuses rather than guesses when Zoho has no rate for the day,
+ * which is correct for writing money and wrong for sending a message. So a
+ * failure here drops the dollars and sends the naira alone, and the message
+ * goes out. It is never a reason for a customer to hear nothing.
+ */
+const USD_RATE_TTL_MS = 60 * 60 * 1000
+let usdRate = { at: 0, rate: 0 }
+
+const nairaPerUsd = async () => {
+    if (usdRate.rate > 0 && Date.now() - usdRate.at < USD_RATE_TTL_MS) return usdRate.rate
+    try {
+        const { rate } = await zohoInventory.getNairaRate()
+        if (rate > 0) usdRate = { at: Date.now(), rate }
+    } catch (error) {
+        /* The stale rate, if there is one, beats no rate at all — and the next
+           message tries again rather than being stuck behind the cache. */
+        console.warn(`[whatsapp] no Zoho NGN rate (${error.message}) \u2014 sending naira only`)
+    }
+    return usdRate.rate
+}
+
+/**
+ * "\u20a67 500/kg ($5.15/kg)" \u2014 or just "\u20a67 500/kg" when there is no rate to hand.
+ *
+ * Spaces group the digits and the dollars sit in brackets, because KudiSMS
+ * splits its parameters field on commas and a template variable may not be
+ * empty. Dollars are shown only for a naira figure: converting a euro price
+ * through a naira rate would state a number nobody quoted.
+ */
+const waPerUnit = (currency, amount, unit, perUsd) => {
+    const naira = `${waMoney(currency, amount)}/${unit}`
+    if (!(perUsd > 0) || String(currency).toUpperCase() !== 'NGN' || !(Number(amount) > 0)) return naira
+    return `${naira} ($${(Number(amount) / perUsd).toFixed(2)}/${unit})`
+}
+
+/**
+ * "10 - 25 days (5 Nov - 20 Nov)" \u2014 the window that was sold, and when it lands.
+ *
+ * Both, because they answer different questions: the window is what the
+ * customer agreed to and can hold us to, and the dates are what they actually
+ * want to know. The string is whatever priced the shipment \u2014 the route
+ * template, the quote option, or the carrier \u2014 kept on the shipment at
+ * creation so the message states the term the customer was shown rather than
+ * whatever the route table says today.
+ *
+ * Where it is already a pair of dates, it is shown once. Where there is none,
+ * "To be confirmed": a variable cannot be empty, and inventing a window is
+ * worse than admitting there isn't one.
+ */
+const waTransit = (shipment) => {
+    const stated = String(
+        shipment.metadata?.transit ?? shipment.metadata?.carrier_details?.delivery_time ?? ''
+    ).trim()
+    if (!stated) return 'To be confirmed'
+    const { deliveryTimeRange } = require('./routesController')
+    const dates = String(deliveryTimeRange(stated) ?? '').trim()
+    return dates && dates !== stated ? `${stated} (${dates})` : stated || 'To be confirmed'
+}
 
 /**
  * The air waybill, from wherever it actually is.
@@ -259,6 +344,8 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
             ? templateCodeFor('KUDISMS_WA_CREATED_INTL_TEMPLATE') || DEFAULT_INTL_CREATED_TEMPLATE
             : '';
         let intlParameters = null;
+        const intlV2Template = event === 'created' ? INTL_CREATED_V2_TEMPLATE() : '';
+        let intlV2Parameters = null;
         if (intlTemplate) {
             const pickup = shipment.pickup_address
                 || (shipment.pickup_address_id ? await db.addresses.findByPk(shipment.pickup_address_id) : null);
@@ -283,6 +370,38 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
                     waMoney(currency, charge),                      // {{7}}
                     waMoney(currency, shipment.shipping_fee)        // {{8}}
                 ];
+
+                /* The longer message, once its template is approved and set.
+                 *
+                 * The rates divide the delivery, not the total: the service
+                 * charge is on the job, not on each kilo or each carton, and
+                 * mixing them would state a rate nobody quoted. Weight or
+                 * count of zero leaves that rate out of the arithmetic and
+                 * sends the total figure in its place, because a template
+                 * variable cannot be empty and a division by zero is not a
+                 * price. */
+                if (intlV2Template) {
+                    const weight = Number(shipment.total_weight) || 0;
+                    const units = Number(shipment.total_items) || 0;
+                    const perUsd = await nairaPerUsd();
+                    const rateFor = (divisor, unit) =>
+                        divisor > 0
+                            ? waPerUnit(currency, delivery / divisor, unit, perUsd)
+                            : waPerUnit(currency, delivery, unit, perUsd);
+                    intlV2Parameters = [
+                        customerName,                               // {{1}}
+                        waPlace(pickup, 'the pickup address'),      // {{2}}
+                        waPlace(address, 'the delivery address'),   // {{3}}
+                        shipmentWeight,                             // {{4}}
+                        rateFor(weight, 'kg'),                      // {{5}}
+                        rateFor(units, 'unit'),                     // {{6}}
+                        waAirWaybill(shipment),                     // {{7}}
+                        waTransit(shipment),                        // {{8}}
+                        waMoney(currency, delivery),                // {{9}}
+                        waMoney(currency, charge),                  // {{10}}
+                        waMoney(currency, shipment.shipping_fee)    // {{11}}
+                    ];
+                }
             }
         }
 
@@ -290,7 +409,16 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
         // Cross-border, when KUDISMS_WA_CREATED_INTL_TEMPLATE is set:
         //   {{1}} Name {{2}} From {{3}} To {{4}} Weight {{5}} AWB
         //   {{6}} Delivery {{7}} Service charge {{8}} Total, and a second button.
-        const customerTemplate = intlParameters ? intlTemplate : templateCodeFor(cfg.customer);
+        // And when KUDISMS_WA_CREATED_INTL_V2_TEMPLATE is set, the same with the
+        // rates and the transit window:
+        //   {{1}} Name {{2}} From {{3}} To {{4}} Weight {{5}} Rate per kg
+        //   {{6}} Rate per unit {{7}} AWB {{8}} Transit window
+        //   {{9}} Delivery {{10}} Service charge {{11}} Total.
+        const customerTemplate = intlV2Parameters
+            ? intlV2Template
+            : intlParameters
+              ? intlTemplate
+              : templateCodeFor(cfg.customer);
         if (customerTemplate && recipientPhone) {
             // KudiSMS answers 200 even when it refuses, so the result is the only
             // thing that says whether a message was actually accepted. Logging
@@ -298,18 +426,37 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
             let sent = await sendWhatsApp({
                 recipient: recipientPhone,
                 templateCode: customerTemplate,
-                parameters: intlParameters ?? [customerName, shipmentWeight, shippingCost],
-                buttonParameters: intlParameters ? [shipment.shipment_reference, shipment.shipment_reference] : buttonParameters
+                parameters: intlV2Parameters ?? intlParameters ?? [customerName, shipmentWeight, shippingCost],
+                buttonParameters: intlV2Parameters || intlParameters
+                    ? [shipment.shipment_reference, shipment.shipment_reference]
+                    : buttonParameters
             });
 
-            /* The international template refused — not approved yet, or its
+            /* An international template refused — not approved yet, or its
                variables do not match what is sent. The shipment is real and the
-               customer is waiting, so fall back to the template that has been
+               customer is waiting, so step down to a template that has been
                working rather than leave them with no message at all. The
-               rejection is still logged, so the cause is not hidden. */
-            if (!sent.success && intlParameters) {
+               rejection is still logged, so the cause is not hidden.
+            
+               Down one rung at a time: the longer message falls back to the
+               eight-variable one, which falls back to the three-variable one.
+               A wrong V2 code therefore costs the two new rates and the transit
+               window, not the route, the waybill and the split as well. */
+            if (!sent.success && intlV2Parameters && intlParameters) {
+                console.warn(`[WA ${event}] template ${customerTemplate} refused (${sent.error ?? 'unknown'}); falling back to the 8-variable international template ${intlTemplate}`);
+                if (intlTemplate) {
+                    sent = await sendWhatsApp({
+                        recipient: recipientPhone,
+                        templateCode: intlTemplate,
+                        parameters: intlParameters,
+                        buttonParameters: [shipment.shipment_reference, shipment.shipment_reference]
+                    });
+                }
+            }
+
+            if (!sent.success && (intlParameters || intlV2Parameters)) {
                 const fallback = templateCodeFor(cfg.customer);
-                console.warn(`[WA ${event}] international template ${customerTemplate} refused (${sent.error ?? 'unknown'}); falling back to ${cfg.customer}`);
+                console.warn(`[WA ${event}] international template refused (${sent.error ?? 'unknown'}); falling back to ${cfg.customer}`);
                 if (fallback) {
                     sent = await sendWhatsApp({
                         recipient: recipientPhone,
@@ -445,17 +592,23 @@ const attachShipmentSummary = async (shipment, { pickup, delivery, items } = {})
            divided by the weight — the service charge is on the job, not on each
            kilo, and mixing them would state a rate nobody quoted. */
         const weight = Number(shipment.total_weight) || 0
+        const units = Number(shipment.total_items) || 0
         const deliveryPart = Number(split?.base ?? shipment.shipping_fee) || 0
         const perKilo = weight > 0 ? [{ label: `Rate per kg (${weight} kg)`, value: money(deliveryPart / weight, currency) }] : []
+        /* And what one of them cost, where there is more than one. On a
+           single-item shipment the per-unit rate is the delivery over again,
+           and a line that repeats the line below it is noise. */
+        const perItem = units > 1 ? [{ label: `Rate per unit (${units} units)`, value: money(deliveryPart / units, currency) }] : []
 
         const charges = split?.service_charge > 0
             ? [
                 ...perKilo,
+                ...perItem,
                 { label: 'Delivery', value: money(split.base, currency) },
                 { label: split.percent ? `${split.percent}% service charge` : 'Service charge', value: money(split.service_charge, currency) },
                 { label: 'Total', value: money(shipment.shipping_fee, currency), strong: true }
             ]
-            : [...perKilo, { label: 'Shipping cost', value: money(shipment.shipping_fee, currency), strong: true }]
+            : [...perKilo, ...perItem, { label: 'Shipping cost', value: money(shipment.shipping_fee, currency), strong: true }]
 
         const place = (a) => [a?.city, a?.state].filter(Boolean).join(', ') + (a?.country ? ` (${a.country})` : '')
         const pdf = await buildShipmentSummaryPdf({
@@ -1215,6 +1368,7 @@ const shipmentController = {
                 }
                 const chosen = (payload.quote_option_id && options.find((o) => o.id === payload.quote_option_id)) || options[0];
                 storeQuoteOption = chosen.id;
+                bookedTransit = chosen.eta || null;
                 payload.shipping_fee = chosen.price;
                 feeBreakdown = breakdownOf(chosen, chosen.price);
                 payload.carrier_slug = 'obana'; // Obana books the carrier (our fleet or a partner) once it's in our queue.
@@ -1237,6 +1391,15 @@ const shipmentController = {
                the customer was actually shown. */
             let feeBreakdown = null;
 
+            /* The transit window the customer was shown, kept with the shipment.
+            
+               The route table is edited — a lane re-priced, a service level
+               re-timed — so working the window out again when the message is
+               sent would state today's term for a shipment sold on last week's.
+               Recorded here for the same reason the fee split is: the figure in
+               the message has to be the figure that was agreed. */
+            let bookedTransit = null;
+
             // Booked from a saved quote: the server sets the price from the quote (24 hours, same route,
             // no heavier than quoted), never from the browser. Otherwise the booking is priced as before.
             let bookedQuote = null;
@@ -1247,6 +1410,7 @@ const shipmentController = {
                 const option = heldQuoteOption(quote, { optionId: payload.quote_option_id, pickup: payload.pickup_address, delivery: payload.delivery_address, weight });
                 if (option) {
                     bookedQuote = quote;
+                    bookedTransit = option.eta || null;
                     payload.shipping_fee = option.price;
                     feeBreakdown = breakdownOf(option, option.price);
                     payload.transport_mode = option.transport_mode;
@@ -1356,6 +1520,9 @@ const shipmentController = {
                         store_quote_option: storeQuoteOption,
                         quote_reference: bookedQuote ? bookedQuote.reference : null,
                         fee_breakdown: feeBreakdown,
+                        /* Whichever priced it: the route template through the
+                           quote option, or the carrier for an external booking. */
+                        transit: bookedTransit || payload.dispatcher?.delivery_time || null,
                         carrier_details: {
                             carrier_name: payload.dispatcher?.carrier_name,
                             carrier_logo: payload.dispatcher?.carrier_logo,
