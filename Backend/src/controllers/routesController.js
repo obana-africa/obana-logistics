@@ -1370,5 +1370,8 @@ module.exports = {
     updateTemplate,
     deleteTemplate,
     createTemplateFromZoho,
-    matchTemplate
+    matchTemplate,
+    /* The created-shipment message states the window it sold and the dates it
+       lands on, and works both out from the same string this parses. */
+    deliveryTimeRange
 }
