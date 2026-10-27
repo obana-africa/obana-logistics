@@ -308,16 +308,39 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
             address = await db.addresses.findByPk(shipment.delivery_address_id);
         }
 
-        // Recipient priority: the phone that came with the order (delivery / salesorder
-        // contact), then the account holder, then the pickup contact.
-        let recipientPhone = address?.phone || null;
-        if (!recipientPhone && shipment.user_id) {
-            const user = await db.users.findByPk(shipment.user_id);
-            if (user?.phone) recipientPhone = user.phone;
-        }
-        if (!recipientPhone && shipment.pickup_address_id) {
-            const pickup = await db.addresses.findByPk(shipment.pickup_address_id);
-            if (pickup?.phone) recipientPhone = pickup.phone;
+        /* Both ends of the shipment, not one.
+        
+           A parcel has two people waiting on it: whoever is sending it and
+           whoever is receiving it. This used to pick a single number down a
+           priority chain, so the sender heard nothing whenever the delivery
+           contact had a phone — which is almost always. The sender is the one
+           who booked and paid, and they were the one left guessing.
+        
+           Local or international makes no difference; both ends are told
+           either way.
+        
+           Deduplicated on the last nine digits, because the same person is
+           routinely written as 08030000000 at one end and +2348030000000 at
+           the other, and sending the same message twice to one phone reads as
+           a fault in the system. Nine is short enough to survive the country
+           code and long enough that two real numbers will not collide. */
+        const pickupRow = shipment.pickup_address
+            || (shipment.pickup_address_id ? await db.addresses.findByPk(shipment.pickup_address_id) : null);
+        const accountHolder = shipment.user_id ? await db.users.findByPk(shipment.user_id) : null;
+
+        const digitsOf = (phone) => String(phone ?? '').replace(/\D/g, '').slice(-9);
+        const recipients = [];
+        for (const [who, phone] of [
+            ['receiver', address?.phone],
+            ['sender', pickupRow?.phone],
+            ['account holder', accountHolder?.phone]
+        ]) {
+            const key = digitsOf(phone);
+            /* Too short to be a phone number is not a phone number. A field
+               holding "0" or "n/a" would otherwise be dialled. */
+            if (key.length < 7) continue;
+            if (recipients.some((r) => r.key === key)) continue;
+            recipients.push({ who, phone: String(phone).trim(), key });
         }
 
         const currency = shipment.currency || 'NGN';
@@ -413,12 +436,14 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
             : intlParameters
               ? intlTemplate
               : templateCodeFor(cfg.customer);
-        if (customerTemplate && recipientPhone) {
+        /* One send, to one recipient, with the step-down if a template is
+           refused. Run once per person rather than once per shipment. */
+        const sendTo = async (to) => {
             // KudiSMS answers 200 even when it refuses, so the result is the only
             // thing that says whether a message was actually accepted. Logging
             // "Sent" regardless is how a rejected template goes unnoticed.
             let sent = await sendWhatsApp({
-                recipient: recipientPhone,
+                recipient: to.phone,
                 templateCode: customerTemplate,
                 parameters: intlV2Parameters ?? intlParameters ?? [customerName, shipmentWeight, shippingCost],
                 buttonParameters: intlV2Parameters || intlParameters
@@ -431,21 +456,19 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
                customer is waiting, so step down to a template that has been
                working rather than leave them with no message at all. The
                rejection is still logged, so the cause is not hidden.
-            
+
                Down one rung at a time: the longer message falls back to the
                eight-variable one, which falls back to the three-variable one.
                A wrong V2 code therefore costs the two new rates and the transit
                window, not the route, the waybill and the split as well. */
-            if (!sent.success && intlV2Parameters && intlParameters) {
+            if (!sent.success && intlV2Parameters && intlParameters && intlTemplate) {
                 console.warn(`[WA ${event}] template ${customerTemplate} refused (${sent.error ?? 'unknown'}); falling back to the 8-variable international template ${intlTemplate}`);
-                if (intlTemplate) {
-                    sent = await sendWhatsApp({
-                        recipient: recipientPhone,
-                        templateCode: intlTemplate,
-                        parameters: intlParameters,
-                        buttonParameters: [shipment.shipment_reference, shipment.shipment_reference]
-                    });
-                }
+                sent = await sendWhatsApp({
+                    recipient: to.phone,
+                    templateCode: intlTemplate,
+                    parameters: intlParameters,
+                    buttonParameters: [shipment.shipment_reference, shipment.shipment_reference]
+                });
             }
 
             if (!sent.success && (intlParameters || intlV2Parameters)) {
@@ -453,16 +476,26 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
                 console.warn(`[WA ${event}] international template refused (${sent.error ?? 'unknown'}); falling back to ${cfg.customer}`);
                 if (fallback) {
                     sent = await sendWhatsApp({
-                        recipient: recipientPhone,
+                        recipient: to.phone,
                         templateCode: fallback,
                         parameters: [customerName, shipmentWeight, shippingCost],
                         buttonParameters
                     });
                 }
             }
-            outcome.customer = sent.success ? 'sent' : `rejected: ${sent.error ?? 'unknown'}`;
-            if (sent.success) console.log(`[WA ${event}] Sent to customer ${recipientPhone} for ${shipment.shipment_reference}`);
-            else console.error(`[WA ${event}] KudiSMS refused the customer message for ${shipment.shipment_reference}:`, sent.error, sent.data ?? '');
+
+            if (sent.success) console.log(`[WA ${event}] Sent to ${to.who} ${to.phone} for ${shipment.shipment_reference}`);
+            else console.error(`[WA ${event}] KudiSMS refused the ${to.who} message for ${shipment.shipment_reference}:`, sent.error, sent.data ?? '');
+            return `${to.who}: ${sent.success ? 'sent' : `rejected: ${sent.error ?? 'unknown'}`}`;
+        };
+
+        if (customerTemplate && recipients.length) {
+            /* One at a time. KudiSMS is rate-limited and a parcel has two
+               recipients, not two hundred — the ordering also means the log
+               reads in the order the people were told. */
+            const results = [];
+            for (const to of recipients) results.push(await sendTo(to));
+            outcome.customer = results.join('; ');
         } else if (!customerTemplate) {
             outcome.customer = `no template (${cfg.customer} unset)`;
             console.warn(`[WA ${event}] ${cfg.customer} not set; skipping customer notification`);
@@ -605,6 +638,7 @@ const attachShipmentSummary = async (shipment, { pickup, delivery, items } = {})
             service: summary.service,
             eta: summary.eta,
             weight: summary.weight,
+            cost: summary.total?.display ?? '',
             trackingUrl: buildTrackingUrl(shipment.shipment_reference),
             charges: summary.charges.map((c) => ({ label: c.label, value: c.display, strong: Boolean(c.strong) })),
             pickup: pickupAddress,
