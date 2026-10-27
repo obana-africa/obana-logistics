@@ -152,6 +152,11 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
     0
   );
 
+  /* How many things are being sent, for the per-unit rate. Quantity is always
+     1 on this form, so this is the number of lines — two cartons read as two
+     units, which is what a per-unit rate is asking about. */
+  const totalUnits = formData.items.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0);
+
   const quote = savedQuote.data;
   const quoteHolds = !!quote && !quote.expired && quote.status === 'quoted';
   const samePlace = (place: { state: string; countryCode: string }, saved: { state: string; country_code: string }) =>
@@ -163,6 +168,20 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
 
   // Every service the server priced for this route, cheapest first. A partner rate (or a lone route price) is one option.
   const crossBorder = formData.pickup_address.countryCode !== formData.delivery_address.countryCode;
+
+  /* Naira with the dollars beside it, on a shipment that crosses a border.
+  
+     The rate is the server's — Zoho's, the same one the shipment summary and
+     the WhatsApp message will use — because a figure this screen worked out
+     from a public feed would disagree with the invoice the customer is later
+     sent. No rate means naira alone, which is what this screen showed before. */
+  const usdRate = Number(matchedRoute?.usd_rate) || 0;
+  const withUsd = (amount: number) => {
+    const naira = formatMoney(amount, 'NGN');
+    if (!crossBorder || !(usdRate > 0) || !(amount > 0)) return naira;
+    const dollars = (amount / usdRate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `${naira} ($${dollars})`;
+  };
   const priceOptions: PriceOption[] = !matchedRoute
     ? []
     : matchedRoute.options?.length
@@ -1004,12 +1023,29 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                   <div>
                     <p className="text-gray-600">Route</p>
                     <p className="font-semibold text-gray-900">
-                      {formData.pickup_address.city} → {formData.delivery_address.city}
+                      {/* The countries too, where they differ. "Alberton → Aba"
+                          reads as a domestic hop on a shipment that crosses two
+                          borders, and the customs line at the foot of the
+                          summary only makes sense once the route says so. */}
+                      {formData.pickup_address.city}
+                      {crossBorder && formData.pickup_address.country ? ` (${formData.pickup_address.country})` : ''}
+                      {' → '}
+                      {formData.delivery_address.city}
+                      {crossBorder && formData.delivery_address.country ? ` (${formData.delivery_address.country})` : ''}
                     </p>
                   </div>
                   <div>
                     <p className="text-gray-600">Service</p>
                     <p className="font-semibold text-gray-900">{serviceLabel(selected)}</p>
+                  </div>
+                  {/* How long it takes, where it is being agreed to. It was on
+                      the price step and then vanished at the point of
+                      confirming, which is the one moment it matters. */}
+                  <div>
+                    <p className="text-gray-600">Estimated arrival</p>
+                    <p className="font-semibold text-gray-900">
+                      {selected.estimated_delivery || selected.eta || 'Confirmed after booking'}
+                    </p>
                   </div>
                   <div>
                     <p className="text-gray-600">Total weight</p>
@@ -1017,7 +1053,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                   </div>
                   <div>
                     <p className="text-gray-600">Shipping cost</p>
-                    <p className="font-bold text-green-600 text-lg">{formatMoney(selected.price, 'NGN')}</p>
+                    <p className="font-bold text-green-600 text-lg">{withUsd(selected.price)}</p>
                   </div>
                 </div>
 
@@ -1026,17 +1062,36 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                     Books estimate; it should not be the one place it is hidden. */}
                 {!!selected.service_charge && !!selected.base_price && (
                   <dl className="mt-4 space-y-1.5 border-t border-blue-200/70 pt-4 text-sm">
+                    {/* The rate before the total. A total is a number to accept
+                        or refuse; a rate is one you can check against the quote
+                        you were given and against what anyone else charges.
+                        It divides the delivery, not the total — the service
+                        charge is on the job, not on each kilo. */}
+                    {shipmentWeight > 0 && (
+                      <div className="flex items-baseline justify-between gap-4">
+                        <dt className="text-gray-600">Rate per kg ({shipmentWeight.toFixed(2)} kg)</dt>
+                        <dd className="font-medium text-gray-900 tabular-nums">{withUsd(selected.base_price! / shipmentWeight)}</dd>
+                      </div>
+                    )}
+                    {/* And per unit, only where there is more than one: on a
+                        single item it repeats the delivery line below it. */}
+                    {totalUnits > 1 && (
+                      <div className="flex items-baseline justify-between gap-4">
+                        <dt className="text-gray-600">Rate per unit ({totalUnits} units)</dt>
+                        <dd className="font-medium text-gray-900 tabular-nums">{withUsd(selected.base_price! / totalUnits)}</dd>
+                      </div>
+                    )}
                     <div className="flex items-baseline justify-between gap-4">
                       <dt className="text-gray-600">Delivery</dt>
-                      <dd className="font-medium text-gray-900 tabular-nums">{formatMoney(selected.base_price, 'NGN')}</dd>
+                      <dd className="font-medium text-gray-900 tabular-nums">{withUsd(selected.base_price!)}</dd>
                     </div>
                     <div className="flex items-baseline justify-between gap-4">
                       <dt className="text-gray-600">{chargeLabel(selected)}</dt>
-                      <dd className="font-medium text-gray-900 tabular-nums">{formatMoney(selected.service_charge, 'NGN')}</dd>
+                      <dd className="font-medium text-gray-900 tabular-nums">{withUsd(selected.service_charge!)}</dd>
                     </div>
                     <div className="flex items-baseline justify-between gap-4 border-t border-blue-200/70 pt-1.5">
                       <dt className="font-semibold text-gray-900">Total</dt>
-                      <dd className="font-bold text-gray-900 tabular-nums">{formatMoney(selected.price, 'NGN')}</dd>
+                      <dd className="font-bold text-gray-900 tabular-nums">{withUsd(selected.price)}</dd>
                     </div>
                   </dl>
                 )}

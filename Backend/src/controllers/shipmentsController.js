@@ -16,7 +16,9 @@ const { getCode: getCountryCode } = require('country-list');
 const countryLookup = require('country-code-lookup');
 /* Zoho only for the rate it holds — the same one the shipping charge is
    written back at, so a message and an invoice cannot disagree. */
-const zohoInventory = require('../helpers/zohoInventory');
+/* Zoho's naira-per-dollar rate, shared so the quote, the summary and the
+   WhatsApp message cannot state three different dollar figures. */
+const { nairaPerUsd, inUsd } = require('../helpers/usdRate');
 
 const TERMINAL_AFRICA_BASE_URL = process.env.TERMINAL_AFRICA_BASE_URL;
 const TERMINAL_AFRICA_SECRET_KEY = process.env.TERMINAL_AFRICA_SECRET_KEY;
@@ -230,22 +232,6 @@ const waPlace = (address, fallback) => {
  * failure here drops the dollars and sends the naira alone, and the message
  * goes out. It is never a reason for a customer to hear nothing.
  */
-const USD_RATE_TTL_MS = 60 * 60 * 1000
-let usdRate = { at: 0, rate: 0 }
-
-const nairaPerUsd = async () => {
-    if (usdRate.rate > 0 && Date.now() - usdRate.at < USD_RATE_TTL_MS) return usdRate.rate
-    try {
-        const { rate } = await zohoInventory.getNairaRate()
-        if (rate > 0) usdRate = { at: Date.now(), rate }
-    } catch (error) {
-        /* The stale rate, if there is one, beats no rate at all — and the next
-           message tries again rather than being stuck behind the cache. */
-        console.warn(`[whatsapp] no Zoho NGN rate (${error.message}) \u2014 sending naira only`)
-    }
-    return usdRate.rate
-}
-
 /**
  * "\u20a67 500/kg ($5.15/kg)" \u2014 or just "\u20a67 500/kg" when there is no rate to hand.
  *
@@ -594,21 +580,45 @@ const attachShipmentSummary = async (shipment, { pickup, delivery, items } = {})
         const weight = Number(shipment.total_weight) || 0
         const units = Number(shipment.total_items) || 0
         const deliveryPart = Number(split?.base ?? shipment.shipping_fee) || 0
-        const perKilo = weight > 0 ? [{ label: `Rate per kg (${weight} kg)`, value: money(deliveryPart / weight, currency) }] : []
+
+        /* Dollars beside the naira, on a shipment that crosses a border.
+        
+           Whoever is reading this is in another country, pricing it against
+           quotes they have in their own currency, and a naira figure alone
+           leaves them to find a rate and do the arithmetic — at whatever rate
+           they happen to find, which is how a customer arrives at a different
+           number from the invoice. Shown only where the shipment is actually
+           international: a Lagos to Kano delivery priced in dollars is noise.
+        
+           A domestic figure and a shipment whose countries will not resolve
+           both fall through to naira alone, which is what they already were. */
+        const from = countryCodeOf(pickupAddress)
+        const to = countryCodeOf(deliveryAddress)
+        const crossBorder = Boolean(from && to && from !== to)
+        const perUsd = crossBorder ? await nairaPerUsd() : 0
+        /* "\u20a6524 000 ($360.66)". The naira stays first and unchanged: it is
+           what will be charged, and the dollars are the reader's convenience. */
+        const dual = (amount) => {
+            const naira = money(amount, currency)
+            const dollars = inUsd(amount, currency, perUsd)
+            return dollars ? `${naira} (${dollars})` : naira
+        }
+
+        const perKilo = weight > 0 ? [{ label: `Rate per kg (${weight} kg)`, value: dual(deliveryPart / weight) }] : []
         /* And what one of them cost, where there is more than one. On a
            single-item shipment the per-unit rate is the delivery over again,
            and a line that repeats the line below it is noise. */
-        const perItem = units > 1 ? [{ label: `Rate per unit (${units} units)`, value: money(deliveryPart / units, currency) }] : []
+        const perItem = units > 1 ? [{ label: `Rate per unit (${units} units)`, value: dual(deliveryPart / units) }] : []
 
         const charges = split?.service_charge > 0
             ? [
                 ...perKilo,
                 ...perItem,
-                { label: 'Delivery', value: money(split.base, currency) },
-                { label: split.percent ? `${split.percent}% service charge` : 'Service charge', value: money(split.service_charge, currency) },
-                { label: 'Total', value: money(shipment.shipping_fee, currency), strong: true }
+                { label: 'Delivery', value: dual(split.base) },
+                { label: split.percent ? `${split.percent}% service charge` : 'Service charge', value: dual(split.service_charge) },
+                { label: 'Total', value: dual(shipment.shipping_fee), strong: true }
             ]
-            : [...perKilo, ...perItem, { label: 'Shipping cost', value: money(shipment.shipping_fee, currency), strong: true }]
+            : [...perKilo, ...perItem, { label: 'Shipping cost', value: dual(shipment.shipping_fee), strong: true }]
 
         const place = (a) => [a?.city, a?.state].filter(Boolean).join(', ') + (a?.country ? ` (${a.country})` : '')
         const pdf = await buildShipmentSummaryPdf({
@@ -616,6 +626,11 @@ const attachShipmentSummary = async (shipment, { pickup, delivery, items } = {})
             awbNumber: shipment.awb_number,
             route: `${place(pickupAddress)} \u2192 ${place(deliveryAddress)}`,
             service: [shipment.transport_mode, shipment.service_level].filter(Boolean).join(' \u00b7 '),
+            /* How long it takes, in the window that was sold and the dates it
+               lands on. waTransit says "To be confirmed" where nothing was
+               recorded; the document leaves the row out instead, because a
+               printed page cannot be refreshed when the answer arrives. */
+            eta: shipment.metadata?.transit || shipment.metadata?.carrier_details?.delivery_time ? waTransit(shipment) : '',
             weight: `${Number(shipment.total_weight || 0)} kg`,
             trackingUrl: buildTrackingUrl(shipment.shipment_reference),
             charges,

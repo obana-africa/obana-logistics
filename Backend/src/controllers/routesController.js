@@ -2,6 +2,9 @@ const db = require('../models/db')
 const utils = require('../../utils')
 const { loadPricing, priceRates, recordSeenPartners } = require('../helpers/partnerPricing')
 const { currencyForCountry, ngnRate } = require('../helpers/fx')
+/* Zoho's naira-per-dollar rate, so the price the customer confirms, the summary
+   they are sent and the message they receive all state the same dollars. */
+const { nairaPerUsd } = require('../helpers/usdRate')
 const axios = require('axios')
 const crypto = require('crypto')
 const { getCode } = require('country-list')
@@ -771,6 +774,38 @@ const buildTerminalPayload = (pickupAddress, deliveryAddress, items) => {
     }
 }
 
+/**
+ * Hand the browser the rate rather than let it find its own.
+ *
+ * The confirm screen shows dollars beside naira on a cross-border booking, and
+ * they have to be the dollars the summary and the WhatsApp message will carry.
+ * A browser fetching a public feed would show a third figure, and the customer
+ * would meet the disagreement on their invoice.
+ *
+ * Only when the two ends are really in different countries, and only when both
+ * countries are actually filled in — formatCountryCode answers 'NG' for an
+ * empty one, so a blank pickup country would otherwise read as domestic for a
+ * Nigerian delivery and as cross-border for any other. Unknown means no
+ * dollars, which is the harmless way to be wrong.
+ *
+ * Zero from Zoho means the screen shows naira alone.
+ */
+const crossBorderPair = (pickup, delivery) => {
+    const from = String(pickup?.country ?? '').trim()
+    const to = String(delivery?.country ?? '').trim()
+    if (!from || !to) return false
+    return formatCountryCode(from) !== formatCountryCode(to)
+}
+
+const withUsdRate = async (results, deliveryAddress, requestPickup) => {
+    const anyCrossBorder = results.some((r) =>
+        crossBorderPair(r.pickup_address || r.items?.[0]?.pickup_address || requestPickup, r.delivery_address || deliveryAddress)
+    )
+    if (!anyCrossBorder) return results
+    const rate = await nairaPerUsd()
+    return rate > 0 ? results.map((r) => ({ ...r, usd_rate: rate })) : results
+}
+
 const matchTemplate = async (req, res) => {
     let { transport_mode, service_level, delivery_address, items, weight, pickup_address } = req.body
     const parcel = req.body.parcel
@@ -891,7 +926,7 @@ const matchTemplate = async (req, res) => {
         }
     }
     if (externalGroups.length === 0 && shipmentResults.length > 0) {
-        return res.status(200).send(utils.responseSuccess(shipmentResults))
+        return res.status(200).send(utils.responseSuccess(await withUsdRate(shipmentResults, delivery_address, pickup_address)))
     }
 
     /* No Obana route for this lane, and partners are not being offered. The
@@ -949,7 +984,7 @@ const matchTemplate = async (req, res) => {
         }
 
         if (shipmentResults.length > 0) {
-            return res.status(200).send(utils.responseSuccess(shipmentResults))
+            return res.status(200).send(utils.responseSuccess(await withUsdRate(shipmentResults, delivery_address, pickup_address)))
         }
         const lanes = externalGroups.map((g) => laneName(g.pickup_address, delivery_address))
         console.log(`[routes] no Obana route and no partner rate for ${lanes.join('; ')}`)
