@@ -119,6 +119,7 @@ const sectionHeading = (doc, text) => {
  * @param {string} [summary.awbNumber]      Printed only when there is one
  * @param {string} summary.route
  * @param {string} summary.service
+ * @param {string} [summary.eta]            Printed only when there is one
  * @param {string} summary.weight
  * @param {Array}  summary.charges          [{ label, value, strong }]
  * @param {Object} summary.pickup           address
@@ -161,9 +162,15 @@ const buildShipmentSummaryPdf = (summary) =>
             sectionHeading(doc, 'Shipment')
             const facts = [
                 ['Route', str(summary.route)],
-                ['Service', str(summary.service)],
-                ['Total weight', str(summary.weight)]
+                ['Service', str(summary.service)]
             ]
+            /* Directly under the service, because it is the service that
+               decides it: economy and express are the same parcel on the same
+               lane, and the only thing a customer is choosing between is how
+               long it takes. Left out rather than guessed at when nothing was
+               recorded — a date on a document is read as a promise. */
+            if (str(summary.eta)) facts.push(['Estimated arrival', str(summary.eta)])
+            facts.push(['Total weight', str(summary.weight)])
             if (str(summary.awbNumber)) facts.push(['Air waybill', str(summary.awbNumber)])
             if (str(summary.trackingUrl)) facts.push(['Track', str(summary.trackingUrl)])
 
