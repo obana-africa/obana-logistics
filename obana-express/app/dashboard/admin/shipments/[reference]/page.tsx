@@ -26,6 +26,19 @@ interface Shipment {
 	createdAt: string;
 	currency?: string;
 	shipping_fee?: number | string;
+	/* What this shipment says about itself, worked out on the server so the
+	   page, the PDF and the WhatsApp message cannot state different figures.
+	   Absent on an older record, in which case the page falls back to the
+	   shipping fee it always showed. */
+	summary?: {
+		route?: string;
+		service?: string;
+		eta?: string;
+		weight?: string;
+		awbNumber?: string;
+		crossBorder?: boolean;
+		charges?: { key: string; label: string; display: string; strong?: boolean }[];
+	} | null;
 	product_value?: number | string;
 	pickup_address?: Address;
 	delivery_address?: Address;
@@ -310,6 +323,14 @@ export default function AdminShipmentDetailPage() {
 
 						<Panel title="Handled by">
 							<dl className="divide-y divide-slate-100">
+								{/* The route with its countries, the service, how long it
+								    takes and the waybill — the same four facts the document
+								    leads with, from the same place. */}
+								{s.summary?.route && <Row label="Route">{s.summary.route}</Row>}
+								{s.summary?.service && <Row label="Service">{s.summary.service}</Row>}
+								{s.summary?.eta && <Row label="Estimated arrival">{s.summary.eta}</Row>}
+								{s.summary?.weight && <Row label="Total weight">{s.summary.weight}</Row>}
+								{s.summary?.awbNumber && <Row label="Air waybill">{s.summary.awbNumber}</Row>}
 								<Row label="Carrier">{isPartner ? s.carrier_name || "Partner carrier" : "Obana fleet"}</Row>
 								{isPartner && <Row label="Partner tracking">{s.external_carrier_reference || <ToneBadge tone="warning">Not booked</ToneBadge>}</Row>}
 								{!isPartner && (
@@ -339,9 +360,26 @@ export default function AdminShipmentDetailPage() {
 
 						<Panel title="Payment">
 							<dl className="divide-y divide-slate-100">
-								<Row label="Shipping fee">{formatMoney(s.shipping_fee, s.currency)}</Row>
-								<Row label="Goods value">{formatMoney(s.product_value, s.currency)}</Row>
-								<Row label="Total">{formatMoney(total, s.currency)}</Row>
+								{/* The server's lines, which are the document's lines and the
+								    message's lines. Rendered, not recomputed — a second copy of
+								    this arithmetic in the browser is how the three came to
+								    disagree in the first place. */}
+								{s.summary?.charges?.length ? (
+									<>
+										{s.summary.charges.map((c) => (
+											<Row key={c.key} label={c.label}>
+												{c.strong ? <strong className="text-slate-900">{c.display}</strong> : c.display}
+											</Row>
+										))}
+										{Number(s.product_value) > 0 && <Row label="Goods value">{formatMoney(s.product_value, s.currency)}</Row>}
+									</>
+								) : (
+									<>
+										<Row label="Shipping fee">{formatMoney(s.shipping_fee, s.currency)}</Row>
+										<Row label="Goods value">{formatMoney(s.product_value, s.currency)}</Row>
+										<Row label="Total">{formatMoney(total, s.currency)}</Row>
+									</>
+								)}
 							</dl>
 						</Panel>
 					</div>

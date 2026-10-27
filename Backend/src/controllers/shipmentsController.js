@@ -19,6 +19,10 @@ const countryLookup = require('country-code-lookup');
 /* Zoho's naira-per-dollar rate, shared so the quote, the summary and the
    WhatsApp message cannot state three different dollar figures. */
 const { nairaPerUsd, inUsd } = require('../helpers/usdRate');
+/* What a shipment says about itself, worked out once. The page, the document
+   and the WhatsApp message all render this rather than each computing its own
+   version of the same figures — which is how they came to disagree. */
+const { buildShipmentSummary } = require('../helpers/shipmentSummary');
 
 const TERMINAL_AFRICA_BASE_URL = process.env.TERMINAL_AFRICA_BASE_URL;
 const TERMINAL_AFRICA_SECRET_KEY = process.env.TERMINAL_AFRICA_SECRET_KEY;
@@ -343,6 +347,11 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
                reads "AWB not available" where there is no waybill, which is
                honest and keeps the two messages the same shape. */
             if (pickup && address) {
+                /* The same figures the document and the page carry. The only
+                   thing that differs is the punctuation: KudiSMS splits its
+                   parameters field on commas, so the digits are grouped with
+                   spaces. Never a different number. */
+                const { summary } = await summaryFor(shipment, { pickup, delivery: address });
                 const split = shipment.metadata?.fee_breakdown;
                 const charge = Number(split?.service_charge) || 0;
                 const delivery = Number(split?.base) || Number(shipment.shipping_fee) || 0;
@@ -367,25 +376,24 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
                  * variable cannot be empty and a division by zero is not a
                  * price. */
                 if (intlV2Template) {
-                    const weight = Number(shipment.total_weight) || 0;
-                    const units = Number(shipment.total_items) || 0;
-                    const perUsd = await nairaPerUsd();
-                    const rateFor = (divisor, unit) =>
-                        divisor > 0
-                            ? waPerUnit(currency, delivery / divisor, unit, perUsd)
-                            : waPerUnit(currency, delivery, unit, perUsd);
+                    /* A variable may not be empty, so anything the summary
+                       leaves out falls back to a sentence rather than a blank:
+                       a single-item shipment has no per-unit rate, and a
+                       shipment nobody has given a window yet has no dates. */
+                    const perKg = summary.ratePerKg ? `${summary.ratePerKg.plain}/kg` : waMoney(currency, delivery);
+                    const perUnit = summary.ratePerUnit ? `${summary.ratePerUnit.plain}/unit` : perKg;
                     intlV2Parameters = [
                         customerName,                               // {{1}}
-                        waPlace(pickup, 'the pickup address'),      // {{2}}
-                        waPlace(address, 'the delivery address'),   // {{3}}
-                        shipmentWeight,                             // {{4}}
-                        rateFor(weight, 'kg'),                      // {{5}}
-                        rateFor(units, 'unit'),                     // {{6}}
-                        waAirWaybill(shipment),                     // {{7}}
-                        waTransit(shipment),                        // {{8}}
-                        waMoney(currency, delivery),                // {{9}}
-                        waMoney(currency, charge),                  // {{10}}
-                        waMoney(currency, shipment.shipping_fee)    // {{11}}
+                        summary.from || waPlace(pickup, 'the pickup address'),    // {{2}}
+                        summary.to || waPlace(address, 'the delivery address'),   // {{3}}
+                        summary.weight,                             // {{4}}
+                        perKg,                                      // {{5}}
+                        perUnit,                                    // {{6}}
+                        summary.awbNumber || 'AWB not available',   // {{7}}
+                        summary.eta || 'To be confirmed',           // {{8}}
+                        summary.deliveryCharge?.plain ?? waMoney(currency, delivery),   // {{9}}
+                        summary.serviceCharge?.plain ?? waMoney(currency, charge),      // {{10}}
+                        summary.total?.plain ?? waMoney(currency, shipment.shipping_fee) // {{11}}
                     ];
                 }
             }
@@ -564,83 +572,44 @@ const awbFromNote = (note) => {
  * Never throws. A shipment without its summary is a gap somebody can fill; a
  * booking that failed because a PDF would not upload is not.
  */
+/**
+ * The summary for a shipment, with its addresses loaded if they were not given.
+ *
+ * Every surface goes through here, so none of them can quietly use a different
+ * rule for what the route says or which figures appear.
+ */
+const summaryFor = async (shipment, { pickup, delivery, items } = {}) => {
+    const pickupAddress = pickup || (shipment.pickup_address_id ? await db.addresses.findByPk(shipment.pickup_address_id) : null)
+    const deliveryAddress = delivery || (shipment.delivery_address_id ? await db.addresses.findByPk(shipment.delivery_address_id) : null)
+    const { deliveryTimeRange } = require('./routesController')
+    const summary = await buildShipmentSummary(shipment, {
+        pickup: pickupAddress,
+        delivery: deliveryAddress,
+        items: items || [],
+        countryCodeOf,
+        deliveryTimeRange
+    })
+    return { summary, pickupAddress, deliveryAddress }
+}
+
 const attachShipmentSummary = async (shipment, { pickup, delivery, items } = {}) => {
     try {
-        const pickupAddress = pickup || (shipment.pickup_address_id ? await db.addresses.findByPk(shipment.pickup_address_id) : null)
-        const deliveryAddress = delivery || (shipment.delivery_address_id ? await db.addresses.findByPk(shipment.delivery_address_id) : null)
-        const currency = shipment.currency || 'NGN'
-        const split = shipment.metadata?.fee_breakdown
-        /* What a kilo costs, before what the whole thing costs.
-        
-           A total is a number to accept or refuse; a rate is one a customer can
-           check against the quote they were given and against what anyone else
-           charges. It is the delivery divided by the weight, not the total
-           divided by the weight — the service charge is on the job, not on each
-           kilo, and mixing them would state a rate nobody quoted. */
-        const weight = Number(shipment.total_weight) || 0
-        const units = Number(shipment.total_items) || 0
-        const deliveryPart = Number(split?.base ?? shipment.shipping_fee) || 0
-
-        /* Dollars beside the naira, on a shipment that crosses a border.
-        
-           Whoever is reading this is in another country, pricing it against
-           quotes they have in their own currency, and a naira figure alone
-           leaves them to find a rate and do the arithmetic — at whatever rate
-           they happen to find, which is how a customer arrives at a different
-           number from the invoice. Shown only where the shipment is actually
-           international: a Lagos to Kano delivery priced in dollars is noise.
-        
-           A domestic figure and a shipment whose countries will not resolve
-           both fall through to naira alone, which is what they already were. */
-        const from = countryCodeOf(pickupAddress)
-        const to = countryCodeOf(deliveryAddress)
-        const crossBorder = Boolean(from && to && from !== to)
-        const perUsd = crossBorder ? await nairaPerUsd() : 0
-        /* "\u20a6524 000 ($360.66)". The naira stays first and unchanged: it is
-           what will be charged, and the dollars are the reader's convenience. */
-        const dual = (amount) => {
-            const naira = money(amount, currency)
-            const dollars = inUsd(amount, currency, perUsd)
-            return dollars ? `${naira} (${dollars})` : naira
-        }
-
-        const perKilo = weight > 0 ? [{ label: `Rate per kg (${weight} kg)`, value: dual(deliveryPart / weight) }] : []
-        /* And what one of them cost, where there is more than one. On a
-           single-item shipment the per-unit rate is the delivery over again,
-           and a line that repeats the line below it is noise. */
-        const perItem = units > 1 ? [{ label: `Rate per unit (${units} units)`, value: dual(deliveryPart / units) }] : []
-
-        const charges = split?.service_charge > 0
-            ? [
-                ...perKilo,
-                ...perItem,
-                { label: 'Delivery', value: dual(split.base) },
-                { label: split.percent ? `${split.percent}% service charge` : 'Service charge', value: dual(split.service_charge) },
-                { label: 'Total', value: dual(shipment.shipping_fee), strong: true }
-            ]
-            : [...perKilo, ...perItem, { label: 'Shipping cost', value: dual(shipment.shipping_fee), strong: true }]
-
-        const place = (a) => [a?.city, a?.state].filter(Boolean).join(', ') + (a?.country ? ` (${a.country})` : '')
+        /* Every figure on this document comes from the shared summary, so the
+           paper, the screen and the message cannot state different numbers for
+           the same shipment. */
+        const { summary, pickupAddress, deliveryAddress } = await summaryFor(shipment, { pickup, delivery, items })
         const pdf = await buildShipmentSummaryPdf({
-            reference: shipment.shipment_reference,
-            awbNumber: shipment.awb_number,
-            route: `${place(pickupAddress)} \u2192 ${place(deliveryAddress)}`,
-            service: [shipment.transport_mode, shipment.service_level].filter(Boolean).join(' \u00b7 '),
-            /* How long it takes, in the window that was sold and the dates it
-               lands on. waTransit says "To be confirmed" where nothing was
-               recorded; the document leaves the row out instead, because a
-               printed page cannot be refreshed when the answer arrives. */
-            eta: shipment.metadata?.transit || shipment.metadata?.carrier_details?.delivery_time ? waTransit(shipment) : '',
-            weight: `${Number(shipment.total_weight || 0)} kg`,
+            reference: summary.reference,
+            awbNumber: summary.awbNumber,
+            route: summary.route,
+            service: summary.service,
+            eta: summary.eta,
+            weight: summary.weight,
             trackingUrl: buildTrackingUrl(shipment.shipment_reference),
-            charges,
+            charges: summary.charges.map((c) => ({ label: c.label, value: c.display, strong: Boolean(c.strong) })),
             pickup: pickupAddress,
             delivery: deliveryAddress,
-            items: (items || []).map((i) => ({
-                name: i.name,
-                weight: `${Number(i.weight) || 0} kg`,
-                value: Number(i.total_price ?? i.price) > 0 ? money(i.total_price ?? i.price, currency) : ''
-            }))
+            items: summary.items
         })
 
         const url = await uploadDocument(
@@ -2175,9 +2144,18 @@ const shipmentController = {
                 }
             }
 
+            /* The page renders this rather than working the figures out in the
+               browser. That is the whole point: three surfaces, one answer. */
+            let summary = null;
+            try {
+                ({ summary } = await summaryFor(shipment));
+            } catch (summaryError) {
+                console.warn(`[shipment ${shipment.shipment_reference}] summary unavailable:`, summaryError.message);
+            }
+
             return res.status(200).json({
                 success: true,
-                data: plainShipment
+                data: { ...plainShipment, summary }
             });
         } catch (error) {
             console.error('Error fetching shipment:', error);
