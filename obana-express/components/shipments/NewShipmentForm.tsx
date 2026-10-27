@@ -175,12 +175,19 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
      the WhatsApp message will use — because a figure this screen worked out
      from a public feed would disagree with the invoice the customer is later
      sent. No rate means naira alone, which is what this screen showed before. */
-  const usdRate = Number(matchedRoute?.usd_rate) || 0;
+  /* Quoted in the shipper's money, with the naira it converts to beside it.
+     The sender is the one paying, and a naira figure is one they cannot hold
+     against another forwarder without first going to find a rate — which will
+     not be ours. Base first, charged second. Both from the server: a rate this
+     screen fetched for itself would disagree with the document and the
+     message. */
+  const baseCurrency: string = matchedRoute?.base_currency || '';
+  const nairaPerBase = Number(matchedRoute?.naira_per_base) || 0;
+  const converts = crossBorder && Boolean(baseCurrency) && nairaPerBase > 0;
   const withUsd = (amount: number) => {
     const naira = formatMoney(amount, 'NGN');
-    if (!crossBorder || !(usdRate > 0) || !(amount > 0)) return naira;
-    const dollars = (amount / usdRate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return `${naira} ($${dollars})`;
+    if (!converts || !(amount > 0)) return naira;
+    return `${formatMoney(amount / nairaPerBase, baseCurrency)} (${naira})`;
   };
   const priceOptions: PriceOption[] = !matchedRoute
     ? []
@@ -1093,6 +1100,14 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                       <dt className="font-semibold text-gray-900">Total</dt>
                       <dd className="font-bold text-gray-900 tabular-nums">{withUsd(selected.price)}</dd>
                     </div>
+                    {/* The rate it was converted at. Two currencies with no
+                        rate between them is a number nobody can check, and
+                        checking it is the point of showing theirs. */}
+                    {converts && (
+                      <p className="pt-1 text-xs text-gray-500">
+                        Converted at {formatMoney(1, baseCurrency)} = {formatMoney(nairaPerBase, 'NGN')}
+                      </p>
+                    )}
                   </dl>
                 )}
               </div>
