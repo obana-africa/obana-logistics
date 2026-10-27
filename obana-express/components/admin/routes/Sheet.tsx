@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useId, useRef } from "react";
+import { lockScroll } from "@/lib/scrollLock";
 import { X } from "lucide-react";
 
 /**
@@ -34,8 +35,7 @@ export function Sheet({
 	});
 
 	useEffect(() => {
-		const previous = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
+		const unlock = lockScroll();
 		panelRef.current?.focus();
 		const onKey = (e: KeyboardEvent) => {
 			// Let an open city list close first.
@@ -44,7 +44,7 @@ export function Sheet({
 		};
 		window.addEventListener("keydown", onKey);
 		return () => {
-			document.body.style.overflow = previous;
+			unlock();
 			window.removeEventListener("keydown", onKey);
 		};
 	}, []);
