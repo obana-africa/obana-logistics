@@ -4,7 +4,7 @@ const { loadPricing, priceRates, recordSeenPartners } = require('../helpers/part
 const { currencyForCountry, ngnRate } = require('../helpers/fx')
 /* Zoho's naira-per-dollar rate, so the price the customer confirms, the summary
    they are sent and the message they receive all state the same dollars. */
-const { nairaPerUsd } = require('../helpers/usdRate')
+const { nairaPer, currenciesFor } = require('../helpers/currencyRates')
 const axios = require('axios')
 const crypto = require('crypto')
 const { getCode } = require('country-list')
@@ -798,12 +798,20 @@ const crossBorderPair = (pickup, delivery) => {
 }
 
 const withUsdRate = async (results, deliveryAddress, requestPickup) => {
-    const anyCrossBorder = results.some((r) =>
-        crossBorderPair(r.pickup_address || r.items?.[0]?.pickup_address || requestPickup, r.delivery_address || deliveryAddress)
+    const pickupOf = (r) => r.pickup_address || r.items?.[0]?.pickup_address || requestPickup
+    const crossing = results.find((r) => crossBorderPair(pickupOf(r), r.delivery_address || deliveryAddress))
+    if (!crossing) return results
+
+    /* The shipper's currency, which is what the confirm screen leads with:
+       the sender is paying, and a naira figure is one they cannot price
+       against anyone else without going to find a rate of their own. */
+    const { base } = currenciesFor(
+        formatCountryCode(pickupOf(crossing)?.country),
+        formatCountryCode((crossing.delivery_address || deliveryAddress)?.country)
     )
-    if (!anyCrossBorder) return results
-    const rate = await nairaPerUsd()
-    return rate > 0 ? results.map((r) => ({ ...r, usd_rate: rate })) : results
+    const rate = base && base !== 'NGN' ? await nairaPer(base) : 0
+    if (!(rate > 0)) return results
+    return results.map((r) => ({ ...r, base_currency: base, naira_per_base: rate }))
 }
 
 const matchTemplate = async (req, res) => {

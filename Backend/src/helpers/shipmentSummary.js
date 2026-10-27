@@ -1,5 +1,5 @@
 const { money } = require('./shipmentSummaryDocument')
-const { nairaPerUsd, inUsd } = require('./usdRate')
+const { nairaPer, currenciesFor } = require('./currencyRates')
 
 /**
  * What a shipment says about itself — once, for every surface that says it.
@@ -78,25 +78,47 @@ const buildShipmentSummary = async (shipment, { pickup, delivery, items = [], co
     const deliveryPart = Number(split?.base ?? shipment.shipping_fee) || 0
     const serviceCharge = Number(split?.service_charge) || 0
 
-    /* Dollars only where the shipment really crosses a border, and only where
-       both countries are known: an unknown country is not a reason to quote a
-       conversion nobody asked for. */
+    /* Quoted in the shipper's money, converted into the receiver's.
+    
+       The base is the local currency where the goods are picked up. That is
+       what the person paying thinks in and what they will hold against another
+       forwarder's quote; a sender in Italy given a naira figure has to go and
+       find a rate before they can tell whether it is a good price, and the
+       rate they find will not be ours.
+    
+       The naira stays beside it, because naira is what is actually charged and
+       what reaches the books. Base first, charged second.
+    
+       Both ends must be known. An unknown country is not a reason to quote a
+       conversion nobody asked for, and it would silently default to Nigeria. */
     const from = countryCodeOf ? countryCodeOf(pickup) : ''
     const to = countryCodeOf ? countryCodeOf(delivery) : ''
     const crossBorder = Boolean(from && to && from !== to)
-    const perUsd = crossBorder ? await nairaPerUsd() : 0
 
-    /* One figure, three spellings: the number itself, the way a page or a
-       document writes it, and the way a WhatsApp variable has to. */
+    const { base: baseCode } = crossBorder ? currenciesFor(from, to) : { base: currency }
+    /* How many naira to one unit of the shipper's money. Zero means no rate
+       could be had, and everything falls back to naira alone. */
+    const perBase = baseCode && baseCode !== currency ? await nairaPer(baseCode) : 0
+    const converts = perBase > 0
+
+    /* One figure, several spellings: the number itself, the way a page or a
+       document writes it, and the way a WhatsApp variable has to — KudiSMS
+       splits its parameters field on commas, so that one is grouped with
+       spaces. Never a different number. */
     const figure = (amount) => {
-        const dollars = inUsd(amount, currency, perUsd)
-        const display = money(amount, currency)
-        const plain = plainMoney(amount, currency)
+        const naira = Number(amount) || 0
+        const charged = money(naira, currency)
+        const chargedPlain = plainMoney(naira, currency)
+        if (!converts) {
+            return { amount: naira, base: null, display: charged, plain: chargedPlain }
+        }
+        const inBase = naira / perBase
         return {
-            amount: Number(amount) || 0,
-            usd: dollars,
-            display: dollars ? `${display} (${dollars})` : display,
-            plain: dollars ? `${plain} (${dollars})` : plain
+            amount: naira,
+            base: money(inBase, baseCode),
+            baseAmount: inBase,
+            display: `${money(inBase, baseCode)} (${charged})`,
+            plain: `${plainMoney(inBase, baseCode)} (${chargedPlain})`
         }
     }
 
@@ -128,9 +150,17 @@ const buildShipmentSummary = async (shipment, { pickup, delivery, items = [], co
         eta: deliveryTimeRange ? transitOf(shipment, deliveryTimeRange) : '',
         weight: `${weight.toFixed(2)} kg`,
         units,
+        /* "Number of pieces" on the invoice they compared us against. Only
+           when there is a real count behind it. */
+        pieces: units > 0 ? String(units) : '',
         currency,
         crossBorder,
-        usd_rate: perUsd || null,
+        /* The shipper's currency, the rate it was converted at, and that rate
+           as a sentence — a converted figure with no rate beside it is a
+           number nobody can check. */
+        baseCurrency: converts ? baseCode : currency,
+        conversionRate: converts ? perBase : null,
+        conversionNote: converts ? `Converted at ${money(1, baseCode)} = ${money(perBase, currency)}` : '',
         charges: lines,
         ratePerKg: by('rate_per_kg'),
         ratePerUnit: by('rate_per_unit'),

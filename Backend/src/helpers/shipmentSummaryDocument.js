@@ -121,6 +121,8 @@ const sectionHeading = (doc, text) => {
  * @param {string} summary.service
  * @param {string} [summary.eta]            Printed only when there is one
  * @param {string} [summary.cost]           The total, at the top as on screen
+ * @param {string} [summary.pieces]         How many items, when there is a count
+ * @param {string} [summary.conversionNote] The rate, printed under the charges
  * @param {string} summary.weight
  * @param {Array}  summary.charges          [{ label, value, strong }]
  * @param {Object} summary.pickup           address
@@ -172,6 +174,10 @@ const buildShipmentSummaryPdf = (summary) =>
                recorded — a date on a document is read as a promise. */
             if (str(summary.eta)) facts.push(['Estimated arrival', str(summary.eta)])
             facts.push(['Total weight', str(summary.weight)])
+            /* How many things are in the consignment, which is the first thing
+               the forwarder's own invoice states. Only when there is a real
+               count behind it. */
+            if (str(summary.pieces)) facts.push(['Number of pieces', str(summary.pieces)])
             if (str(summary.awbNumber)) facts.push(['Air waybill', str(summary.awbNumber)])
             /* The figure, at the top, where the screen puts it.
             
@@ -195,6 +201,14 @@ const buildShipmentSummaryPdf = (summary) =>
             sectionHeading(doc, 'Charges')
             for (const line of summary.charges || []) {
                 chargeRow(doc, str(line.label), str(line.value), { bold: Boolean(line.strong) })
+            }
+            /* The rate the conversion was done at. A figure in one currency
+               with the charge in another beside it, and no rate between them,
+               is a number the reader cannot check — and checking it is the
+               whole reason the shipper's currency is on here. */
+            if (str(summary.conversionNote)) {
+                doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(str(summary.conversionNote), 48, doc.y, { width: 499 })
+                doc.y += 6
             }
 
             /* ── Where it goes ────────────────────────────────────────────── */
