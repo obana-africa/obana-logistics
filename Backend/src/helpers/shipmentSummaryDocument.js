@@ -120,7 +120,7 @@ const sectionHeading = (doc, text) => {
  * @param {string} summary.route
  * @param {string} summary.service
  * @param {string} [summary.eta]            Printed only when there is one
- * @param {string} [summary.cost]           The total, at the top as on screen
+ * @param {string} [summary.rate]           The rate per kilo, at the top as on screen
  * @param {string} [summary.pieces]         How many items, when there is a count
  * @param {string} [summary.conversionNote] The rate, printed under the charges
  * @param {string} summary.weight
@@ -187,7 +187,7 @@ const buildShipmentSummaryPdf = (summary) =>
                different document about a different shipment. It is repeated at
                the foot as the total of the breakdown, which is what a
                breakdown is for. */
-            if (str(summary.cost)) facts.push(['Shipping cost', str(summary.cost), true])
+            if (str(summary.rate)) facts.push(['Shipping rate / kilo', str(summary.rate), true])
             if (str(summary.trackingUrl)) facts.push(['Track', str(summary.trackingUrl)])
 
             for (const [label, value, strong] of facts) {

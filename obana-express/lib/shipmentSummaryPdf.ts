@@ -28,9 +28,17 @@ export type ShipmentSummary = {
 	reference?: string | null;
 	route: string;
 	service: string;
+	/** The window that was sold and the dates it lands on. Omitted when unknown. */
+	eta?: string | null;
 	weight: string;
+	/** How many things are in the consignment. */
+	pieces?: string | null;
+	/** The rate per kilo, which is what leads the block — the total is the last line of the breakdown. */
+	rate?: string | null;
 	/** Printed only when there is one. */
 	awbNumber?: string | null;
+	/** "Converted at EUR 1.00 = NGN 1,655.63", under the charges. */
+	conversionNote?: string | null;
 	/** Delivery, service charge, total — whatever the screen showed. */
 	charges: SummaryLine[];
 	pickup: string[];
@@ -82,6 +90,7 @@ const documentHtml = (s: ShipmentSummary) => `<!doctype html>
   .party h3 { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin: 0 0 6px; }
   .party p { margin: 0 0 2px; }
   .party p.strong { font-weight: 700; }
+  p.note { margin: 6px 0 0; font-size: 9px; color: #64748b; }
   table.items { width: 100%; border-collapse: collapse; }
   table.items th { text-align: left; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; border-bottom: 1px solid #e5e7eb; padding: 0 0 5px; }
   table.items td { padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
@@ -103,12 +112,16 @@ const documentHtml = (s: ShipmentSummary) => `<!doctype html>
   <table class="facts">
     <tr><td>Route</td><td>${esc(s.route)}</td></tr>
     <tr><td>Service</td><td>${esc(s.service)}</td></tr>
+    ${s.eta ? `<tr><td>Estimated arrival</td><td>${esc(s.eta)}</td></tr>` : ""}
     <tr><td>Total weight</td><td>${esc(s.weight)}</td></tr>
+    ${s.pieces ? `<tr><td>Number of pieces</td><td>${esc(s.pieces)}</td></tr>` : ""}
     ${s.awbNumber ? `<tr><td>Air waybill</td><td>${esc(s.awbNumber)}</td></tr>` : ""}
+    ${s.rate ? `<tr><td>Shipping rate / kilo</td><td><strong>${esc(s.rate)}</strong></td></tr>` : ""}
   </table>
 
   <h2>Charges</h2>
   <table class="charges">${s.charges.map(row).join("")}</table>
+  ${s.conversionNote ? `<p class="note">${esc(s.conversionNote)}</p>` : ""}
 
   <h2>Addresses</h2>
   <div class="parties">
