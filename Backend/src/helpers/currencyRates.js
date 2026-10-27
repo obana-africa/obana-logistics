@@ -55,4 +55,30 @@ const currenciesFor = (fromCode, toCode) => {
     return { base, other: other === base ? null : other }
 }
 
-module.exports = { nairaPer, currenciesFor, currencyForCountry }
+/**
+ * The currency to quote a shipper in, and what one unit of it costs in naira.
+ *
+ * Their own money first. If no rate can be had for it — a feed outage, or a
+ * currency nobody publishes — the dollar is tried before giving up, because a
+ * figure in dollars is one the sender can still convert, and naira alone is
+ * the thing they cannot read at all. Only when the dollar fails too does the
+ * document fall back to naira, which is at least always correct.
+ */
+const quoteCurrency = async (fromCode, toCode) => {
+    const { base } = currenciesFor(fromCode, toCode)
+    if (!base || base === 'NGN') return { code: 'NGN', nairaPerUnit: 0 }
+
+    const own = await nairaPer(base)
+    if (own > 0) return { code: base, nairaPerUnit: own }
+
+    if (base !== 'USD') {
+        const dollars = await nairaPer('USD')
+        if (dollars > 0) {
+            console.warn(`[currency] no rate for ${base}; quoting the shipper in USD instead`)
+            return { code: 'USD', nairaPerUnit: dollars }
+        }
+    }
+    return { code: 'NGN', nairaPerUnit: 0 }
+}
+
+module.exports = { nairaPer, currenciesFor, currencyForCountry, quoteCurrency }

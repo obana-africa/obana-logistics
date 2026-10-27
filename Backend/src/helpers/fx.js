@@ -30,7 +30,39 @@ const getNgnRates = async () => {
 }
 
 const EUROZONE = ['AT', 'BE', 'HR', 'CY', 'EE', 'FI', 'FR', 'DE', 'GR', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PT', 'SK', 'SI', 'ES']
-const LOCAL = { GB: 'GBP', US: 'USD', CA: 'CAD', NG: 'NGN', GH: 'GHS', KE: 'KES', ZA: 'ZAR', CH: 'CHF', SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN' }
+const LOCAL = {
+    // Africa
+    NG: 'NGN', ZA: 'ZAR', GH: 'GHS', KE: 'KES', EG: 'EGP', MA: 'MAD', TZ: 'TZS', UG: 'UGX',
+    RW: 'RWF', ET: 'ETB', ZM: 'ZMW', BW: 'BWP', NA: 'NAD', MU: 'MUR', TN: 'TND', DZ: 'DZD',
+    AO: 'AOA', MZ: 'MZN', ZW: 'ZWL', MW: 'MWK', MG: 'MGA', BI: 'BIF', DJ: 'DJF', ER: 'ERN',
+    LS: 'LSL', SZ: 'SZL', CV: 'CVE', ST: 'STN', GM: 'GMD', GN: 'GNF', SL: 'SLE', LR: 'LRD',
+    SD: 'SDG', SS: 'SSP', SO: 'SOS', LY: 'LYD', MR: 'MRU', SC: 'SCR', KM: 'KMF', CD: 'CDF',
+    // CFA franc: West African (XOF) and Central African (XAF)
+    BJ: 'XOF', BF: 'XOF', CI: 'XOF', GW: 'XOF', ML: 'XOF', NE: 'XOF', SN: 'XOF', TG: 'XOF',
+    CM: 'XAF', CF: 'XAF', TD: 'XAF', CG: 'XAF', GQ: 'XAF', GA: 'XAF',
+    // East and South Asia
+    CN: 'CNY', HK: 'HKD', MO: 'MOP', TW: 'TWD', JP: 'JPY', KR: 'KRW', MN: 'MNT', IN: 'INR',
+    PK: 'PKR', BD: 'BDT', LK: 'LKR', NP: 'NPR', BT: 'BTN', MV: 'MVR', AF: 'AFN', SG: 'SGD',
+    MY: 'MYR', ID: 'IDR', TH: 'THB', VN: 'VND', PH: 'PHP', BN: 'BND', KH: 'KHR', LA: 'LAK',
+    MM: 'MMK',
+    // Middle East and Central Asia
+    AE: 'AED', SA: 'SAR', QA: 'QAR', KW: 'KWD', BH: 'BHD', OM: 'OMR', YE: 'YER', IL: 'ILS',
+    JO: 'JOD', LB: 'LBP', SY: 'SYP', IQ: 'IQD', IR: 'IRR', TR: 'TRY', KZ: 'KZT', UZ: 'UZS',
+    TM: 'TMT', KG: 'KGS', TJ: 'TJS', AZ: 'AZN', GE: 'GEL', AM: 'AMD',
+    // Europe beyond the euro
+    GB: 'GBP', CH: 'CHF', SE: 'SEK', NO: 'NOK', DK: 'DKK', IS: 'ISK', PL: 'PLN', CZ: 'CZK',
+    HU: 'HUF', RO: 'RON', BG: 'BGN', UA: 'UAH', RU: 'RUB', BY: 'BYN', MD: 'MDL', RS: 'RSD',
+    MK: 'MKD', AL: 'ALL', BA: 'BAM', GI: 'GIP', FO: 'FOK', GG: 'GGP', JE: 'JEP', IM: 'IMP',
+    // The Americas
+    US: 'USD', CA: 'CAD', MX: 'MXN', BR: 'BRL', AR: 'ARS', CL: 'CLP', CO: 'COP', PE: 'PEN',
+    UY: 'UYU', PY: 'PYG', BO: 'BOB', VE: 'VES', GY: 'GYD', SR: 'SRD', CR: 'CRC', GT: 'GTQ',
+    HN: 'HNL', NI: 'NIO', PA: 'PAB', BZ: 'BZD', SV: 'USD', EC: 'USD', DO: 'DOP', JM: 'JMD',
+    HT: 'HTG', CU: 'CUP', TT: 'TTD', BS: 'BSD', BB: 'BBD', KY: 'KYD', BM: 'BMD', AW: 'AWG',
+    AG: 'XCD', DM: 'XCD', GD: 'XCD', KN: 'XCD', LC: 'XCD', VC: 'XCD',
+    // Oceania
+    AU: 'AUD', NZ: 'NZD', FJ: 'FJD', PG: 'PGK', SB: 'SBD', VU: 'VUV', WS: 'WST', TO: 'TOP',
+    PF: 'XPF', NC: 'XPF'
+}
 
 /** The currency a sender in this country most likely thinks in. */
 const currencyForCountry = (countryCode) => {

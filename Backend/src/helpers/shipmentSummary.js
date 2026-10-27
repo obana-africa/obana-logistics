@@ -1,5 +1,5 @@
 const { money } = require('./shipmentSummaryDocument')
-const { nairaPer, currenciesFor } = require('./currencyRates')
+const { quoteCurrency } = require('./currencyRates')
 
 /**
  * What a shipment says about itself — once, for every surface that says it.
@@ -95,10 +95,11 @@ const buildShipmentSummary = async (shipment, { pickup, delivery, items = [], co
     const to = countryCodeOf ? countryCodeOf(delivery) : ''
     const crossBorder = Boolean(from && to && from !== to)
 
-    const { base: baseCode } = crossBorder ? currenciesFor(from, to) : { base: currency }
-    /* How many naira to one unit of the shipper's money. Zero means no rate
-       could be had, and everything falls back to naira alone. */
-    const perBase = baseCode && baseCode !== currency ? await nairaPer(baseCode) : 0
+    /* The shipper's own money, with the dollar as the stand-in if no rate can
+       be had for it, and naira alone only when neither can. */
+    const quote = crossBorder ? await quoteCurrency(from, to) : { code: currency, nairaPerUnit: 0 }
+    const baseCode = quote.code
+    const perBase = baseCode === currency ? 0 : quote.nairaPerUnit
     const converts = perBase > 0
 
     /* One figure, several spellings: the number itself, the way a page or a

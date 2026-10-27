@@ -4,7 +4,7 @@ const { loadPricing, priceRates, recordSeenPartners } = require('../helpers/part
 const { currencyForCountry, ngnRate } = require('../helpers/fx')
 /* Zoho's naira-per-dollar rate, so the price the customer confirms, the summary
    they are sent and the message they receive all state the same dollars. */
-const { nairaPer, currenciesFor } = require('../helpers/currencyRates')
+const { quoteCurrency } = require('../helpers/currencyRates')
 const axios = require('axios')
 const crypto = require('crypto')
 const { getCode } = require('country-list')
@@ -805,13 +805,12 @@ const withUsdRate = async (results, deliveryAddress, requestPickup) => {
     /* The shipper's currency, which is what the confirm screen leads with:
        the sender is paying, and a naira figure is one they cannot price
        against anyone else without going to find a rate of their own. */
-    const { base } = currenciesFor(
+    const { code, nairaPerUnit } = await quoteCurrency(
         formatCountryCode(pickupOf(crossing)?.country),
         formatCountryCode((crossing.delivery_address || deliveryAddress)?.country)
     )
-    const rate = base && base !== 'NGN' ? await nairaPer(base) : 0
-    if (!(rate > 0)) return results
-    return results.map((r) => ({ ...r, base_currency: base, naira_per_base: rate }))
+    if (!(nairaPerUnit > 0)) return results
+    return results.map((r) => ({ ...r, base_currency: code, naira_per_base: nairaPerUnit }))
 }
 
 const matchTemplate = async (req, res) => {
