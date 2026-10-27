@@ -639,7 +639,11 @@ const attachShipmentSummary = async (shipment, { pickup, delivery, items } = {})
             eta: summary.eta,
             weight: summary.weight,
             pieces: summary.pieces,
-            cost: summary.total?.display ?? '',
+            /* The rate, not the total. The total is the last line of the
+               breakdown immediately below, where a total belongs; what a
+               reader wants at the top is the figure they can hold against
+               another forwarder's, and that is the rate per kilo. */
+            rate: summary.ratePerKg?.display ?? '',
             conversionNote: summary.conversionNote,
             trackingUrl: buildTrackingUrl(shipment.shipment_reference),
             charges: summary.charges.map((c) => ({ label: c.label, value: c.display, strong: Boolean(c.strong) })),

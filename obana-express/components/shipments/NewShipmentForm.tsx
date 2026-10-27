@@ -181,6 +181,11 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
      not be ours. Base first, charged second. Both from the server: a rate this
      screen fetched for itself would disagree with the document and the
      message. */
+  /* "Abriola, Basilicata (Italy)" — the one spelling of a place, used by the
+     route on screen and the route on paper. */
+  const placeName = (a: { city?: string; state?: string; country?: string }) =>
+    [a.city, a.state].filter(Boolean).join(', ') + (crossBorder && a.country ? ` (${a.country})` : '');
+
   const baseCurrency: string = matchedRoute?.base_currency || '';
   const nairaPerBase = Number(matchedRoute?.naira_per_base) || 0;
   const converts = crossBorder && Boolean(baseCurrency) && nairaPerBase > 0;
@@ -397,27 +402,40 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
        Taken from the delivery rather than the total: the service charge is on
        the job, not on each kilo. */
     const deliveryPart = selected.base_price ?? selected.price;
+    /* The same figures, in the same currencies, as the block the customer has
+       just read. `withUsd` is what the screen renders with: quoted in the
+       shipper's money with the naira beside it. The document is the page, on
+       paper — not a second version of it computed another way. */
     const perKilo =
       shipmentWeight > 0
-        ? [{ label: `Rate per kg (${shipmentWeight.toFixed(2)} kg)`, value: formatMoney(deliveryPart / shipmentWeight, 'NGN') }]
+        ? [{ label: 'Rate per kg', value: withUsd(deliveryPart / shipmentWeight) }]
         : [];
+    const perUnit = totalUnits > 1 ? [{ label: 'Rate per unit', value: withUsd(deliveryPart / totalUnits) }] : [];
 
     const charges = selected.base_price && selected.service_charge
       ? [
           ...perKilo,
-          { label: 'Delivery', value: formatMoney(selected.base_price, 'NGN') },
-          { label: chargeLabel(selected), value: formatMoney(selected.service_charge, 'NGN') },
-          { label: 'Total', value: formatMoney(selected.price, 'NGN'), strong: true },
+          ...perUnit,
+          { label: 'Delivery', value: withUsd(selected.base_price) },
+          { label: chargeLabel(selected), value: withUsd(selected.service_charge) },
+          { label: 'Total', value: withUsd(selected.price), strong: true },
         ]
-      : [...perKilo, { label: 'Shipping cost', value: formatMoney(selected.price, 'NGN'), strong: true }];
+      : [...perKilo, ...perUnit, { label: 'Shipping cost', value: withUsd(selected.price), strong: true }];
 
     const opened = printShipmentSummary({
       reference: newShipmentInfo?.shipment_reference ?? null,
       /* The waybill if one was attached while booking — the note beside an AWB
          is where the number is written. */
       awbNumber: typedAwb || pendingDocs.find((d) => d.kind.toUpperCase() === 'AWB')?.note || null,
-      route: `${formData.pickup_address.city}, ${formData.pickup_address.state} → ${formData.delivery_address.city}, ${formData.delivery_address.state}`,
+      /* The countries too, where they differ. "Benguela → Aba" reads as a
+         domestic hop on a shipment crossing two borders, and the customs line
+         at the foot only makes sense once the route says otherwise. */
+      route: `${placeName(formData.pickup_address)} → ${placeName(formData.delivery_address)}`,
       service: serviceLabel(selected),
+      eta: selected.estimated_delivery || selected.eta || null,
+      pieces: totalUnits > 0 ? String(totalUnits) : null,
+      rate: shipmentWeight > 0 ? withUsd(deliveryPart / shipmentWeight) : null,
+      conversionNote: converts ? `Converted at ${formatMoney(1, baseCurrency)} = ${formatMoney(nairaPerBase, 'NGN')}` : null,
       weight: `${shipmentWeight.toFixed(2)} kg`,
       charges,
       pickup: place(formData.pickup_address),
@@ -1034,11 +1052,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                           reads as a domestic hop on a shipment that crosses two
                           borders, and the customs line at the foot of the
                           summary only makes sense once the route says so. */}
-                      {formData.pickup_address.city}
-                      {crossBorder && formData.pickup_address.country ? ` (${formData.pickup_address.country})` : ''}
-                      {' → '}
-                      {formData.delivery_address.city}
-                      {crossBorder && formData.delivery_address.country ? ` (${formData.delivery_address.country})` : ''}
+                      {placeName(formData.pickup_address)} → {placeName(formData.delivery_address)}
                     </p>
                   </div>
                   <div>
@@ -1058,9 +1072,17 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                     <p className="text-gray-600">Total weight</p>
                     <p className="font-semibold text-gray-900">{shipmentWeight.toFixed(2)} kg</p>
                   </div>
+                  {/* The rate, not the total. The total is the last line of the
+                      breakdown immediately below, where a total belongs; what
+                      somebody wants at the top is the figure they can hold
+                      against another forwarder's quote. */}
                   <div>
-                    <p className="text-gray-600">Shipping cost</p>
-                    <p className="font-bold text-green-600 text-lg">{withUsd(selected.price)}</p>
+                    <p className="text-gray-600">Shipping rate / kilo</p>
+                    <p className="font-bold text-green-600 text-lg">
+                      {shipmentWeight > 0 && selected.base_price
+                        ? withUsd(selected.base_price / shipmentWeight)
+                        : withUsd(selected.price)}
+                    </p>
                   </div>
                 </div>
 
@@ -1076,7 +1098,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                         charge is on the job, not on each kilo. */}
                     {shipmentWeight > 0 && (
                       <div className="flex items-baseline justify-between gap-4">
-                        <dt className="text-gray-600">Rate per kg ({shipmentWeight.toFixed(2)} kg)</dt>
+                        <dt className="text-gray-600">Rate per kg</dt>
                         <dd className="font-medium text-gray-900 tabular-nums">{withUsd(selected.base_price! / shipmentWeight)}</dd>
                       </div>
                     )}
@@ -1084,7 +1106,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                         single item it repeats the delivery line below it. */}
                     {totalUnits > 1 && (
                       <div className="flex items-baseline justify-between gap-4">
-                        <dt className="text-gray-600">Rate per unit ({totalUnits} units)</dt>
+                        <dt className="text-gray-600">Rate per unit</dt>
                         <dd className="font-medium text-gray-900 tabular-nums">{withUsd(selected.base_price! / totalUnits)}</dd>
                       </div>
                     )}

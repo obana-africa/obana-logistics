@@ -125,11 +125,14 @@ const buildShipmentSummary = async (shipment, { pickup, delivery, items = [], co
     /* The rates divide the delivery, not the total: the service charge is on
        the job, not on each kilo or each carton, and mixing them would state a
        rate nobody quoted. */
+    /* The labels carry no counts. The weight and the number of pieces are
+       both stated in the block above, and repeating them in brackets beside
+       every rate is the same fact three times on one page. */
     const lines = []
-    if (weight > 0) lines.push({ key: 'rate_per_kg', label: `Rate per kg (${weight} kg)`, ...figure(deliveryPart / weight) })
+    if (weight > 0) lines.push({ key: 'rate_per_kg', label: 'Rate per kg', ...figure(deliveryPart / weight) })
     /* Per unit only where there is more than one; on a single item it repeats
        the delivery line below it. */
-    if (units > 1) lines.push({ key: 'rate_per_unit', label: `Rate per unit (${units} units)`, ...figure(deliveryPart / units) })
+    if (units > 1) lines.push({ key: 'rate_per_unit', label: 'Rate per unit', ...figure(deliveryPart / units) })
     if (serviceCharge > 0) {
         lines.push({ key: 'delivery', label: 'Delivery', ...figure(deliveryPart) })
         lines.push({ key: 'service_charge', label: split?.percent ? `${split.percent}% service charge` : 'Service charge', ...figure(serviceCharge) })
