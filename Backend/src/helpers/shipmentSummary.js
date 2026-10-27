@@ -126,23 +126,31 @@ const buildShipmentSummary = async (shipment, { pickup, delivery, items = [], co
     /* The rates divide the delivery, not the total: the service charge is on
        the job, not on each kilo or each carton, and mixing them would state a
        rate nobody quoted. */
-    /* The labels carry no counts. The weight and the number of pieces are
-       both stated in the block above, and repeating them in brackets beside
-       every rate is the same fact three times on one page. */
+    /* The breakdown says each thing once.
+    
+       The rate per kilo is not here: it leads the block above, and a figure
+       repeated a few lines below itself reads as two different charges. The
+       rate per unit stays, because nothing else states it.
+    
+       No counts in the labels either — the weight and the number of pieces are
+       both above — and no percentage on the handling charge. What the customer
+       owes is the amount; the percentage it was worked out from is our
+       arithmetic, not their bill. */
     const lines = []
-    if (weight > 0) lines.push({ key: 'rate_per_kg', label: 'Rate per kg', ...figure(deliveryPart / weight) })
-    /* Per unit only where there is more than one; on a single item it repeats
-       the delivery line below it. */
     if (units > 1) lines.push({ key: 'rate_per_unit', label: 'Rate per unit', ...figure(deliveryPart / units) })
     if (serviceCharge > 0) {
-        lines.push({ key: 'delivery', label: 'Delivery', ...figure(deliveryPart) })
-        lines.push({ key: 'service_charge', label: split?.percent ? `${split.percent}% service charge` : 'Service charge', ...figure(serviceCharge) })
+        lines.push({ key: 'delivery', label: 'Total Freight Charge', ...figure(deliveryPart) })
+        lines.push({ key: 'service_charge', label: 'Handling/Service Charge', ...figure(serviceCharge) })
         lines.push({ key: 'total', label: 'Total', strong: true, ...figure(total) })
     } else {
         lines.push({ key: 'total', label: 'Shipping cost', strong: true, ...figure(total) })
     }
 
-    const by = (key) => lines.find((l) => l.key === key) ?? null
+    /* Still worked out, because the block above prints it and the WhatsApp
+       message carries it — it is simply no longer a line in the breakdown. */
+    const perKiloFigure = weight > 0 ? { key: 'rate_per_kg', label: 'Rate per kg', ...figure(deliveryPart / weight) } : null
+
+    const by = (key) => (key === 'rate_per_kg' ? perKiloFigure : lines.find((l) => l.key === key) ?? null)
 
     return {
         reference: shipment.shipment_reference,
