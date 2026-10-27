@@ -30,9 +30,45 @@ const getNgnRates = async () => {
 }
 
 const EUROZONE = ['AT', 'BE', 'HR', 'CY', 'EE', 'FI', 'FR', 'DE', 'GR', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PT', 'SK', 'SI', 'ES']
-const LOCAL = { GB: 'GBP', US: 'USD', CA: 'CAD', NG: 'NGN', GH: 'GHS', KE: 'KES', ZA: 'ZAR', CH: 'CHF', SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN' }
 
-/** The currency a sender in this country most likely thinks in. */
+/**
+ * The money a sender in this country thinks in — ISO 3166 to ISO 4217.
+ *
+ * Written out rather than looked up, because nothing already installed
+ * carries it: country-code-lookup knows the country but not its currency.
+ *
+ * It used to be twelve countries with a dollar fallback, which meant a
+ * shipper in Shanghai was quoted in dollars and a shipper in Dubai too — the
+ * one thing a forwarder's quote must not get wrong is the currency, because
+ * the customer prices it against local competitors in local money. Anywhere
+ * missing still falls back to the dollar, but the list now covers the places
+ * Obana actually collects from.
+ */
+const LOCAL = {
+    // Africa
+    NG: 'NGN', ZA: 'ZAR', GH: 'GHS', KE: 'KES', EG: 'EGP', MA: 'MAD', TZ: 'TZS', UG: 'UGX',
+    RW: 'RWF', ET: 'ETB', ZM: 'ZMW', BW: 'BWP', NA: 'NAD', MU: 'MUR', TN: 'TND', DZ: 'DZD',
+    AO: 'AOA', MZ: 'MZN', ZW: 'ZWL', CI: 'XOF', SN: 'XOF', CM: 'XAF', GA: 'XAF',
+    // Asia
+    CN: 'CNY', HK: 'HKD', TW: 'TWD', JP: 'JPY', KR: 'KRW', IN: 'INR', PK: 'PKR', BD: 'BDT',
+    LK: 'LKR', SG: 'SGD', MY: 'MYR', ID: 'IDR', TH: 'THB', VN: 'VND', PH: 'PHP',
+    AE: 'AED', SA: 'SAR', QA: 'QAR', KW: 'KWD', BH: 'BHD', OM: 'OMR', IL: 'ILS',
+    TR: 'TRY', JO: 'JOD', LB: 'LBP',
+    // Europe beyond the euro
+    GB: 'GBP', CH: 'CHF', SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN', CZ: 'CZK',
+    HU: 'HUF', RO: 'RON', BG: 'BGN', UA: 'UAH', RU: 'RUB', IS: 'ISK', RS: 'RSD',
+    // Americas and Oceania
+    US: 'USD', CA: 'CAD', MX: 'MXN', BR: 'BRL', AR: 'ARS', CL: 'CLP', CO: 'COP',
+    PE: 'PEN', AU: 'AUD', NZ: 'NZD'
+}
+
+/**
+ * The currency a sender in this country thinks in.
+ *
+ * The dollar is the fallback for a country not listed and for one we cannot
+ * read at all — it is the currency international freight is most often quoted
+ * in, and a figure in dollars is at least one the sender can convert.
+ */
 const currencyForCountry = (countryCode) => {
     const code = String(countryCode || '').toUpperCase()
     if (EUROZONE.includes(code)) return 'EUR'
