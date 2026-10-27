@@ -120,6 +120,7 @@ const sectionHeading = (doc, text) => {
  * @param {string} summary.route
  * @param {string} summary.service
  * @param {string} [summary.eta]            Printed only when there is one
+ * @param {string} [summary.cost]           The total, at the top as on screen
  * @param {string} summary.weight
  * @param {Array}  summary.charges          [{ label, value, strong }]
  * @param {Object} summary.pickup           address
@@ -172,13 +173,22 @@ const buildShipmentSummaryPdf = (summary) =>
             if (str(summary.eta)) facts.push(['Estimated arrival', str(summary.eta)])
             facts.push(['Total weight', str(summary.weight)])
             if (str(summary.awbNumber)) facts.push(['Air waybill', str(summary.awbNumber)])
+            /* The figure, at the top, where the screen puts it.
+            
+               Somebody reading this has usually just seen the same shipment on
+               the confirm page, and the first thing they look for is the one
+               they remember. Finding it only at the foot of a table reads as a
+               different document about a different shipment. It is repeated at
+               the foot as the total of the breakdown, which is what a
+               breakdown is for. */
+            if (str(summary.cost)) facts.push(['Shipping cost', str(summary.cost), true])
             if (str(summary.trackingUrl)) facts.push(['Track', str(summary.trackingUrl)])
 
-            for (const [label, value] of facts) {
+            for (const [label, value, strong] of facts) {
                 const y = doc.y
                 doc.font('Helvetica').fontSize(10).fillColor(MUTED).text(label, 48, y, { width: 120 })
-                doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text(value, 168, y, { width: 379 })
-                doc.y += 4
+                doc.font('Helvetica-Bold').fontSize(strong ? 12 : 10).fillColor(INK).text(value, 168, y, { width: 379 })
+                doc.y += strong ? 6 : 4
             }
 
             /* ── What it costs ────────────────────────────────────────────── */
