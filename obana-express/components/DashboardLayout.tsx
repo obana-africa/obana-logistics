@@ -92,11 +92,23 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
 	   the admin one included. An unknown role is now simply not allowed. */
 	const allowed = userRole === role || userRole === "admin";
 
+	/* Where this account should be, or null if it is already there.
+	
+	   Never the page we are on. router.replace re-renders, which re-runs this
+	   effect, which replaces again — and an account whose role will not resolve
+	   lands on /dashboard/customer and is sent to /dashboard/customer forever.
+	   The screen below renders a loading bar the whole time, so what a person
+	   sees is a page that loads and loads and cannot be scrolled or clicked,
+	   and that comes straight back after a reload because the condition that
+	   started it is still true. */
+	const destination = isLoading ? null : !isAuthenticated ? "/auth/login" : allowed ? null : dashboardFor(user);
+	const elsewhere = destination && destination !== pathname ? destination : null;
+
 	useEffect(() => {
-		if (isLoading) return;
-		if (!isAuthenticated) router.replace("/auth/login");
-		else if (!allowed) router.replace(dashboardFor(user));
-	}, [isLoading, isAuthenticated, allowed, user, router]);
+		if (elsewhere) router.replace(elsewhere);
+		/* userRole rather than user: the object is rebuilt on every refresh of
+		   the profile, and depending on it re-ran this effect each time. */
+	}, [elsewhere, router]);
 
 	// Close the drawer on Escape and lock page scroll while it is open.
 	useEffect(() => {
@@ -121,6 +133,33 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
 		await logout();
 		router.replace("/");
 	};
+
+	/* Authenticated, but this account may not be here and there is nowhere to
+	   send it — its role did not resolve, so it was bounced to the dashboard it
+	   is already on. Loading forever is the wrong answer: nothing is loading,
+	   and a bar that never fills is indistinguishable from a hung page. Say
+	   what happened and give them the way out. */
+	if (!isLoading && isAuthenticated && !allowed && !elsewhere) {
+		return (
+			<div className="flex min-h-dvh items-center justify-center bg-slate-50 p-6">
+				<div className="w-full max-w-sm text-center">
+					<Image src="/logo-blue.png" alt="Obana Logistics" width={120} height={51} className="mx-auto h-9 w-auto" priority />
+					<h1 className="mt-6 font-semibold text-lg text-slate-900">We couldn&apos;t confirm your account</h1>
+					<p className="mt-2 text-slate-600 text-sm">
+						Your session is still signed in, but we couldn&apos;t read what kind of account it is, so we
+						can&apos;t show this dashboard. Signing in again usually clears it.
+					</p>
+					<button
+						type="button"
+						onClick={handleLogout}
+						className="mt-6 w-full rounded-lg bg-[#1B3B5F] px-4 py-2.5 font-semibold text-sm text-white"
+					>
+						Sign in again
+					</button>
+				</div>
+			</div>
+		);
+	}
 
 	if (isLoading || !isAuthenticated || !allowed) {
 		return (
