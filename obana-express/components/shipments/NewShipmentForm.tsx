@@ -416,21 +416,17 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
        just read. `withUsd` is what the screen renders with: quoted in the
        shipper's money with the naira beside it. The document is the page, on
        paper — not a second version of it computed another way. */
-    const perKilo =
-      shipmentWeight > 0
-        ? [{ label: 'Rate per kg', value: withUsd(deliveryPart / shipmentWeight) }]
-        : [];
+    /* The rate per kilo leads the block above and is not repeated here. */
     const perUnit = totalUnits > 1 ? [{ label: 'Rate per unit', value: withUsd(deliveryPart / totalUnits) }] : [];
 
     const charges = selected.base_price && selected.service_charge
       ? [
-          ...perKilo,
           ...perUnit,
-          { label: 'Delivery', value: withUsd(selected.base_price) },
+          { label: 'Total Freight Charge', value: withUsd(selected.base_price) },
           { label: chargeLabel(selected), value: withUsd(selected.service_charge) },
           { label: 'Total', value: withUsd(selected.price), strong: true },
         ]
-      : [...perKilo, ...perUnit, { label: 'Shipping cost', value: withUsd(selected.price), strong: true }];
+      : [...perUnit, { label: 'Shipping cost', value: withUsd(selected.price), strong: true }];
 
     const opened = printShipmentSummary({
       reference: newShipmentInfo?.shipment_reference ?? null,
@@ -523,8 +519,9 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   };
 
   /* "10% service charge" when we know the rate, plain otherwise. */
-  const chargeLabel = (o: PriceOption) =>
-    o.service_charge_percent ? `${o.service_charge_percent}% service charge` : 'Service charge';
+  /* No percentage on it. What the customer owes is the amount; the percentage
+     it was worked out from is our arithmetic, not their bill. */
+  const chargeLabel = (_o: PriceOption) => 'Handling/Service Charge';
 
   const serviceLabel = (o: PriceOption) => o.carrier || `${o.transport_mode.charAt(0).toUpperCase()}${o.transport_mode.slice(1)} · ${o.service_level}`;
 
@@ -1105,19 +1102,12 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                     Books estimate; it should not be the one place it is hidden. */}
                 {!!selected.service_charge && !!selected.base_price && (
                   <dl className="mt-4 space-y-1.5 border-t border-blue-200/70 pt-4 text-sm">
-                    {/* The rate before the total. A total is a number to accept
-                        or refuse; a rate is one you can check against the quote
-                        you were given and against what anyone else charges.
-                        It divides the delivery, not the total — the service
-                        charge is on the job, not on each kilo. */}
-                    {shipmentWeight > 0 && (
-                      <div className="flex items-baseline justify-between gap-4">
-                        <dt className="text-gray-600">Rate per kg</dt>
-                        <dd className="font-medium text-gray-900 tabular-nums">{withUsd(selected.base_price! / shipmentWeight)}</dd>
-                      </div>
-                    )}
-                    {/* And per unit, only where there is more than one: on a
-                        single item it repeats the delivery line below it. */}
+                    {/* The rate per kilo is not repeated here — it leads the
+                        block above, and the same figure twice on one card reads
+                        as two different charges.
+
+                        Per unit stays, only where there is more than one: on a
+                        single item it repeats the freight line below it. */}
                     {totalUnits > 1 && (
                       <div className="flex items-baseline justify-between gap-4">
                         <dt className="text-gray-600">Rate per unit</dt>
@@ -1125,7 +1115,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                       </div>
                     )}
                     <div className="flex items-baseline justify-between gap-4">
-                      <dt className="text-gray-600">Delivery</dt>
+                      <dt className="text-gray-600">Total Freight Charge</dt>
                       <dd className="font-medium text-gray-900 tabular-nums">{withUsd(selected.base_price!)}</dd>
                     </div>
                     <div className="flex items-baseline justify-between gap-4">
