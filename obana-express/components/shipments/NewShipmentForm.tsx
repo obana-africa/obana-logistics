@@ -393,7 +393,17 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
    * again, so the paper and the page can never disagree about the price.
    */
   const downloadSummary = () => {
-    if (!selected) return;
+    /* Say so rather than do nothing.
+    
+       Both this and the confirm button used to return silently when there was
+       no priced option to work from, so a customer pressed a button that
+       looked live and got no reaction at all — no error, no spinner, nothing
+       to tell them the page had lost its price while they were filling the
+       rest in. "I cannot click" is what that looks like from the outside. */
+    if (!selected) {
+      showError('This page has lost the price it was working from. Go back to Prices and pick one again — nothing you have typed is lost.');
+      return;
+    }
     const place = (a: { line1?: string; city?: string; state?: string; country?: string; name?: string; contact_name?: string; phone?: string }) =>
       [a.name || a.contact_name, a.line1, [a.city, a.state].filter(Boolean).join(', '), a.country, showPhone(a.phone)].filter(Boolean) as string[];
 
@@ -452,7 +462,11 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   };
 
   const handleCreateShipment = async () => {
-    if (!matchedRoute || !selected) return;
+    if (!matchedRoute || !selected) {
+      /* As above: a dead button with no explanation is worse than an error. */
+      showError('This page has lost the price it was working from. Go back to Prices and pick one again — nothing you have typed is lost.');
+      return;
+    }
 
     setLoading(true);
     try {

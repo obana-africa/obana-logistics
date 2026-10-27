@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useId, useRef } from "react";
+import { lockScroll } from "@/lib/scrollLock";
 import { X } from "lucide-react";
 import { Alert, Button } from "@/components/ui";
 
@@ -35,11 +36,10 @@ export function Sheet({
 			if (e.key === "Escape" && dismissRef.current) closeRef.current();
 		};
 		document.addEventListener("keydown", onKey);
-		const prev = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
+		const unlock = lockScroll();
 		return () => {
 			document.removeEventListener("keydown", onKey);
-			document.body.style.overflow = prev;
+			unlock();
 		};
 	}, []);
 

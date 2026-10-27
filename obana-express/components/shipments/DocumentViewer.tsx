@@ -1,6 +1,7 @@
 "use client";
 
 import { Download, X } from "lucide-react";
+import { lockScroll } from "@/lib/scrollLock";
 import { useEffect, useState } from "react";
 import { type ShipmentDocument, downloadUrl, isPdf, previewUrl } from "@/lib/shipmentDocuments";
 
@@ -26,11 +27,10 @@ export function DocumentViewer({ doc, onClose }: { doc: ShipmentDocument; onClos
 			if (e.key === "Escape") onClose();
 		};
 		document.addEventListener("keydown", onKey);
-		const { overflow } = document.body.style;
-		document.body.style.overflow = "hidden";
+		const unlock = lockScroll();
 		return () => {
 			document.removeEventListener("keydown", onKey);
-			document.body.style.overflow = overflow;
+			unlock();
 		};
 	}, [onClose]);
 

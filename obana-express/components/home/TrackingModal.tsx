@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { lockScroll } from "@/lib/scrollLock";
 import { PublicDocuments } from "@/components/shipments/PublicDocuments";
 import { StageRail } from "@/components/shipments/StageRail";
 import Link from "next/link";
@@ -101,11 +102,10 @@ export default function TrackingModal({ open, onClose, reference }: { open: bool
 		if (!open) return;
 		const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
 		window.addEventListener("keydown", onKey);
-		const overflow = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
+		const unlock = lockScroll();
 		return () => {
 			window.removeEventListener("keydown", onKey);
-			document.body.style.overflow = overflow;
+			unlock();
 		};
 	}, [open, onClose]);
 
