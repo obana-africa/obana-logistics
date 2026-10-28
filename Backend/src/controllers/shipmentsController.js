@@ -335,12 +335,25 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
         const accountHolder = shipment.user_id ? await db.users.findByPk(shipment.user_id) : null;
 
         const digitsOf = (phone) => String(phone ?? '').replace(/\D/g, '').slice(-9);
-        const recipients = [];
-        for (const [who, phone] of [
+        /* The two ends of the parcel, and the account holder only if neither
+           end can be reached.
+        
+           The account holder was a fallback and was promoted to a recipient in
+           its own right, which meant whoever created the shipment got the
+           customer's message every time. An admin booking a shipment is not a
+           party to it — user_id is theirs unless they picked a customer — so
+           they were notified about every parcel they entered, with their own
+           number nowhere on the form. Back to a fallback: used when there is
+           no delivery phone and no pickup phone, which is the case it was
+           written for. */
+        const ends = [
             ['receiver', address?.phone],
-            ['sender', pickupRow?.phone],
-            ['account holder', accountHolder?.phone]
-        ]) {
+            ['sender', pickupRow?.phone]
+        ];
+        const reachable = ends.some(([, phone]) => String(phone ?? '').replace(/\D/g, '').length >= 7);
+
+        const recipients = [];
+        for (const [who, phone] of reachable ? ends : [['account holder', accountHolder?.phone]]) {
             const key = digitsOf(phone);
             /* Too short to be a phone number is not a phone number. A field
                holding "0" or "n/a" would otherwise be dialled. */
