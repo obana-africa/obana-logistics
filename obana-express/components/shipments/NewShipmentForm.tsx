@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Alert, Card, Button, Input } from '@/components/ui';
+import { Alert, Card, Button, Input, Select } from '@/components/ui';
 import { apiClient, type SavedQuote } from '@/lib/api';
 import { formatMoney, showPhone } from '@/lib/shipments';
 import { useRemote } from '@/lib/useRemote';
@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { Check, Package, MapPin, Truck, Clock, AlertCircle, X, MessageCircle, Mail, PackageSearch, Download } from 'lucide-react';
 import { SUPPORT_EMAIL, supportPhoneDisplay, whatsappLink } from '@/lib/site';
 import { LocationInput } from '@/components/LocationInput';
+import { NIGERIAN_STATES } from '@/lib/nigerianStates';
 import PhoneInput from '@/components/PhoneInput';
 import DocumentPicker from '@/components/shipments/DocumentPicker';
 import { asDataUrl, type PendingDocument, uploadFailureReason } from '@/lib/shipmentDocuments';
@@ -56,7 +57,7 @@ const emptyForm = () => ({
   /* Where an international consignment lands before the last stretch inland.
      Blank means one journey, which is every shipment until somebody says
      otherwise. */
-  arrival: { city: '', state: '', stateCode: '' },
+  arrival: { state: '' },
   items: [emptyItem()],
 });
 
@@ -400,7 +401,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
       const response = await apiClient.matchRoute({
         /* So the last stretch inland is priced and quoted as its own leg
            rather than being carried for free inside the crossing. */
-        arrival_city: crossBorder ? formData.arrival.city.trim() || undefined : undefined,
+        arrival_city: crossBorder ? formData.arrival.state.trim() || undefined : undefined,
         arrival_state: crossBorder ? formData.arrival.state.trim() || undefined : undefined,
         pickup_address: formData.pickup_address,
         delivery_address: deliveryAddress(),
@@ -936,43 +937,39 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                   <div className="mb-5 rounded-lg border border-green-200 bg-white/70 p-4">
                     <p className="font-semibold text-gray-900 text-sm">Does it travel on inside {formData.delivery_address.country || 'the country'}?</p>
                     <p className="mb-3 text-gray-600 text-xs">
-                      Name the city it lands in and the stretch from there to the delivery address is priced as its own
-                      leg, on its own line. Leave it blank and the shipment is quoted as one journey.
+                      Choose the state it lands in. The stretch from there to the delivery state is priced from your
+                      domestic routes and charged as its own leg, on its own line — so the total is the international
+                      price, plus that leg, plus one handling charge. Leave it blank and the shipment is quoted as one
+                      journey, as now.
                     </p>
-                    <LocationInput
-                      label="Lands in"
-                      value={{
-                        city: formData.arrival.city,
-                        state: formData.arrival.state,
-                        country: formData.delivery_address.country,
-                        countryCode: formData.delivery_address.countryCode,
-                        stateCode: formData.arrival.stateCode,
-                      }}
-                      onChange={(location) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          arrival: { city: location.city ?? '', state: location.state ?? '', stateCode: location.stateCode ?? '' },
-                        }))
-                      }
-                      placeholder="Search for the arrival city..."
-                    />
-                    {/* Asked for and not priced. The cause is a missing
-                        domestic route between those two places, which is
-                        something an admin can add — so it is named rather
-                        than left as a line that never appears. */}
-                    {matchedRoute?.unpriced_last_mile && (
-                      <p className="mt-2 text-amber-700 text-xs">
-                        No route priced from {matchedRoute.unpriced_last_mile.from} to{' '}
-                        {matchedRoute.unpriced_last_mile.to} yet, so this is quoted as one journey. Add that
-                        domestic route and it becomes its own leg.
-                      </p>
-                    )}
-                    {formData.arrival.city && formData.delivery_address.city && !matchedRoute?.unpriced_last_mile && (
-                      <p className="mt-2 text-green-800 text-xs">
-                        Two legs: {formData.pickup_address.country || 'origin'} → {formData.delivery_address.country || 'destination'},
-                        then {formData.arrival.city} → {formData.delivery_address.city}.
-                      </p>
-                    )}
+                    {/* Two lists, not two text boxes. The leg is priced by
+                        matching a route between two states, and a state typed
+                        by hand does not match one — "Port Harcourt" in a state
+                        field found no route and the leg was silently never
+                        priced. Both ends are chosen, so both always match. */}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Select
+                        label="Lands in (state)"
+                        placeholder="Select a state…"
+                        value={formData.arrival.state}
+                        options={NIGERIAN_STATES}
+                        onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                          setFormData((prev) => ({ ...prev, arrival: { ...prev.arrival, state: e.target.value } }))
+                        }
+                      />
+                      <Select
+                        label="Delivers to (state)"
+                        placeholder="Select a state…"
+                        value={formData.delivery_address.state}
+                        options={NIGERIAN_STATES}
+                        onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                          /* The destination state itself, so the two ends of
+                             the home run cannot disagree with the address the
+                             parcel is going to. */
+                          setDelivery({ ...formData.delivery_address, state: e.target.value, stateCode: '' })
+                        }
+                      />
+                    </div>
                   </div>
                 )}
 
