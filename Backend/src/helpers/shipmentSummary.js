@@ -136,10 +136,43 @@ const buildShipmentSummary = async (shipment, { pickup, delivery, items = [], co
        both above — and no percentage on the handling charge. What the customer
        owes is the amount; the percentage it was worked out from is our
        arithmetic, not their bill. */
+    /* Two journeys on one invoice, where the shipment really is two.
+    
+       A parcel from Italy to Port Harcourt crosses a border and then travels
+       on inside Nigeria, and those are different jobs at different prices. One
+       line reading "Total Freight Charge" hides that, and the customer cannot
+       tell what they are paying for the crossing and what for the run to their
+       door.
+    
+       The crossing is named country to country: which Italian city it left is
+       not something the buyer chose. The home run is named city to city, with
+       no country on either end — both are in the same one, and saying it twice
+       says nothing.
+    
+       One handling charge over the two, because it is charged on the job and
+       not on each leg of it. */
+    const legs = Array.isArray(split?.legs) && split.legs.length > 1 ? split.legs : null
+
     const lines = []
     if (units > 1) lines.push({ key: 'rate_per_unit', label: 'Rate per unit', ...figure(deliveryPart / units) })
     if (serviceCharge > 0) {
-        lines.push({ key: 'delivery', label: 'Total Freight Charge', ...figure(deliveryPart) })
+        if (legs) {
+            for (const leg of legs) {
+                const where = [leg.from, leg.to].filter(Boolean).join(' \u2192 ')
+                const what = leg.kind === 'local' ? 'Last mile (local)' : 'International shipment'
+                lines.push({
+                    key: leg.kind === 'local' ? 'leg_local' : 'leg_international',
+                    /* The route is in the label, so every surface shows it
+                       without each one having to learn about legs. */
+                    label: where ? `${what} \u00b7 ${where}` : what,
+                    kind: leg.kind,
+                    route: where,
+                    ...figure(Number(leg.base_price) || 0)
+                })
+            }
+        } else {
+            lines.push({ key: 'delivery', label: 'Total Freight Charge', ...figure(deliveryPart) })
+        }
         lines.push({ key: 'service_charge', label: 'Handling/Service Charge', ...figure(serviceCharge) })
         lines.push({ key: 'total', label: 'Total', strong: true, ...figure(total) })
     } else {
@@ -174,6 +207,7 @@ const buildShipmentSummary = async (shipment, { pickup, delivery, items = [], co
         conversionRate: converts ? perBase : null,
         conversionNote: converts ? `Converted at ${money(1, baseCode)} = ${money(perBase, currency)}` : '',
         charges: lines,
+        legs: legs ?? null,
         ratePerKg: by('rate_per_kg'),
         ratePerUnit: by('rate_per_unit'),
         deliveryCharge: by('delivery'),

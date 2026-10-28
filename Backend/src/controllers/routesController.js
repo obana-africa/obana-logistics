@@ -689,7 +689,46 @@ const driverSummary = (driver) => driver
     : null
 
 /** Every service on a lane priced for this weight: one per mode/service (best-fitting route wins), cheapest first. */
-const laneOptions = (routeTemplates, origin_state, origin_country, destination_state, destination_country, weight) => {
+/**
+ * Where an international lane's freight lands before the last mile.
+ *
+ * On the template, because it differs by lane: goods out of Italy may clear
+ * through Lagos while another corridor arrives somewhere else entirely. A
+ * template that does not say has no last mile — which is what every template
+ * says today, so nothing changes until somebody fills it in.
+ */
+const arrivalOf = (template) => {
+    const meta = template?.metadata ?? {}
+    const city = String(meta.arrival_city ?? '').trim()
+    if (!city) return null
+    return { city, state: String(meta.arrival_state ?? '').trim() }
+}
+
+/**
+ * The home run from the arrival city to the door.
+ *
+ * Priced from the domestic templates, the same ones that price that journey
+ * when somebody books it on its own — so the leg costs what it costs, rather
+ * than a share of the international price invented to fill a line.
+ *
+ * The same service level where that lane runs it, because a customer who paid
+ * for express across a border did not ask to wait a week at the end of it.
+ * Cheapest otherwise, and nothing at all when the arrival city is already the
+ * destination: there is no last mile to a door you have reached.
+ */
+const lastMileFor = (routeTemplates, arrival, destinationState, destinationCountry, weight, serviceLevel) => {
+    if (!arrival || destinationCountry !== 'ng') return null
+    const arrivalState = normalizeState(arrival.state || arrival.city)
+    if (!arrivalState || arrivalState === destinationState) return null
+
+    const options = laneOptions(routeTemplates, arrivalState, 'ng', destinationState, 'ng', weight)
+    if (!options.length) return null
+    const sameService = options.find((o) => String(o.service_level).toLowerCase() === String(serviceLevel).toLowerCase())
+    const chosen = sameService ?? options[0]
+    return { ...chosen, from: arrival.city }
+}
+
+const laneOptions = (routeTemplates, origin_state, origin_country, destination_state, destination_country, weight, places = null) => {
     const seen = new Set()
     const options = []
     for (const { template } of laneTemplates(routeTemplates, origin_state, origin_country, destination_state, destination_country)) {
@@ -699,14 +738,64 @@ const laneOptions = (routeTemplates, origin_state, origin_country, destination_s
         const match = priceTemplate(template, weight)
         if (!match || !(Number(match.price) > 0)) continue
         seen.add(key)
+
+        let base = Math.ceil(Number(match.base_price ?? match.price))
+        let legs = null
+
+        /* A shipment that crosses a border and then travels on inside the
+           country is two journeys, and the invoice says so. The carriage and
+           the last mile are priced separately and added; the service charge is
+           worked out once on the two together, because it is charged on the
+           job and not on each leg of it.
+        
+           Only where the lane declares an arrival city. Until one does, an
+           international option prices exactly as it does today. */
+        const crossBorder = origin_country !== destination_country
+        const lastMile = crossBorder
+            ? lastMileFor(routeTemplates, arrivalOf(template), destination_state, destination_country, weight, service.service_level)
+            : null
+
+        if (lastMile) {
+            const carriage = base
+            const home = Math.ceil(Number(lastMile.base_price ?? lastMile.price))
+            base = carriage + home
+            legs = [
+                {
+                    kind: 'international',
+                    /* Country to country. Which Italian city the goods left
+                       is not something the buyer chose or can act on; the
+                       border crossing is what this line is about. */
+                    from: places?.originCountry ?? '',
+                    to: places?.destinationCountry ?? '',
+                    base_price: carriage
+                },
+                {
+                    kind: 'local',
+                    /* City to city, and no country on either end: both are in
+                       the same one, and naming it twice says nothing. */
+                    from: lastMile.from || '',
+                    to: places?.destinationCity ?? '',
+                    base_price: home,
+                    service_level: lastMile.service_level,
+                    transport_mode: lastMile.transport_mode,
+                    eta: lastMile.eta || null
+                }
+            ]
+        }
+
+        const percent = Number(match.service_charge_percent ?? 0)
+        const charge = legs ? Math.ceil((base * percent) / 100) : Math.ceil(Number(match.service_charge ?? 0))
+
         options.push({
             id: `obana-${service.transport_mode}-${service.service_level.toLowerCase()}`,
             ...service,
-            price: Math.ceil(Number(match.price)),
+            price: base + charge,
             /* The two halves of that price, for the screen and for the books. */
-            base_price: Math.ceil(Number(match.base_price ?? match.price)),
-            service_charge: Math.ceil(Number(match.service_charge ?? 0)),
-            service_charge_percent: Number(match.service_charge_percent ?? 0),
+            base_price: base,
+            service_charge: charge,
+            service_charge_percent: percent,
+            /* Present only on a shipment that really has two journeys. */
+            ...(legs ? { legs } : {}),
             eta: match.eta || null,
             estimated_delivery: deliveryTimeRange(match.eta),
             preferred_driver: driverSummary(template.preferred_driver)
@@ -921,7 +1010,11 @@ const matchTemplate = async (req, res) => {
                 // (the Fulfilment Centre flat fee has just the one price).
                 options: match.is_fulfilment_centre_handling_fee
                     ? []
-                    : laneOptions(routeTemplates, originState, originCountry, destinationState, destinationCountry, groupWeight)
+                    : laneOptions(routeTemplates, originState, originCountry, destinationState, destinationCountry, groupWeight, {
+                        originCountry: group.pickup_address?.country || originCountry,
+                        destinationCountry: delivery_address?.country || destinationCountry,
+                        destinationCity: delivery_address?.city || delivery_address?.state || ''
+                    })
             })
         } else {
             // If no internal match (exact or fallback), then it's an external or unmatchable route
@@ -1186,7 +1279,14 @@ const buildQuoteOptions = async ({ origin, destination, originCode, destCode, we
 
     // 1. Obana fleet: one option per mode/service on this lane, from its best-fitting template (no Lagos fallback for quotes).
     const templates = await loadRouteTemplates()
-    for (const o of laneOptions(templates, origin.state, originCode, destination.state, destCode, weight)) {
+    /* The names the two legs are labelled with: countries for the crossing,
+       the delivery city for the home run. */
+    const places = {
+        originCountry: origin.country || originCode,
+        destinationCountry: destination.country || destCode,
+        destinationCity: destination.city || destination.state || ''
+    }
+    for (const o of laneOptions(templates, origin.state, originCode, destination.state, destCode, weight, places)) {
         options.push({
             id: o.id,
             provider: 'obana',
