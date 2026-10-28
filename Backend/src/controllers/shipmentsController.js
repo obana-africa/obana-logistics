@@ -184,16 +184,22 @@ const buildTimeline = (plain) => {
    is how a replacement template gets used without a code change. */
 const DEFAULT_INTL_CREATED_TEMPLATE = '1828513205';
 
-/* The same message with the rate per kg, the rate per unit and the transit
-   window added: eleven variables where the approved one takes eight.
+/* shipment_created_int_v2: the same message with the rate per kilo, the
+   arrival window, and the two journeys on separate lines. Eleven variables
+   where the older one takes eight.
  *
- * No default, and that is the point. A template's variables are fixed when Meta
- * approves it, so sending eleven to a template that takes eight fails every
- * message. This stays unset until the replacement is approved, and the moment
- * KUDISMS_WA_CREATED_INTL_V2_TEMPLATE holds its code the longer message takes
- * over. Nothing to deploy on the day it is approved, and nothing breaks on the
- * day this ships. */
-const INTL_CREATED_V2_TEMPLATE = () => templateCodeFor('KUDISMS_WA_CREATED_INTL_V2_TEMPLATE');
+ * Approved, so it carries its code here the way the eight-variable one does —
+ * a deploy works whether or not the variable reached Render, and setting
+ * KUDISMS_WA_CREATED_INTL_V2_TEMPLATE still overrides it, which is how a
+ * replacement gets used without a code change.
+ *
+ * A template's variables are fixed the moment Meta approves it, so sending
+ * eleven to a template that takes eight fails every message. If this code is
+ * ever wrong the send steps down — eleven to eight to three — rather than the
+ * customer hearing nothing. */
+const DEFAULT_INTL_CREATED_V2_TEMPLATE = '8399983762';
+const INTL_CREATED_V2_TEMPLATE = () =>
+    templateCodeFor('KUDISMS_WA_CREATED_INTL_V2_TEMPLATE') || DEFAULT_INTL_CREATED_V2_TEMPLATE;
 
 /**
  * "\u20a62 157 777" — the naira sign, not the three letters.
@@ -378,13 +384,32 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
                 const split = shipment.metadata?.fee_breakdown;
                 const charge = Number(split?.service_charge) || 0;
                 const delivery = Number(split?.base) || Number(shipment.shipping_fee) || 0;
+                /* Both journeys through the variable the approved template
+                   already has.
+                
+                   A template's variables are fixed once Meta approves it, and
+                   a shipment with two legs needs somewhere to say so. Rather
+                   than wait for a new approval, the delivery figure carries
+                   both: "NGN 1 985 329 Italy to Nigeria + NGN 550 000 Lagos to
+                   Rivers". One variable, two legs, nothing resubmitted.
+                
+                   No commas, because KudiSMS splits its parameters field on
+                   them — waMoney already groups with spaces — and no arrow,
+                   because the word reads the same and survives any encoding
+                   the gateway applies. */
+                const freightSaid = summary.legs?.length > 1
+                    ? summary.legs
+                          .map((leg) => `${leg.plain} ${[leg.from, leg.to].filter(Boolean).join(' to ')}`)
+                          .join(' + ')
+                    : waMoney(currency, delivery);
+
                 intlParameters = [
                     customerName,                                   // {{1}}
                     waPlace(pickup, 'the pickup address'),          // {{2}}
                     waPlace(address, 'the delivery address'),       // {{3}}
                     shipmentWeight,                                 // {{4}}
                     waAirWaybill(shipment),                         // {{5}}
-                    waMoney(currency, delivery),                    // {{6}}
+                    freightSaid,                                    // {{6}}
                     waMoney(currency, charge),                      // {{7}}
                     waMoney(currency, shipment.shipping_fee)        // {{8}}
                 ];
@@ -399,23 +424,33 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
                  * variable cannot be empty and a division by zero is not a
                  * price. */
                 if (intlV2Template) {
-                    /* A variable may not be empty, so anything the summary
-                       leaves out falls back to a sentence rather than a blank:
-                       a single-item shipment has no per-unit rate, and a
-                       shipment nobody has given a window yet has no dates. */
-                    const perKg = summary.ratePerKg ? `${summary.ratePerKg.plain}/kg` : waMoney(currency, delivery);
-                    const perUnit = summary.ratePerUnit ? `${summary.ratePerUnit.plain}/unit` : perKg;
+                    /* A variable may not be empty, so every one of these has
+                       something to say even when the shipment does not. A
+                       one-leg shipment has no last mile, and "Not applicable"
+                       is the honest word for that — leaving it blank would be
+                       refused by the gateway and leaving it zero would read as
+                       a charge of nothing. */
+                    const crossing = summary.legs?.find((l) => l.kind !== 'local');
+                    const homeRun = summary.legs?.find((l) => l.kind === 'local');
+                    const saidAs = (leg, fallback) =>
+                        leg ? `${leg.plain} ${[leg.from, leg.to].filter(Boolean).join(' to ')}` : fallback;
+
                     intlV2Parameters = [
-                        customerName,                               // {{1}}
-                        summary.from || waPlace(pickup, 'the pickup address'),    // {{2}}
-                        summary.to || waPlace(address, 'the delivery address'),   // {{3}}
-                        summary.weight,                             // {{4}}
-                        perKg,                                      // {{5}}
-                        perUnit,                                    // {{6}}
-                        summary.awbNumber || 'AWB not available',   // {{7}}
-                        summary.eta || 'To be confirmed',           // {{8}}
-                        summary.deliveryCharge?.plain ?? waMoney(currency, delivery),   // {{9}}
-                        summary.serviceCharge?.plain ?? waMoney(currency, charge),      // {{10}}
+                        customerName,                                           // {{1}}
+                        /* waPlace, not the summary's own route string. The
+                           gateway replaces a comma with a space, so "Milan,
+                           Lombardy (Italy)" would arrive as "Milan Lombardy
+                           (Italy)". waPlace gives "Milan (Italy)", which is
+                           what that strip was written to avoid mangling. */
+                        waPlace(pickup, 'the pickup address'),                  // {{2}}
+                        waPlace(address, 'the delivery address'),               // {{3}}
+                        summary.weight,                                         // {{4}}
+                        summary.ratePerKg ? `${summary.ratePerKg.plain}/kg` : waMoney(currency, delivery), // {{5}}
+                        summary.awbNumber || 'AWB not available',               // {{6}}
+                        summary.eta || 'To be confirmed',                       // {{7}}
+                        saidAs(crossing, waMoney(currency, delivery)),          // {{8}}  freight
+                        saidAs(homeRun, 'Not applicable'),                      // {{9}}  last mile
+                        summary.serviceCharge?.plain ?? waMoney(currency, charge),       // {{10}}
                         summary.total?.plain ?? waMoney(currency, shipment.shipping_fee) // {{11}}
                     ];
                 }
@@ -427,10 +462,10 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
         //   {{1}} Name {{2}} From {{3}} To {{4}} Weight {{5}} AWB
         //   {{6}} Delivery {{7}} Service charge {{8}} Total, and a second button.
         // And when KUDISMS_WA_CREATED_INTL_V2_TEMPLATE is set, the same with the
-        // rates and the transit window:
+        // rate, the arrival window and the two journeys apart:
         //   {{1}} Name {{2}} From {{3}} To {{4}} Weight {{5}} Rate per kg
-        //   {{6}} Rate per unit {{7}} AWB {{8}} Transit window
-        //   {{9}} Delivery {{10}} Service charge {{11}} Total.
+        //   {{6}} AWB {{7}} Estimated arrival {{8}} Freight {{9}} Last mile
+        //   {{10}} Handling/Service Charge {{11}} Total, and a second button.
         const customerTemplate = intlV2Parameters
             ? intlV2Template
             : intlParameters

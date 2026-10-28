@@ -153,11 +153,18 @@ const buildShipmentSummary = async (shipment, { pickup, delivery, items = [], co
        not on each leg of it. */
     const legs = Array.isArray(split?.legs) && split.legs.length > 1 ? split.legs : null
 
+    /* The legs with their figures attached, so a caller that wants to say
+       them — the WhatsApp message, which has one variable for the lot — does
+       not have to format them a second time and differently. */
+    const pricedLegs = legs
+        ? legs.map((leg) => ({ ...leg, ...figure(Number(leg.base_price) || 0) }))
+        : null
+
     const lines = []
     if (units > 1) lines.push({ key: 'rate_per_unit', label: 'Rate per unit', ...figure(deliveryPart / units) })
     if (serviceCharge > 0) {
-        if (legs) {
-            for (const leg of legs) {
+        if (pricedLegs) {
+            for (const leg of pricedLegs) {
                 const where = [leg.from, leg.to].filter(Boolean).join(' \u2192 ')
                 /* The freight line keeps the words it has always had, with
                    the route appended, rather than gaining a second name for
@@ -171,7 +178,10 @@ const buildShipmentSummary = async (shipment, { pickup, delivery, items = [], co
                     label: where ? `${what} \u00b7 ${where}` : what,
                     kind: leg.kind,
                     route: where,
-                    ...figure(Number(leg.base_price) || 0)
+                    amount: leg.amount,
+                    base: leg.base,
+                    display: leg.display,
+                    plain: leg.plain
                 })
             }
         } else {
@@ -211,7 +221,7 @@ const buildShipmentSummary = async (shipment, { pickup, delivery, items = [], co
         conversionRate: converts ? perBase : null,
         conversionNote: converts ? `Converted at ${money(1, baseCode)} = ${money(perBase, currency)}` : '',
         charges: lines,
-        legs: legs ?? null,
+        legs: pricedLegs ?? null,
         ratePerKg: by('rate_per_kg'),
         ratePerUnit: by('rate_per_unit'),
         deliveryCharge: by('delivery'),
