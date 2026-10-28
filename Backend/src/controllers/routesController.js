@@ -724,9 +724,24 @@ const arrivalOf = (template, asked = null) => {
  * destination: there is no last mile to a door you have reached.
  */
 const lastMileFor = (routeTemplates, arrival, destinationState, destinationCountry, weight, serviceLevel) => {
-    if (!arrival || destinationCountry !== 'ng') return null
+    if (!arrival) return null
+
+    /* Normalised before comparing, every time.
+    
+       This read `destinationCountry !== 'ng'` against a code built with
+       .toUpperCase() a few lines away, so it compared 'NG' with 'ng' and was
+       true on every shipment there has ever been. The last mile was therefore
+       never priced — not once, whatever city or state anyone chose, and
+       whatever routes existed. laneTemplates normalises its own arguments,
+       which is why every other lookup worked and only this one did not. */
+    if (normalizeText(formatCountryCode(destinationCountry)) !== 'ng') return null
+
     const arrivalState = normalizeState(arrival.state || arrival.city)
-    if (!arrivalState || arrivalState === destinationState) return null
+    /* The destination arrives as it was typed — "Rivers" — so it is
+       normalised here too. Comparing 'lagos' against 'Lagos' would have
+       missed the one case this guard exists for: an arrival state that is
+       already the destination, where there is no last mile to charge. */
+    if (!arrivalState || arrivalState === normalizeState(destinationState)) return null
 
     const options = laneOptions(routeTemplates, arrivalState, 'ng', destinationState, 'ng', weight)
     if (!options.length) return null
@@ -757,7 +772,8 @@ const laneOptions = (routeTemplates, origin_state, origin_country, destination_s
         
            Only where the lane declares an arrival city. Until one does, an
            international option prices exactly as it does today. */
-        const crossBorder = origin_country !== destination_country
+        const crossBorder =
+            normalizeText(formatCountryCode(origin_country)) !== normalizeText(formatCountryCode(destination_country))
         const lastMile = crossBorder
             ? lastMileFor(routeTemplates, arrivalOf(template, places?.arrival), destination_state, destination_country, weight, service.service_level)
             : null

@@ -185,7 +185,13 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   const saveDraft = async () => {
     setDraftState('saving');
     try {
-      const saved = await apiClient.saveShipmentDraft({ id: draftId ?? undefined, form: formData });
+      /* The waybill is held apart from the form — it is typed in the
+         documents box, not the address boxes — so a draft saved without it
+         lost the one thing somebody had just gone to look up. */
+      const saved = await apiClient.saveShipmentDraft({
+        id: draftId ?? undefined,
+        form: { ...formData, typed_awb: typedAwb },
+      });
       if (saved?.data?.id) setDraftId(saved.data.id);
       setDrafts((prev) => {
         const without = prev.filter((d) => d.id !== saved?.data?.id);
@@ -203,7 +209,9 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
      among it: a figure quoted a week ago is not a figure we can still honour,
      so the route is matched again from the addresses that come back. */
   const continueDraft = (draft: { id: number; form: any }) => {
-    setFormData({ ...emptyForm(), ...(draft.form ?? {}) });
+    const { typed_awb: savedAwb, ...form } = draft.form ?? {};
+    setFormData({ ...emptyForm(), ...form });
+    setTypedAwb(savedAwb ?? '');
     setDraftId(draft.id);
     setMatchedRoute(null);
     setSelectedOptionId(null);
