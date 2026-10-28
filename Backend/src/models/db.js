@@ -55,6 +55,7 @@ db.addresses = require('./addressModel.js')(sequelize, DataTypes)
 db.agents = require('./agentModel.js')(sequelize, DataTypes)
 
 db.shipment_tracking = require('./shipmentTrackingModel.js')(sequelize, DataTypes)
+db.shipment_drafts = require('./shipmentDraftModel.js')(sequelize, DataTypes)
 // db.driver_assignment = require('./driverAssignmentModel.js')(sequelize, DataTypes)
 db.shipment_items = require('./shipmentItemsModel.js')(sequelize, DataTypes)
 db.shippings = require('./shipmentsModel.js')(sequelize, DataTypes)

@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../models/db.js')
 const shipmentController = require('../controllers/shipmentsController');
 const auth = require('../routes/auth');
+const drafts = require('../controllers/shipmentDraftsController');
 
 const controller =  shipmentController
 
@@ -10,6 +11,15 @@ const controller =  shipmentController
     
     
 router.post('', auth.authenticateToken,  controller.createShipment);
+
+/* Bookings in progress, and the people this account has sent to before.
+   Above the '/:shipment_id' routes below, or "drafts" would be read as a
+   shipment id and answer 404 for everyone. */
+router.get('/drafts', auth.authenticateToken, drafts.listDrafts);
+router.post('/drafts', auth.authenticateToken, drafts.saveDraft);
+router.put('/drafts/:id', auth.authenticateToken, drafts.saveDraft);
+router.delete('/drafts/:id', auth.authenticateToken, drafts.deleteDraft);
+router.get('/recent-customers', auth.authenticateToken, drafts.recentCustomers);
     
     
 // Public, unauthenticated tracking (used by the home-page tracking modal / emailed links)
