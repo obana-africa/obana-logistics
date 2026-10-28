@@ -184,16 +184,22 @@ const buildTimeline = (plain) => {
    is how a replacement template gets used without a code change. */
 const DEFAULT_INTL_CREATED_TEMPLATE = '1828513205';
 
-/* The same message with the rate per kg, the rate per unit and the transit
-   window added: eleven variables where the approved one takes eight.
+/* shipment_created_int_v2: the same message with the rate per kilo, the
+   arrival window, and the two journeys on separate lines. Eleven variables
+   where the older one takes eight.
  *
- * No default, and that is the point. A template's variables are fixed when Meta
- * approves it, so sending eleven to a template that takes eight fails every
- * message. This stays unset until the replacement is approved, and the moment
- * KUDISMS_WA_CREATED_INTL_V2_TEMPLATE holds its code the longer message takes
- * over. Nothing to deploy on the day it is approved, and nothing breaks on the
- * day this ships. */
-const INTL_CREATED_V2_TEMPLATE = () => templateCodeFor('KUDISMS_WA_CREATED_INTL_V2_TEMPLATE');
+ * Approved, so it carries its code here the way the eight-variable one does —
+ * a deploy works whether or not the variable reached Render, and setting
+ * KUDISMS_WA_CREATED_INTL_V2_TEMPLATE still overrides it, which is how a
+ * replacement gets used without a code change.
+ *
+ * A template's variables are fixed the moment Meta approves it, so sending
+ * eleven to a template that takes eight fails every message. If this code is
+ * ever wrong the send steps down — eleven to eight to three — rather than the
+ * customer hearing nothing. */
+const DEFAULT_INTL_CREATED_V2_TEMPLATE = '8399983762';
+const INTL_CREATED_V2_TEMPLATE = () =>
+    templateCodeFor('KUDISMS_WA_CREATED_INTL_V2_TEMPLATE') || DEFAULT_INTL_CREATED_V2_TEMPLATE;
 
 /**
  * "\u20a62 157 777" — the naira sign, not the three letters.
