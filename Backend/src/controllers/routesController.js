@@ -4,7 +4,7 @@ const { loadPricing, priceRates, recordSeenPartners } = require('../helpers/part
 const { currencyForCountry, ngnRate } = require('../helpers/fx')
 /* Zoho's naira-per-dollar rate, so the price the customer confirms, the summary
    they are sent and the message they receive all state the same dollars. */
-const { quoteCurrency } = require('../helpers/currencyRates')
+const { quoteCurrency, nairaPer } = require('../helpers/currencyRates')
 const axios = require('axios')
 const crypto = require('crypto')
 const { getCode } = require('country-list')
@@ -592,6 +592,37 @@ const laneTemplates = (routeTemplates, origin_state, origin_country, destination
  * With multiple brackets, use the lowest-max bracket that still covers the weight;
  * if the weight exceeds every bracket, use the highest-max bracket (overweight case).
  */
+/**
+ * A lane priced by the kilo, in the currency it was agreed in.
+ *
+ * A rate negotiated as "€10.09 a kilo" cannot be stored in naira without
+ * drifting: the euro figure the customer was quoted would change every day
+ * the exchange rate moved, and the forwarder's own invoice would stop
+ * matching ours. So the lane holds the rate and its currency, and the naira
+ * is worked out when a quote is asked for.
+ *
+ * Returns null unless a lane says it is priced this way, so every existing
+ * lane keeps its weight brackets and prices exactly as before.
+ */
+const perKiloPrice = async (template, weight) => {
+    const meta = template?.metadata ?? {}
+    const rate = Number(meta.price_per_kg)
+    if (!(rate > 0) || !(weight > 0)) return null
+
+    const currency = String(meta.price_currency || 'NGN').toUpperCase()
+    if (currency === 'NGN') return { base: rate * weight, currency, rate }
+
+    const perUnit = await nairaPer(currency)
+    /* No rate today means no price today, rather than a price in the wrong
+       currency: quoting ₦10.09 where €10.09 was agreed is off by three
+       orders of magnitude. The lane falls back to its weight brackets. */
+    if (!(perUnit > 0)) {
+        console.warn(`[routes] no ${currency} rate, so the per-kilo price for this lane cannot be converted`)
+        return null
+    }
+    return { base: rate * weight * perUnit, currency, rate, nairaPerUnit: perUnit }
+}
+
 const priceTemplate = (template, weight) => {
     const brackets = template.weight_brackets || [];
     if (brackets.length === 0) return null;
@@ -723,7 +754,28 @@ const arrivalOf = (template, asked = null) => {
  * Cheapest otherwise, and nothing at all when the arrival city is already the
  * destination: there is no last mile to a door you have reached.
  */
-const lastMileFor = (routeTemplates, arrival, destinationState, destinationCountry, weight, serviceLevel) => {
+/**
+ * What the last mile costs, by the kilo, on its own terms.
+ *
+ * Door delivery after an international arrival is not the same job as the
+ * domestic run somebody books on its own, and it is not priced like one —
+ * so it does not borrow that lane's price. Taking it from the domestic route
+ * would have meant that setting the last mile also repriced every direct
+ * booking on the same lane, which is a four-fold rise on customers who are
+ * not involved in this at all.
+ *
+ * Set per international lane, falling back to LAST_MILE_RATE_PER_KG for a
+ * lane that does not say. Zero or unset means no own rate, and the domestic
+ * lane is used as before.
+ */
+const lastMileRateFor = (template) => {
+    const own = Number(template?.metadata?.last_mile_per_kg)
+    if (own > 0) return own
+    const fallback = Number(process.env.LAST_MILE_RATE_PER_KG)
+    return fallback > 0 ? fallback : 0
+}
+
+const lastMileFor = async (routeTemplates, arrival, destinationState, destinationCountry, weight, serviceLevel, template = null) => {
     if (!arrival) return null
 
     /* Normalised before comparing, every time.
@@ -743,14 +795,30 @@ const lastMileFor = (routeTemplates, arrival, destinationState, destinationCount
        already the destination, where there is no last mile to charge. */
     if (!arrivalState || arrivalState === normalizeState(destinationState)) return null
 
-    const options = laneOptions(routeTemplates, arrivalState, 'ng', destinationState, 'ng', weight)
+    /* Its own rate, where the lane has one: door delivery after an arrival is
+       not the domestic run somebody books on its own, and pricing it from that
+       lane would mean setting this also reprices every direct booking on it. */
+    const ownRate = lastMileRateFor(template)
+    if (ownRate > 0) {
+        return {
+            from: arrival.city,
+            base_price: Math.ceil(ownRate * weight),
+            price: Math.ceil(ownRate * weight),
+            service_level: serviceLevel,
+            transport_mode: 'road',
+            eta: null,
+            per_kg: ownRate
+        }
+    }
+
+    const options = await laneOptions(routeTemplates, arrivalState, 'ng', destinationState, 'ng', weight)
     if (!options.length) return null
     const sameService = options.find((o) => String(o.service_level).toLowerCase() === String(serviceLevel).toLowerCase())
     const chosen = sameService ?? options[0]
     return { ...chosen, from: arrival.city }
 }
 
-const laneOptions = (routeTemplates, origin_state, origin_country, destination_state, destination_country, weight, places = null) => {
+const laneOptions = async (routeTemplates, origin_state, origin_country, destination_state, destination_country, weight, places = null) => {
     const seen = new Set()
     const options = []
     for (const { template } of laneTemplates(routeTemplates, origin_state, origin_country, destination_state, destination_country)) {
@@ -759,6 +827,18 @@ const laneOptions = (routeTemplates, origin_state, origin_country, destination_s
         if (seen.has(key)) continue
         const match = priceTemplate(template, weight)
         if (!match || !(Number(match.price) > 0)) continue
+
+        /* A lane priced by the kilo in its own currency overrides the bracket
+           it would otherwise have used. The handling charge is then worked out
+           on that figure, so the split still adds to the total. */
+        const byKilo = await perKiloPrice(template, weight)
+        if (byKilo) {
+            const kobo = (v) => Math.round(v * 100) / 100
+            match.base_price = Math.ceil(kobo(byKilo.base))
+            match.service_charge = Math.ceil(kobo((match.base_price * match.service_charge_percent) / 100))
+            match.price = match.base_price + match.service_charge
+            match.priced_per_kg = { rate: byKilo.rate, currency: byKilo.currency }
+        }
         seen.add(key)
 
         let base = Math.ceil(Number(match.base_price ?? match.price))
@@ -775,7 +855,7 @@ const laneOptions = (routeTemplates, origin_state, origin_country, destination_s
         const crossBorder =
             normalizeText(formatCountryCode(origin_country)) !== normalizeText(formatCountryCode(destination_country))
         const lastMile = crossBorder
-            ? lastMileFor(routeTemplates, arrivalOf(template, places?.arrival), destination_state, destination_country, weight, service.service_level)
+            ? await lastMileFor(routeTemplates, arrivalOf(template, places?.arrival), destination_state, destination_country, weight, service.service_level, template)
             : null
 
         /* Asked for, and nothing to price it with. Said out loud rather than
@@ -1040,7 +1120,7 @@ const matchTemplate = async (req, res) => {
             match.estimated_delivery = deliveryTimeRange(match.eta)
             const laneChoices = match.is_fulfilment_centre_handling_fee
                 ? []
-                : laneOptions(routeTemplates, originState, originCountry, destinationState, destinationCountry, groupWeight, {
+                : await laneOptions(routeTemplates, originState, originCountry, destinationState, destinationCountry, groupWeight, {
                     originCountry: group.pickup_address?.country || originCountry,
                     destinationCountry: delivery_address?.country || destinationCountry,
                     destinationCity: delivery_address?.city || delivery_address?.state || '',
@@ -1336,7 +1416,7 @@ const buildQuoteOptions = async ({ origin, destination, originCode, destCode, we
         destinationCity: destination.city || destination.state || '',
         arrival: arrival || null
     }
-    for (const o of laneOptions(templates, origin.state, originCode, destination.state, destCode, weight, places)) {
+    for (const o of await laneOptions(templates, origin.state, originCode, destination.state, destCode, weight, places)) {
         options.push({
             id: o.id,
             provider: 'obana',
