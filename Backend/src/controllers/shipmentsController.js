@@ -335,18 +335,54 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
         const accountHolder = shipment.user_id ? await db.users.findByPk(shipment.user_id) : null;
 
         const digitsOf = (phone) => String(phone ?? '').replace(/\D/g, '').slice(-9);
+        /* The two ends of the parcel, and the account holder only if neither
+           end can be reached.
+        
+           The account holder was a fallback and was promoted to a recipient in
+           its own right, which meant whoever created the shipment got the
+           customer's message every time. An admin booking a shipment is not a
+           party to it — user_id is theirs unless they picked a customer — so
+           they were notified about every parcel they entered, with their own
+           number nowhere on the form. Back to a fallback: used when there is
+           no delivery phone and no pickup phone, which is the case it was
+           written for. */
+        /* "Hello {{1}}" is the person being written to, not the person the
+           parcel is going to.
+        
+           The name was taken from the delivery address once and sent to
+           everybody, so a sender in Italy was greeted as their own customer
+           and so was whoever booked it. A message that opens with somebody
+           else's name reads as sent in error, which is the opposite of what
+           a booking confirmation is for. */
+        const nameOf = (row) =>
+            String(row?.name ?? '').trim() ||
+            [row?.first_name, row?.last_name].filter(Boolean).join(' ').trim();
+
+        const ends = [
+            ['receiver', address?.phone, nameOf(address)],
+            ['sender', pickupRow?.phone, nameOf(pickupRow)]
+        ];
+        const reachable = ends.some(([, phone]) => String(phone ?? '').replace(/\D/g, '').length >= 7);
+
+        const holderName =
+            [accountHolder?.attributes?.first_name, accountHolder?.attributes?.last_name]
+                .filter(Boolean)
+                .join(' ')
+                .trim() || nameOf(accountHolder);
+
         const recipients = [];
-        for (const [who, phone] of [
-            ['receiver', address?.phone],
-            ['sender', pickupRow?.phone],
-            ['account holder', accountHolder?.phone]
-        ]) {
+        for (const [who, phone, name] of reachable
+            ? ends
+            : [['account holder', accountHolder?.phone, holderName]]) {
             const key = digitsOf(phone);
             /* Too short to be a phone number is not a phone number. A field
                holding "0" or "n/a" would otherwise be dialled. */
             if (key.length < 7) continue;
             if (recipients.some((r) => r.key === key)) continue;
-            recipients.push({ who, phone: String(phone).trim(), key });
+            /* Their own name where there is one. "Customer" rather than a
+               stranger's name where there is not: a greeting that is merely
+               generic is better than one that is wrong. */
+            recipients.push({ who, phone: String(phone).trim(), key, name: String(name ?? '').trim() || 'Customer' });
         }
 
         const currency = shipment.currency || 'NGN';
@@ -477,10 +513,16 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
             // KudiSMS answers 200 even when it refuses, so the result is the only
             // thing that says whether a message was actually accepted. Logging
             // "Sent" regardless is how a rejected template goes unnoticed.
+            /* {{1}} is whoever this copy is going to. Everything after it
+               describes the shipment and is the same for all of them. */
+            const addressedTo = (list) => (list ? [to.name, ...list.slice(1)] : null);
+
             let sent = await sendWhatsApp({
                 recipient: to.phone,
                 templateCode: customerTemplate,
-                parameters: intlV2Parameters ?? intlParameters ?? [customerName, shipmentWeight, shippingCost],
+                parameters:
+                    addressedTo(intlV2Parameters) ??
+                    addressedTo(intlParameters) ?? [to.name, shipmentWeight, shippingCost],
                 buttonParameters: intlV2Parameters || intlParameters
                     ? [shipment.shipment_reference, shipment.shipment_reference]
                     : buttonParameters
@@ -513,7 +555,7 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
                     sent = await sendWhatsApp({
                         recipient: to.phone,
                         templateCode: fallback,
-                        parameters: [customerName, shipmentWeight, shippingCost],
+                        parameters: [to.name, shipmentWeight, shippingCost],
                         buttonParameters
                     });
                 }
