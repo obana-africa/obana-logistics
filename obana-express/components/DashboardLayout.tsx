@@ -60,6 +60,7 @@ const NAV: Record<Role, NavItem[]> = {
 		{ name: "Drivers", href: "/dashboard/admin/drivers", icon: Truck },
 		{ name: "Agents", href: "/dashboard/admin/agents", icon: ShieldCheck },
 		{ name: "Users", href: "/dashboard/admin/users", icon: Users },
+		{ name: "Account", href: "/dashboard/admin/profile", icon: UserRound },
 	],
 };
 
