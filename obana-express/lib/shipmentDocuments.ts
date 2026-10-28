@@ -84,13 +84,40 @@ export const previewUrl = (url: string) =>
 		: url;
 
 /**
- * The same file, as a download rather than something the browser opens.
+ * The link to put on a document, for saving it or for opening it whole.
+ *
+ * Not the Cloudinary link. Cloudinary blocks PDF delivery by default, so the
+ * stored link answers 401 for every waybill and summary we have: the first
+ * page still renders, which is why these could be viewed and never saved, and
+ * what arrived instead of the file was Cloudinary's own error image. Getting
+ * through needs the link signed with the account secret, which belongs on the
+ * server, so the API is asked for it and sends the browser on to whichever
+ * form of the link actually serves.
+ *
+ * `reference` is what the API keys this on. Without one — nothing on screen
+ * should be in that position, but a stale caller might — it falls back to the
+ * old behaviour rather than producing a link to nowhere.
+ */
+export const documentLink = (
+	doc: { id?: string; url: string },
+	reference?: string | null,
+	{ inline = false }: { inline?: boolean } = {},
+) => {
+	if (!reference || !doc.id) return inline ? doc.url : legacyDownloadUrl(doc.url);
+	const base = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
+	const path = `/shipments/public/documents/${encodeURIComponent(reference)}/${encodeURIComponent(doc.id)}`;
+	return `${base}${path}${inline ? "?inline=1" : ""}`;
+};
+
+/**
+ * The old link, kept for the fallback above.
  *
  * The `download` attribute is ignored across origins, so a tap on a Cloudinary
  * link opens the file instead of saving it. fl_attachment makes Cloudinary send
- * it with Content-Disposition: attachment, which every browser does save.
+ * it with Content-Disposition: attachment — which works, on the day Cloudinary
+ * is willing to send the file at all.
  */
-export const downloadUrl = (url: string) =>
+const legacyDownloadUrl = (url: string) =>
 	isCloudinary(url) ? url.replace("/upload/", "/upload/fl_attachment/") : url;
 
 /**

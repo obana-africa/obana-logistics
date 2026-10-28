@@ -254,7 +254,7 @@ function Result({ shipment, onReset }: { shipment: TrackedShipment; onReset: () 
 
 			{/* Above the history, because somebody who came here from a
 			    notification about a receipt came to see the receipt. */}
-			<PublicDocuments documents={shipment.documents} />
+			<PublicDocuments documents={shipment.documents} reference={shipment.shipment_reference} />
 
 			{events.length > 0 && (
 				<ol className="max-h-60 overflow-y-auto pr-1">

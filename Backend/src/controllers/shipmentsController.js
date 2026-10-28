@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { uploadDocument } = require('../helpers/cloudinary')
+const { uploadDocument, deliverableUrl } = require('../helpers/cloudinary')
 const { buildShipmentSummaryPdf, money } = require('../helpers/shipmentSummaryDocument')
 
 /* What Obana's own generated summary is filed as, so it can be told apart from
@@ -2789,6 +2789,59 @@ const shipmentController = {
         } catch (error) {
             console.error('Error building the shipment summary:', error);
             return res.status(500).json({ success: false, message: 'Error building the summary' });
+        }
+    },
+
+    /**
+     * One document on a shipment, handed over by a link that actually works.
+     *
+     * Cloudinary blocks PDF delivery by default: the file is there, its first
+     * page renders happily, and asking for the PDF itself answers 401. That is
+     * why a customer could open a waybill and not save it. Signing the link
+     * gets through, and signing needs the account secret — which is here and
+     * not in anybody's browser. So the browser asks us, we work out which form
+     * of the link serves, and send it on to that one.
+     *
+     * Public, and keyed by the shipment reference alone, because the person
+     * who needs it arrived from a WhatsApp message with no account and no
+     * session — the same door the documents page already opens. The reference
+     * is the secret; shipment ids are not, so they are not accepted here.
+     */
+    publicShipmentDocument: async (req, res) => {
+        const sorry = (status, message) =>
+            res
+                .status(status)
+                .type('html')
+                .send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Obana</title><body style="font:16px/1.5 system-ui,sans-serif;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px;color:#1f2937"><p style="max-width:28rem;text-align:center">${message}</p></body>`);
+        try {
+            const reference = String(req.params.shipment_reference || '').trim();
+            /* A reference, not an id. Ids run 1, 2, 3 and would turn this into
+               a list of everybody's paperwork. */
+            if (!/^OBN[A-Z0-9-]{4,60}$/i.test(reference)) {
+                return sorry(404, 'That link does not look like a shipment of ours.');
+            }
+            const shipment = await db.shippings.findOne({ where: { shipment_reference: reference } });
+            if (!shipment) {
+                return sorry(404, 'We could not find that shipment.');
+            }
+            const documents = Array.isArray(shipment.documents) ? shipment.documents : [];
+            const document = documents.find((d) => d?.id === req.params.document_id);
+            if (!document?.url) {
+                return sorry(404, 'That document is no longer attached to this shipment.');
+            }
+
+            const link = await deliverableUrl(document.url, { attachment: req.query.inline !== '1' });
+            if (!link) {
+                console.error(`[DOCUMENT] Nothing serves ${document.url} on ${reference}`);
+                return sorry(
+                    502,
+                    'We cannot hand over this file at the moment. Please reply to the message you received and we will send it to you directly.'
+                );
+            }
+            return res.redirect(302, link);
+        } catch (error) {
+            console.error('Error serving a shipment document:', error);
+            return sorry(500, 'Something went wrong fetching that document. Please try again in a moment.');
         }
     },
 
