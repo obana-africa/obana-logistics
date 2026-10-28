@@ -490,6 +490,11 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
         base_price: selected.base_price,
         service_charge: selected.service_charge,
         service_charge_percent: selected.service_charge_percent,
+        /* The two journeys, where this booking has two. Without them the
+           shipment keeps the price but forgets it was ever split, and the
+           document and the message show one freight line over a quote that
+           showed two. The server checks they add up before trusting them. */
+        legs: selected.legs,
         estimated_delivery: selected.estimated_delivery,
         preferred_driver_id: selected.preferred_driver?.id,
         // The server charges the quoted price only if this quote still holds for this booking.

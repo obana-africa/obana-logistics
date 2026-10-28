@@ -693,7 +693,13 @@ const breakdownOf = (source, fee) => {
         /* The two journeys, where the option was priced as two. Kept with the
            split for the same reason the split is kept: the invoice has to show
            what the customer agreed to, not what the route table says later. */
-        const legs = Array.isArray(source?.legs) && source.legs.length > 1 ? source.legs : null
+        /* Taken only when the legs add up to the base they claim to divide.
+           They arrive from the browser on an admin booking, so an edited or
+           stale payload must not put figures on an invoice that do not sum —
+           the same rule the split itself is held to a line below. */
+        const offered = Array.isArray(source?.legs) ? source.legs : []
+        const legsTotal = offered.reduce((sum, leg) => sum + (Number(leg?.base_price) || 0), 0)
+        const legs = offered.length > 1 && Math.abs(legsTotal - base) <= 1 ? offered : null
         return charge > 0 ? { base, service_charge: charge, percent: percent > 0 ? percent : null, ...(legs ? { legs } : {}) } : null
     }
 
