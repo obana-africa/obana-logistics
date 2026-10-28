@@ -36,6 +36,10 @@ router.get('/track/:shipment_reference', auth.authenticateToken, controller.getS
        packing list usually come from them. The controller checks which
        shipments that means for each role; a customer may withdraw only what
        they attached themselves. */
+    /* The summary as a PDF, for anyone already entitled to see the shipment.
+       Admins and agents forward it to customers; a customer can fetch their
+       own without having to ask. */
+    router.get('/:shipment_id/summary.pdf', auth.authenticateToken, auth.verifyRole(['admin', 'driver', 'agent', 'customer']), controller.downloadShipmentSummary);
     router.get('/:shipment_id/documents', auth.authenticateToken, auth.verifyRole(['admin', 'driver', 'agent', 'customer']), controller.listShipmentDocuments);
     router.post('/:shipment_id/documents', auth.authenticateToken, auth.verifyRole(['admin', 'agent', 'driver', 'customer']), controller.addShipmentDocument);
     router.delete('/:shipment_id/documents/:document_id', auth.authenticateToken, auth.verifyRole(['admin', 'agent', 'customer']), controller.removeShipmentDocument);
