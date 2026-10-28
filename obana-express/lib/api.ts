@@ -579,6 +579,20 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * The shipment summary as a PDF, built by the API from the shipment as it
+   * stands now — the same document, from the same builder, as the copy that
+   * was attached at booking, so forwarding one in place of the other cannot
+   * put two different sets of figures in front of a customer.
+   *
+   * Comes back as a Blob rather than a link because the route needs the
+   * caller's token, and an <a href> carries no Authorization header.
+   */
+  async downloadShipmentSummary(shipmentId: string | number): Promise<Blob> {
+    const response = await this.client.get(`/shipments/${shipmentId}/summary.pdf`, { responseType: 'blob' });
+    return response.data as Blob;
+  }
+
   async listShipmentDocuments(shipmentId: string | number) {
     const response = await this.client.get<ApiResponse>(`/shipments/${shipmentId}/documents`);
     return response.data;

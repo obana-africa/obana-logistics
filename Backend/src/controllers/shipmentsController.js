@@ -691,43 +691,58 @@ const awbFromNote = (note) => {
 const summaryFor = async (shipment, { pickup, delivery, items } = {}) => {
     const pickupAddress = pickup || (shipment.pickup_address_id ? await db.addresses.findByPk(shipment.pickup_address_id) : null)
     const deliveryAddress = delivery || (shipment.delivery_address_id ? await db.addresses.findByPk(shipment.delivery_address_id) : null)
+    /* Read the goods back off the shipment when they were not handed in.
+       Booking passes them; everything after it — regenerating once an air
+       waybill arrives, or somebody asking for the document months later — did
+       not, and a summary of a shipment that lists nothing being shipped is not
+       one anybody can send to a customer. */
+    const goods = items || (await db.shipment_items.findAll({ where: { shipment_id: shipment.id } }))
     const { deliveryTimeRange } = require('./routesController')
     const summary = await buildShipmentSummary(shipment, {
         pickup: pickupAddress,
         delivery: deliveryAddress,
-        items: items || [],
+        items: goods || [],
         countryCodeOf,
         deliveryTimeRange
     })
     return { summary, pickupAddress, deliveryAddress }
 }
 
+/**
+ * The summary, laid out as the PDF builder wants it.
+ *
+ * Kept apart from attaching it because the same document is produced twice:
+ * once at booking, to keep with the shipment, and again whenever somebody asks
+ * to download it. Two mappings would be two documents that drift.
+ */
+const summaryPdfFields = (shipment, { summary, pickupAddress, deliveryAddress }) => ({
+    reference: summary.reference,
+    awbNumber: summary.awbNumber,
+    route: summary.route,
+    service: summary.service,
+    eta: summary.eta,
+    weight: summary.weight,
+    pieces: summary.pieces,
+    /* The rate, not the total. The total is the last line of the breakdown
+       immediately below, where a total belongs; what a reader wants at the top
+       is the figure they can hold against another forwarder's, and that is the
+       rate per kilo. */
+    rate: summary.ratePerKg?.display ?? '',
+    conversionNote: summary.conversionNote,
+    trackingUrl: buildTrackingUrl(shipment.shipment_reference),
+    charges: summary.charges.map((c) => ({ label: c.label, value: c.display, strong: Boolean(c.strong) })),
+    pickup: pickupAddress,
+    delivery: deliveryAddress,
+    items: summary.items
+})
+
 const attachShipmentSummary = async (shipment, { pickup, delivery, items } = {}) => {
     try {
         /* Every figure on this document comes from the shared summary, so the
            paper, the screen and the message cannot state different numbers for
            the same shipment. */
-        const { summary, pickupAddress, deliveryAddress } = await summaryFor(shipment, { pickup, delivery, items })
-        const pdf = await buildShipmentSummaryPdf({
-            reference: summary.reference,
-            awbNumber: summary.awbNumber,
-            route: summary.route,
-            service: summary.service,
-            eta: summary.eta,
-            weight: summary.weight,
-            pieces: summary.pieces,
-            /* The rate, not the total. The total is the last line of the
-               breakdown immediately below, where a total belongs; what a
-               reader wants at the top is the figure they can hold against
-               another forwarder's, and that is the rate per kilo. */
-            rate: summary.ratePerKg?.display ?? '',
-            conversionNote: summary.conversionNote,
-            trackingUrl: buildTrackingUrl(shipment.shipment_reference),
-            charges: summary.charges.map((c) => ({ label: c.label, value: c.display, strong: Boolean(c.strong) })),
-            pickup: pickupAddress,
-            delivery: deliveryAddress,
-            items: summary.items
-        })
+        const parts = await summaryFor(shipment, { pickup, delivery, items })
+        const pdf = await buildShipmentSummaryPdf(summaryPdfFields(shipment, parts))
 
         const url = await uploadDocument(
             `data:application/pdf;base64,${pdf.toString('base64')}`,
@@ -2735,6 +2750,48 @@ const shipmentController = {
     },
 
     /** Everything attached to a shipment, newest last. */
+    /**
+     * The shipment summary as a PDF, built on request and sent straight back.
+     *
+     * The copy attached at booking stays where it is — that one is the record.
+     * This is the one somebody asks for when they need to forward it, so it is
+     * drawn fresh from the shipment as it stands now, with the waybill number
+     * and any repriced legs on it, rather than handing back a file that was
+     * true in March. Same builder, same figures, same paper as the copy the
+     * customer already has.
+     *
+     * Takes the id or the reference, because that is what whoever is looking
+     * at the shipment has to hand.
+     */
+    downloadShipmentSummary: async (req, res) => {
+        try {
+            const { shipment_id } = req.params;
+            const key = String(shipment_id || '').trim();
+            const shipment = /^\d+$/.test(key)
+                ? await db.shippings.findByPk(key)
+                : await db.shippings.findOne({ where: { shipment_reference: key } });
+            if (!shipment) {
+                return res.status(404).json({ success: false, message: 'Shipment not found' });
+            }
+            if (!(await mayTouchShipment(req, shipment))) {
+                return res.status(403).json({ success: false, message: 'Unauthorized access to this shipment' });
+            }
+
+            const parts = await summaryFor(shipment);
+            const pdf = await buildShipmentSummaryPdf(summaryPdfFields(shipment, parts));
+            /* Named after the shipment, so a folder of these stays readable and
+               the customer can tell what landed in their inbox. */
+            const filename = `Shipment summary ${shipment.shipment_reference}.pdf`.replace(/["\\]/g, '');
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Length', pdf.length);
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            return res.status(200).end(pdf);
+        } catch (error) {
+            console.error('Error building the shipment summary:', error);
+            return res.status(500).json({ success: false, message: 'Error building the summary' });
+        }
+    },
+
     listShipmentDocuments: async (req, res) => {
         try {
             const { shipment_id } = req.params;

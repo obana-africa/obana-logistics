@@ -12,6 +12,7 @@ import { CLOSED_STATUSES, STATUS_OPTIONS, formatDate, formatMoney, statusMeta, t
 import { errorMessage, useRemote } from "@/lib/useRemote";
 import { AwbNumber } from "@/components/shipments/AwbNumber";
 import { ShipmentDocuments, type ShipmentDocument } from "@/components/shipments/ShipmentDocuments";
+import { DownloadSummary } from "@/components/shipments/DownloadSummary";
 
 type Address = { name?: string; first_name?: string; last_name?: string; contact_name?: string; line1?: string; line2?: string; city?: string; state?: string; country?: string; phone?: string; email?: string; contact_email?: string } | null;
 interface Shipment {
@@ -127,6 +128,7 @@ export default function AdminShipmentDetailPage() {
 	const [busy, setBusy] = useState(false);
 	const [sheetError, setSheetError] = useState("");
 	const [notice, setNotice] = useState("");
+	const [downloadError, setDownloadError] = useState("");
 	const [statusForm, setStatusForm] = useState({ status: "", location: "", notes: "" });
 	const [driverId, setDriverId] = useState("");
 	const [pick, setPick] = useState("");
@@ -221,6 +223,11 @@ export default function AdminShipmentDetailPage() {
 						</p>
 					</div>
 					<div className="flex flex-wrap gap-2">
+						{/* First in the row, and on every shipment whatever its
+						    state: sending the summary on to a customer is the
+						    thing done most often here, and it needs nothing
+						    filled in first. */}
+						<DownloadSummary shipmentId={s.id} reference={s.shipment_reference} onError={setDownloadError} />
 						{needsBooking && (
 							<Button onClick={() => open("partner")}>
 								<Handshake className="h-4 w-4" aria-hidden /> Book with partner
@@ -241,6 +248,12 @@ export default function AdminShipmentDetailPage() {
 						</Button>
 					</div>
 				</div>
+
+				{downloadError && (
+					<Alert type="error" role="alert">
+						{downloadError}
+					</Alert>
+				)}
 
 				{notice && (
 					<Alert type="success" role="status">
