@@ -56,7 +56,7 @@ const emptyForm = () => ({
   /* Where an international consignment lands before the last stretch inland.
      Blank means one journey, which is every shipment until somebody says
      otherwise. */
-  arrival: { city: '', state: '' },
+  arrival: { city: '', state: '', stateCode: '' },
   items: [emptyItem()],
 });
 
@@ -874,41 +874,6 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                 </h3>
                 <p className="text-sm text-gray-600 mb-5">Where should we collect the package?</p>
 
-                {/* The second leg, stated here because here is where somebody
-                    knows it: the consignment clears somewhere, and then
-                    travels on. Only on a shipment that crosses a border —
-                    a domestic one has no crossing to separate from a last
-                    mile. Blank means one journey, as now. */}
-                {crossBorder && (
-                  <div className="mb-5 rounded-lg border border-green-200 bg-white/70 p-4">
-                    <p className="font-semibold text-gray-900 text-sm">Does it travel on inside {formData.delivery_address.country || 'the country'}?</p>
-                    <p className="mb-3 text-gray-600 text-xs">
-                      Name the city it lands in and the stretch from there to the delivery address is priced as its own
-                      leg, on its own line. Leave it blank and the shipment is quoted as one journey.
-                    </p>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Input
-                        label="Lands in (city)"
-                        placeholder="Ikeja"
-                        value={formData.arrival.city}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, arrival: { ...prev.arrival, city: e.target.value } }))}
-                      />
-                      <Input
-                        label="State"
-                        placeholder="Lagos"
-                        value={formData.arrival.state}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, arrival: { ...prev.arrival, state: e.target.value } }))}
-                      />
-                    </div>
-                    {formData.arrival.city && formData.delivery_address.city && (
-                      <p className="mt-2 text-green-800 text-xs">
-                        Two legs: {formData.pickup_address.country || 'origin'} → {formData.delivery_address.country || 'destination'},
-                        then {formData.arrival.city} → {formData.delivery_address.city}.
-                      </p>
-                    )}
-                  </div>
-                )}
-
                 <div className="space-y-5">
                   <LocationInput
                     label="Location"
@@ -961,6 +926,56 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                   Delivery
                 </h3>
                 <p className="text-sm text-gray-600 mb-5">Where should we deliver the package?</p>
+
+                {/* The second leg, stated here because here is where somebody
+                    knows it: the consignment clears somewhere, and then
+                    travels on. Only on a shipment that crosses a border —
+                    a domestic one has no crossing to separate from a last
+                    mile. Blank means one journey, as now. */}
+                {crossBorder && (
+                  <div className="mb-5 rounded-lg border border-green-200 bg-white/70 p-4">
+                    <p className="font-semibold text-gray-900 text-sm">Does it travel on inside {formData.delivery_address.country || 'the country'}?</p>
+                    <p className="mb-3 text-gray-600 text-xs">
+                      Name the city it lands in and the stretch from there to the delivery address is priced as its own
+                      leg, on its own line. Leave it blank and the shipment is quoted as one journey.
+                    </p>
+                    <LocationInput
+                      label="Lands in"
+                      value={{
+                        city: formData.arrival.city,
+                        state: formData.arrival.state,
+                        country: formData.delivery_address.country,
+                        countryCode: formData.delivery_address.countryCode,
+                        stateCode: formData.arrival.stateCode,
+                      }}
+                      onChange={(location) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          arrival: { city: location.city ?? '', state: location.state ?? '', stateCode: location.stateCode ?? '' },
+                        }))
+                      }
+                      placeholder="Search for the arrival city..."
+                    />
+                    {/* Asked for and not priced. The cause is a missing
+                        domestic route between those two places, which is
+                        something an admin can add — so it is named rather
+                        than left as a line that never appears. */}
+                    {matchedRoute?.unpriced_last_mile && (
+                      <p className="mt-2 text-amber-700 text-xs">
+                        No route priced from {matchedRoute.unpriced_last_mile.from} to{' '}
+                        {matchedRoute.unpriced_last_mile.to} yet, so this is quoted as one journey. Add that
+                        domestic route and it becomes its own leg.
+                      </p>
+                    )}
+                    {formData.arrival.city && formData.delivery_address.city && !matchedRoute?.unpriced_last_mile && (
+                      <p className="mt-2 text-green-800 text-xs">
+                        Two legs: {formData.pickup_address.country || 'origin'} → {formData.delivery_address.country || 'destination'},
+                        then {formData.arrival.city} → {formData.delivery_address.city}.
+                      </p>
+                    )}
+                  </div>
+                )}
+
 
                 {/* Somebody this account has sent to before. The delivery
                     address on a past shipment is the only record that is
@@ -1276,13 +1291,32 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                 <div className="grid gap-4 sm:grid-cols-2 text-sm">
                   <div>
                     <p className="text-gray-600">Route</p>
-                    <p className="font-semibold text-gray-900">
-                      {/* The countries too, where they differ. "Alberton → Aba"
-                          reads as a domestic hop on a shipment that crosses two
-                          borders, and the customs line at the foot of the
-                          summary only makes sense once the route says so. */}
-                      {placeName(formData.pickup_address)} → {placeName(formData.delivery_address)}
-                    </p>
+                    {/* Two journeys are named as two. One line reading
+                        "Villaverla → Port Harcourt" over a consignment that
+                        clears in Ikeja and travels on inland says nothing
+                        about the second half — which is the half charged for
+                        separately below.
+
+                        The countries are on the crossing, because "Alberton →
+                        Aba" reads as a domestic hop on a shipment that crosses
+                        two borders, and the customs line at the foot of the
+                        summary only makes sense once the route says so. */}
+                    {selected?.legs && selected.legs.length > 1 ? (
+                      <div className="font-semibold text-gray-900">
+                        {selected.legs.map((leg, li) => (
+                          <span key={li} className="block">
+                            <span className="mr-1 font-normal text-gray-500 text-xs">
+                              {leg.kind === 'local' ? 'Last mile' : 'International'}
+                            </span>
+                            {[leg.from, leg.to].filter(Boolean).join(' → ')}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="font-semibold text-gray-900">
+                        {placeName(formData.pickup_address)} → {placeName(formData.delivery_address)}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <p className="text-gray-600">Service</p>
