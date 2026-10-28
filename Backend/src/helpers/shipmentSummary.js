@@ -159,7 +159,11 @@ const buildShipmentSummary = async (shipment, { pickup, delivery, items = [], co
         if (legs) {
             for (const leg of legs) {
                 const where = [leg.from, leg.to].filter(Boolean).join(' \u2192 ')
-                const what = leg.kind === 'local' ? 'Last mile (local)' : 'International shipment'
+                /* The freight line keeps the words it has always had, with
+                   the route appended, rather than gaining a second name for
+                   the same charge. A reader comparing an old invoice to a new
+                   one should find the same term on the same line. */
+                const what = leg.kind === 'local' ? 'Last mile (local)' : 'Total Freight Charge'
                 lines.push({
                     key: leg.kind === 'local' ? 'leg_local' : 'leg_international',
                     /* The route is in the label, so every surface shows it
