@@ -378,13 +378,32 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
                 const split = shipment.metadata?.fee_breakdown;
                 const charge = Number(split?.service_charge) || 0;
                 const delivery = Number(split?.base) || Number(shipment.shipping_fee) || 0;
+                /* Both journeys through the variable the approved template
+                   already has.
+                
+                   A template's variables are fixed once Meta approves it, and
+                   a shipment with two legs needs somewhere to say so. Rather
+                   than wait for a new approval, the delivery figure carries
+                   both: "NGN 1 985 329 Italy to Nigeria + NGN 550 000 Lagos to
+                   Rivers". One variable, two legs, nothing resubmitted.
+                
+                   No commas, because KudiSMS splits its parameters field on
+                   them — waMoney already groups with spaces — and no arrow,
+                   because the word reads the same and survives any encoding
+                   the gateway applies. */
+                const freightSaid = summary.legs?.length > 1
+                    ? summary.legs
+                          .map((leg) => `${leg.plain} ${[leg.from, leg.to].filter(Boolean).join(' to ')}`)
+                          .join(' + ')
+                    : waMoney(currency, delivery);
+
                 intlParameters = [
                     customerName,                                   // {{1}}
                     waPlace(pickup, 'the pickup address'),          // {{2}}
                     waPlace(address, 'the delivery address'),       // {{3}}
                     shipmentWeight,                                 // {{4}}
                     waAirWaybill(shipment),                         // {{5}}
-                    waMoney(currency, delivery),                    // {{6}}
+                    freightSaid,                                    // {{6}}
                     waMoney(currency, charge),                      // {{7}}
                     waMoney(currency, shipment.shipping_fee)        // {{8}}
                 ];
@@ -414,7 +433,7 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
                         perUnit,                                    // {{6}}
                         summary.awbNumber || 'AWB not available',   // {{7}}
                         summary.eta || 'To be confirmed',           // {{8}}
-                        summary.deliveryCharge?.plain ?? waMoney(currency, delivery),   // {{9}}
+                        freightSaid,                                // {{9}}
                         summary.serviceCharge?.plain ?? waMoney(currency, charge),      // {{10}}
                         summary.total?.plain ?? waMoney(currency, shipment.shipping_fee) // {{11}}
                     ];
