@@ -70,6 +70,9 @@ type PriceOption = {
   base_price?: number;
   service_charge?: number;
   service_charge_percent?: number;
+  /* Two journeys on one booking: the crossing, then the run to the door.
+     Present only where the international lane names an arrival city. */
+  legs?: { kind: 'international' | 'local'; from?: string; to?: string; base_price: number }[];
   eta?: string | null;
   estimated_delivery?: string | null;
   preferred_driver?: { id: number | string; driver_code?: string; vehicle_type?: string } | null;
@@ -422,7 +425,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
     const charges = selected.base_price && selected.service_charge
       ? [
           ...perUnit,
-          { label: 'Total Freight Charge', value: withUsd(selected.base_price) },
+          ...freightRows(),
           { label: chargeLabel(selected), value: withUsd(selected.service_charge) },
           { label: 'Total', value: withUsd(selected.price), strong: true },
         ]
@@ -522,6 +525,26 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   /* No percentage on it. What the customer owes is the amount; the percentage
      it was worked out from is our arithmetic, not their bill. */
   const chargeLabel = (_o: PriceOption) => 'Handling/Service Charge';
+
+  /* The freight, as one line or as two.
+  
+     A parcel from Italy to Port Harcourt crosses a border and then travels on
+     inside Nigeria — different jobs at different prices, and one line hides
+     that. The crossing is named country to country, because which Italian city
+     it left is not something the buyer chose; the home run is named city to
+     city, because both ends are in the same country and naming it twice says
+     nothing. One handling charge covers the two, since it is charged on the
+     job and not on each leg. */
+  const legLabel = (leg: NonNullable<PriceOption['legs']>[number]) => {
+    const what = leg.kind === 'local' ? 'Last mile (local)' : 'International shipment';
+    const where = [leg.from, leg.to].filter(Boolean).join(' → ');
+    return where ? `${what} · ${where}` : what;
+  };
+
+  const freightRows = () =>
+    selected?.legs && selected.legs.length > 1
+      ? selected.legs.map((leg) => ({ label: legLabel(leg), value: withUsd(Number(leg.base_price) || 0) }))
+      : [{ label: 'Total Freight Charge', value: withUsd(selected!.base_price!) }];
 
   const serviceLabel = (o: PriceOption) => o.carrier || `${o.transport_mode.charAt(0).toUpperCase()}${o.transport_mode.slice(1)} · ${o.service_level}`;
 
@@ -1114,10 +1137,12 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                         <dd className="font-medium text-gray-900 tabular-nums">{withUsd(selected.base_price! / totalUnits)}</dd>
                       </div>
                     )}
-                    <div className="flex items-baseline justify-between gap-4">
-                      <dt className="text-gray-600">Total Freight Charge</dt>
-                      <dd className="font-medium text-gray-900 tabular-nums">{withUsd(selected.base_price!)}</dd>
-                    </div>
+                    {freightRows().map((row) => (
+                      <div key={row.label} className="flex items-baseline justify-between gap-4">
+                        <dt className="text-gray-600">{row.label}</dt>
+                        <dd className="font-medium text-gray-900 tabular-nums">{row.value}</dd>
+                      </div>
+                    ))}
                     <div className="flex items-baseline justify-between gap-4">
                       <dt className="text-gray-600">{chargeLabel(selected)}</dt>
                       <dd className="font-medium text-gray-900 tabular-nums">{withUsd(selected.service_charge!)}</dd>

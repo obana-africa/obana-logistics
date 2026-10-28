@@ -690,7 +690,11 @@ const breakdownOf = (source, fee) => {
     const charge = Number(source?.service_charge)
     const percent = Number(source?.service_charge_percent)
     if (base > 0 && charge >= 0 && Math.abs(base + charge - total) <= 1) {
-        return charge > 0 ? { base, service_charge: charge, percent: percent > 0 ? percent : null } : null
+        /* The two journeys, where the option was priced as two. Kept with the
+           split for the same reason the split is kept: the invoice has to show
+           what the customer agreed to, not what the route table says later. */
+        const legs = Array.isArray(source?.legs) && source.legs.length > 1 ? source.legs : null
+        return charge > 0 ? { base, service_charge: charge, percent: percent > 0 ? percent : null, ...(legs ? { legs } : {}) } : null
     }
 
     /* Nothing usable was offered. Fall back to the percentage in force, and say
