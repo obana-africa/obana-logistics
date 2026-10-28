@@ -539,6 +539,32 @@ class ApiClient {
     return response.data;
   }
 
+  /* Bookings in progress. A draft is a half-filled form kept as it was, so it
+     can be loaded straight back rather than rebuilt field by field. */
+  async listShipmentDrafts() {
+    const response = await this.client.get<ApiResponse>('/shipments/drafts');
+    return response.data;
+  }
+
+  async saveShipmentDraft(draft: { id?: number | string; label?: string; form: unknown }) {
+    const response = draft.id
+      ? await this.client.put<ApiResponse>(`/shipments/drafts/${draft.id}`, draft)
+      : await this.client.post<ApiResponse>('/shipments/drafts', draft);
+    return response.data;
+  }
+
+  async deleteShipmentDraft(id: number | string) {
+    const response = await this.client.delete<ApiResponse>(`/shipments/drafts/${id}`);
+    return response.data;
+  }
+
+  /* People this account has sent to before, so a booking does not start from
+     a blank page every time. */
+  async getRecentCustomers() {
+    const response = await this.client.get<ApiResponse>('/shipments/recent-customers');
+    return response.data;
+  }
+
   async getShipment(id: string) {
     const response = await this.client.get<ApiResponse>(`/shipments/track/${id}`);
     return response.data;

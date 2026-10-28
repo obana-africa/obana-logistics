@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import React, { useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Alert, Card, Button, Input } from '@/components/ui';
 import { apiClient, type SavedQuote } from '@/lib/api';
@@ -120,6 +120,16 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   const [typedAwb, setTypedAwb] = useState("");
   const [booksResult, setBooksResult] = useState<any>(null);
   const [matchedRoute, setMatchedRoute] = useState<any>(null);
+
+  /* An unfinished booking, and the people this account has sent to before.
+     Both exist for the same reason: filling this form in is work, and the
+     work was being thrown away — once by leaving the page, and once by
+     typing the same customer's details again next week. */
+  const [draftId, setDraftId] = useState<number | string | null>(null);
+  const [drafts, setDrafts] = useState<{ id: number; label: string; form: any; updated_at: string }[]>([]);
+  const [draftState, setDraftState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [showCustomers, setShowCustomers] = useState(false);
   // The price picked on step 2; null means the first (cheapest) one.
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [step, setStep] = useState<'details' | 'match' | 'confirm'>('details');
@@ -159,6 +169,54 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
      1 on this form, so this is the number of lines — two cartons read as two
      units, which is what a per-unit rate is asking about. */
   const totalUnits = formData.items.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0);
+
+  /* Loaded once, quietly. Neither is worth an error if it fails: a booking
+     can be made without a draft list and without a previous customer. */
+  useEffect(() => {
+    apiClient.listShipmentDrafts().then((r) => setDrafts(r?.data ?? [])).catch(() => {});
+    apiClient.getRecentCustomers().then((r) => setCustomers(r?.data ?? [])).catch(() => {});
+  }, []);
+
+  const saveDraft = async () => {
+    setDraftState('saving');
+    try {
+      const saved = await apiClient.saveShipmentDraft({ id: draftId ?? undefined, form: formData });
+      if (saved?.data?.id) setDraftId(saved.data.id);
+      setDrafts((prev) => {
+        const without = prev.filter((d) => d.id !== saved?.data?.id);
+        return saved?.data ? [saved.data, ...without] : prev;
+      });
+      setDraftState('saved');
+      setTimeout(() => setDraftState('idle'), 2500);
+    } catch (err: any) {
+      setDraftState('idle');
+      showError(err?.response?.data?.message || 'That draft could not be saved. Please try again.');
+    }
+  };
+
+  /* Continuing a draft restores the form and nothing else. The price is not
+     among it: a figure quoted a week ago is not a figure we can still honour,
+     so the route is matched again from the addresses that come back. */
+  const continueDraft = (draft: { id: number; form: any }) => {
+    setFormData({ ...emptyForm(), ...(draft.form ?? {}) });
+    setDraftId(draft.id);
+    setMatchedRoute(null);
+    setSelectedOptionId(null);
+    setStep('details');
+  };
+
+  const useCustomer = (c: any) => {
+    setFormData((prev) => ({
+      ...prev,
+      delivery_address: {
+        ...prev.delivery_address,
+        name: c.name || '', phone: c.phone || '', email: c.email || '',
+        line1: c.line1 || '', city: c.city || '', state: c.state || '',
+        country: c.country || '', countryCode: prev.delivery_address.countryCode,
+      },
+    }));
+    setShowCustomers(false);
+  };
 
   const quote = savedQuote.data;
   const quoteHolds = !!quote && !quote.expired && quote.status === 'quoted';
@@ -770,6 +828,31 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
         {step === 'details' && (
           <Card>
             <div className="space-y-8">
+              {/* Pick up where somebody left off. Only shown when there is
+                  something to pick up — an empty list is one more thing to
+                  read past on the way to a new booking. */}
+              {drafts.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                  <p className="font-semibold text-gray-900 text-sm">Continue a saved booking</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {drafts.slice(0, 6).map((d) => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => continueDraft(d)}
+                        className={`rounded-lg border px-3 py-1.5 text-sm ${
+                          draftId === d.id ? 'border-amber-500 bg-white font-semibold' : 'border-amber-200 bg-white/70 hover:bg-white'
+                        }`}
+                      >
+                        {d.label || 'Untitled draft'}
+                        <span className="ml-2 text-gray-500 text-xs">
+                          {new Date(d.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* Pickup Location */}
               <div className="border-2 border-blue-100 rounded-xl p-6 bg-linear-to-br from-blue-50 to-white">
                 <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
@@ -830,6 +913,40 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                   Delivery
                 </h3>
                 <p className="text-sm text-gray-600 mb-5">Where should we deliver the package?</p>
+
+                {/* Somebody this account has sent to before. The delivery
+                    address on a past shipment is the only record that is
+                    certainly right — it was typed, checked and delivered
+                    against — so it is the one worth offering back. */}
+                {customers.length > 0 && (
+                  <div className="mb-5">
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomers((v) => !v)}
+                      className="rounded-lg border border-green-300 bg-white px-3 py-1.5 font-medium text-green-800 text-sm hover:bg-green-50"
+                    >
+                      {showCustomers ? 'Hide previous customers' : 'Use a previous customer'}
+                    </button>
+                    {showCustomers && (
+                      <ul className="mt-2 max-h-56 divide-y overflow-y-auto rounded-lg border bg-white">
+                        {customers.map((c, i) => (
+                          <li key={`${c.phone}-${i}`}>
+                            <button
+                              type="button"
+                              onClick={() => useCustomer(c)}
+                              className="w-full px-3 py-2 text-left hover:bg-green-50"
+                            >
+                              <span className="block font-medium text-gray-900 text-sm">{c.name || c.phone}</span>
+                              <span className="block text-gray-500 text-xs">
+                                {[c.phone, [c.city, c.state].filter(Boolean).join(', '), c.country].filter(Boolean).join(' · ')}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
 
                 <div className="space-y-5">
                   <LocationInput
@@ -972,6 +1089,17 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
               >
                 See prices →
               </Button>
+              {/* Keep what has been typed without finishing. Deliberately not
+                  validated: a draft is a half-filled form, and refusing to
+                  save one until it is complete defeats the point of it. */}
+              <button
+                type="button"
+                onClick={saveDraft}
+                disabled={draftState === 'saving'}
+                className="w-full rounded-lg border border-gray-300 py-2.5 font-medium text-gray-700 text-sm hover:bg-gray-50 disabled:opacity-60"
+              >
+                {draftState === 'saving' ? 'Saving…' : draftState === 'saved' ? 'Saved — you can come back to this' : 'Save as draft'}
+              </button>
             </div>
           </Card>
         )}
