@@ -697,7 +697,14 @@ const driverSummary = (driver) => driver
  * template that does not say has no last mile — which is what every template
  * says today, so nothing changes until somebody fills it in.
  */
-const arrivalOf = (template) => {
+const arrivalOf = (template, asked = null) => {
+    /* What the person booking said, first. They are looking at the consignment
+       and know where it lands; the template's own arrival city is a default
+       for lanes that always land in the same place, not a rule that overrides
+       somebody who has told us otherwise for this shipment. */
+    const askedCity = String(asked?.city ?? '').trim()
+    if (askedCity) return { city: askedCity, state: String(asked?.state ?? '').trim() }
+
     const meta = template?.metadata ?? {}
     const city = String(meta.arrival_city ?? '').trim()
     if (!city) return null
@@ -752,7 +759,7 @@ const laneOptions = (routeTemplates, origin_state, origin_country, destination_s
            international option prices exactly as it does today. */
         const crossBorder = origin_country !== destination_country
         const lastMile = crossBorder
-            ? lastMileFor(routeTemplates, arrivalOf(template), destination_state, destination_country, weight, service.service_level)
+            ? lastMileFor(routeTemplates, arrivalOf(template, places?.arrival), destination_state, destination_country, weight, service.service_level)
             : null
 
         if (lastMile) {
@@ -904,6 +911,11 @@ const withUsdRate = async (results, deliveryAddress, requestPickup) => {
 
 const matchTemplate = async (req, res) => {
     let { transport_mode, service_level, delivery_address, items, weight, pickup_address } = req.body
+    /* Where the goods land before the last mile, as the booking states it.
+       Blank means one journey, exactly as before. */
+    const arrival = req.body.arrival_city
+        ? { city: String(req.body.arrival_city).trim(), state: String(req.body.arrival_state ?? '').trim() }
+        : null
     const parcel = req.body.parcel
     let shipmentResults = []
 
@@ -1013,7 +1025,8 @@ const matchTemplate = async (req, res) => {
                     : laneOptions(routeTemplates, originState, originCountry, destinationState, destinationCountry, groupWeight, {
                         originCountry: group.pickup_address?.country || originCountry,
                         destinationCountry: delivery_address?.country || destinationCountry,
-                        destinationCity: delivery_address?.city || delivery_address?.state || ''
+                        destinationCity: delivery_address?.city || delivery_address?.state || '',
+                        arrival: arrival || null
                     })
             })
         } else {
@@ -1274,7 +1287,9 @@ const quoteAddress = (place, countryCode) => ({
     zip: '100001'
 })
 
-const buildQuoteOptions = async ({ origin, destination, originCode, destCode, weight, declared }) => {
+/* `arrival` is where the goods land in the destination country, when the
+   person booking has said. It turns the last stretch into its own priced leg. */
+const buildQuoteOptions = async ({ origin, destination, originCode, destCode, weight, declared, arrival }) => {
     const options = []
 
     // 1. Obana fleet: one option per mode/service on this lane, from its best-fitting template (no Lagos fallback for quotes).
@@ -1284,7 +1299,8 @@ const buildQuoteOptions = async ({ origin, destination, originCode, destCode, we
     const places = {
         originCountry: origin.country || originCode,
         destinationCountry: destination.country || destCode,
-        destinationCity: destination.city || destination.state || ''
+        destinationCity: destination.city || destination.state || '',
+        arrival: arrival || null
     }
     for (const o of laneOptions(templates, origin.state, originCode, destination.state, destCode, weight, places)) {
         options.push({
@@ -1484,7 +1500,7 @@ const heldQuoteOption = (quote, { optionId, pickup, delivery, weight }) => {
 }
 
 /** Server-side price options for a pickup/delivery pair — used to price store shipments. */
-const quoteForAddresses = async ({ pickup, delivery, weight, declared = 0 }) => {
+const quoteForAddresses = async ({ pickup, delivery, weight, declared = 0, arrival = null }) => {
     const originCode = String(formatCountryCode(pickup.country_code || pickup.country)).toUpperCase()
     const destCode = String(formatCountryCode(delivery.country_code || delivery.country)).toUpperCase()
     return buildQuoteOptions({
@@ -1493,7 +1509,8 @@ const quoteForAddresses = async ({ pickup, delivery, weight, declared = 0 }) => 
         originCode,
         destCode,
         weight,
-        declared
+        declared,
+        arrival
     })
 }
 

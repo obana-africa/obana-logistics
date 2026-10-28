@@ -53,6 +53,10 @@ const emptyItem = () => ({ name: '', quantity: '1', weight: '', price: '' });
 const emptyForm = () => ({
   pickup_address: { line1: '', city: '', state: '', country: '', countryCode: '', stateCode: '', phone: '', contact_name: '' },
   delivery_address: { line1: '', city: '', state: '', country: '', countryCode: '', stateCode: '', phone: '', name: '', email: '' },
+  /* Where an international consignment lands before the last stretch inland.
+     Blank means one journey, which is every shipment until somebody says
+     otherwise. */
+  arrival: { city: '', state: '' },
   items: [emptyItem()],
 });
 
@@ -394,6 +398,10 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
     setLoading(true);
     try {
       const response = await apiClient.matchRoute({
+        /* So the last stretch inland is priced and quoted as its own leg
+           rather than being carried for free inside the crossing. */
+        arrival_city: crossBorder ? formData.arrival.city.trim() || undefined : undefined,
+        arrival_state: crossBorder ? formData.arrival.state.trim() || undefined : undefined,
         pickup_address: formData.pickup_address,
         delivery_address: deliveryAddress(),
         items: itemsPayload(),
@@ -866,6 +874,41 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                 </h3>
                 <p className="text-sm text-gray-600 mb-5">Where should we collect the package?</p>
 
+                {/* The second leg, stated here because here is where somebody
+                    knows it: the consignment clears somewhere, and then
+                    travels on. Only on a shipment that crosses a border —
+                    a domestic one has no crossing to separate from a last
+                    mile. Blank means one journey, as now. */}
+                {crossBorder && (
+                  <div className="mb-5 rounded-lg border border-green-200 bg-white/70 p-4">
+                    <p className="font-semibold text-gray-900 text-sm">Does it travel on inside {formData.delivery_address.country || 'the country'}?</p>
+                    <p className="mb-3 text-gray-600 text-xs">
+                      Name the city it lands in and the stretch from there to the delivery address is priced as its own
+                      leg, on its own line. Leave it blank and the shipment is quoted as one journey.
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Input
+                        label="Lands in (city)"
+                        placeholder="Ikeja"
+                        value={formData.arrival.city}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, arrival: { ...prev.arrival, city: e.target.value } }))}
+                      />
+                      <Input
+                        label="State"
+                        placeholder="Lagos"
+                        value={formData.arrival.state}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, arrival: { ...prev.arrival, state: e.target.value } }))}
+                      />
+                    </div>
+                    {formData.arrival.city && formData.delivery_address.city && (
+                      <p className="mt-2 text-green-800 text-xs">
+                        Two legs: {formData.pickup_address.country || 'origin'} → {formData.delivery_address.country || 'destination'},
+                        then {formData.arrival.city} → {formData.delivery_address.city}.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-5">
                   <LocationInput
                     label="Location"
@@ -1158,10 +1201,29 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                           number has to shrink to fit. */}
                       <span className="w-full shrink-0 text-left sm:w-auto sm:text-right">
                         <span className="block text-lg font-bold tabular-nums text-gray-900">{formatMoney(o.price, 'NGN')}</span>
-                        {!!o.service_charge && !!o.base_price && (
-                          <span className="mt-0.5 block text-xs text-gray-500 tabular-nums">
-                            {formatMoney(o.base_price, 'NGN')} delivery + {formatMoney(o.service_charge, 'NGN')} {chargeLabel(o)}
+                        {/* Two journeys are shown as two, here as well as on
+                            the invoice: this is the screen where the price is
+                            being chosen, and a single figure hides which half
+                            of the trip costs what. */}
+                        {o.legs && o.legs.length > 1 ? (
+                          <span className="mt-1 block space-y-0.5 text-xs text-gray-500 tabular-nums">
+                            {o.legs.map((leg, li) => (
+                              <span key={li} className="block">
+                                {leg.kind === 'local' ? 'Last mile' : 'International'} {[leg.from, leg.to].filter(Boolean).join(' → ')}
+                                {' — '}
+                                {formatMoney(Number(leg.base_price) || 0, 'NGN')}
+                              </span>
+                            ))}
+                            {!!o.service_charge && (
+                              <span className="block">+ {formatMoney(o.service_charge, 'NGN')} {chargeLabel(o)}</span>
+                            )}
                           </span>
+                        ) : (
+                          !!o.service_charge && !!o.base_price && (
+                            <span className="mt-0.5 block text-xs text-gray-500 tabular-nums">
+                              {formatMoney(o.base_price, 'NGN')} delivery + {formatMoney(o.service_charge, 'NGN')} {chargeLabel(o)}
+                            </span>
+                          )
                         )}
                       </span>
                     </label>
