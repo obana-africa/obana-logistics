@@ -616,7 +616,9 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
      nothing. One handling charge covers the two, since it is charged on the
      job and not on each leg. */
   const legLabel = (leg: NonNullable<PriceOption['legs']>[number]) => {
-    const what = leg.kind === 'local' ? 'Last mile (local)' : 'International shipment';
+    /* Same words as every other invoice. The route is appended; the
+       charge is not renamed. */
+    const what = leg.kind === 'local' ? 'Last mile (local)' : 'Total Freight Charge';
     const where = [leg.from, leg.to].filter(Boolean).join(' → ');
     return where ? `${what} · ${where}` : what;
   };
@@ -1229,7 +1231,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                           <span className="mt-1 block space-y-0.5 text-xs text-gray-500 tabular-nums">
                             {o.legs.map((leg, li) => (
                               <span key={li} className="block">
-                                {leg.kind === 'local' ? 'Last mile' : 'International'} {[leg.from, leg.to].filter(Boolean).join(' → ')}
+                                {leg.kind === 'local' ? 'Last mile' : 'Freight'} {[leg.from, leg.to].filter(Boolean).join(' → ')}
                                 {' — '}
                                 {formatMoney(Number(leg.base_price) || 0, 'NGN')}
                               </span>
@@ -1311,7 +1313,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                         {selected.legs.map((leg, li) => (
                           <span key={li} className="block">
                             <span className="mr-1 font-normal text-gray-500 text-xs">
-                              {leg.kind === 'local' ? 'Last mile' : 'International'}
+                              {leg.kind === 'local' ? 'Last mile' : 'Freight'}
                             </span>
                             {[leg.from, leg.to].filter(Boolean).join(' → ')}
                           </span>
