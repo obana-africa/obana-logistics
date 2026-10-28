@@ -719,6 +719,9 @@ const summaryPdfFields = (shipment, { summary, pickupAddress, deliveryAddress })
     reference: summary.reference,
     awbNumber: summary.awbNumber,
     route: summary.route,
+    /* Each leg by name, so the document breaks the journey up the way the
+       confirm screen does rather than flattening two shipments into one line. */
+    legs: summary.legs,
     service: summary.service,
     eta: summary.eta,
     weight: summary.weight,
