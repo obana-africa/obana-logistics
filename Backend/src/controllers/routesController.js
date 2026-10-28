@@ -762,6 +762,18 @@ const laneOptions = (routeTemplates, origin_state, origin_country, destination_s
             ? lastMileFor(routeTemplates, arrivalOf(template, places?.arrival), destination_state, destination_country, weight, service.service_level)
             : null
 
+        /* Asked for, and nothing to price it with. Said out loud rather than
+           quietly dropped: a second leg that simply fails to appear looks
+           exactly like a feature that does not work, and the cause — no
+           domestic route between those two places — is something an admin can
+           actually fix. */
+        if (!lastMile && crossBorder && places?.arrival?.city) {
+            options.unpricedLastMile = {
+                from: places.arrival.city,
+                to: places.destinationCity || destination_state,
+            }
+        }
+
         if (lastMile) {
             const carriage = base
             const home = Math.ceil(Number(lastMile.base_price ?? lastMile.price))
@@ -808,7 +820,9 @@ const laneOptions = (routeTemplates, origin_state, origin_country, destination_s
             preferred_driver: driverSummary(template.preferred_driver)
         })
     }
-    return options.sort((a, b) => a.price - b.price)
+    const sorted = options.sort((a, b) => a.price - b.price)
+    if (options.unpricedLastMile) sorted.unpricedLastMile = options.unpricedLastMile
+    return sorted
 }
 
 const normalizeItem = (item) => ({
@@ -1008,6 +1022,15 @@ const matchTemplate = async (req, res) => {
                 match.service_charge_percent = 0;
             }
             match.estimated_delivery = deliveryTimeRange(match.eta)
+            const laneChoices = match.is_fulfilment_centre_handling_fee
+                ? []
+                : laneOptions(routeTemplates, originState, originCountry, destinationState, destinationCountry, groupWeight, {
+                    originCountry: group.pickup_address?.country || originCountry,
+                    destinationCountry: delivery_address?.country || destinationCountry,
+                    destinationCity: delivery_address?.city || delivery_address?.state || '',
+                    arrival: arrival || null
+                })
+
             shipmentResults.push({
                 external: false,
                 pickup_address: group.pickup_address,
@@ -1020,14 +1043,9 @@ const matchTemplate = async (req, res) => {
                 preferred_driver: driverSummary(template.preferred_driver),
                 // Every service on this lane, cheapest first, for the customer to pick from
                 // (the Fulfilment Centre flat fee has just the one price).
-                options: match.is_fulfilment_centre_handling_fee
-                    ? []
-                    : laneOptions(routeTemplates, originState, originCountry, destinationState, destinationCountry, groupWeight, {
-                        originCountry: group.pickup_address?.country || originCountry,
-                        destinationCountry: delivery_address?.country || destinationCountry,
-                        destinationCity: delivery_address?.city || delivery_address?.state || '',
-                        arrival: arrival || null
-                    })
+                options: laneChoices,
+                /* Why the second leg is missing, when one was asked for. */
+                unpriced_last_mile: laneChoices.unpricedLastMile ?? null
             })
         } else {
             // If no internal match (exact or fallback), then it's an external or unmatchable route
