@@ -191,6 +191,36 @@ export function RouteFormSheet({
 							</span>
 						</label>
 					</div>
+
+					{/* Only where the route actually crosses a border. On a
+					    domestic lane there is no crossing to separate from a
+					    last mile, and the field would be one more box to
+					    wonder about. */}
+					{form.origin.countryCode && form.destination.countryCode && form.origin.countryCode !== form.destination.countryCode && (
+						<div className="mt-4 rounded-lg border bg-slate-50/60 p-3">
+							<p className="font-medium text-sm">Where the goods land</p>
+							<p className="mb-3 text-muted-foreground text-xs">
+								This route covers all of {form.destination.country || "the destination country"} at one price, so a
+								delivery far from where the freight arrives is not charged for that last stretch. Name the arrival
+								city and it becomes its own line on the invoice, priced from your domestic routes.
+								<span className="mt-1 block">Leave both blank and nothing changes — one freight charge, as now.</span>
+							</p>
+							<div className="grid gap-3 sm:grid-cols-2">
+								<Input
+									label="Arrival city"
+									placeholder="Ikeja"
+									value={form.arrivalCity}
+									onChange={(ev) => setForm((prev) => ({ ...prev, arrivalCity: ev.target.value }))}
+								/>
+								<Input
+									label="Arrival state"
+									placeholder="Lagos"
+									value={form.arrivalState}
+									onChange={(ev) => setForm((prev) => ({ ...prev, arrivalState: ev.target.value }))}
+								/>
+							</div>
+						</div>
+					)}
 				</Section>
 
 				<Section title="Service">
