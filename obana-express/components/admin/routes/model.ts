@@ -34,6 +34,17 @@ export interface RouteMetadata {
 	   true of the quote engine and not of any route anyone could create. */
 	origin_any_state?: boolean;
 	destination_any_state?: boolean;
+	/* Where freight on this lane lands before the last mile.
+	
+	   A cross-border route covers a whole country at one price, so Italy to
+	   Lagos and Italy to Port Harcourt quote the same figure and the run to
+	   Port Harcourt is not charged. Naming the arrival city turns that run
+	   into its own priced leg, from the domestic routes that already price it.
+	
+	   Left blank, the lane behaves exactly as it always has: one freight line,
+	   no last mile. */
+	arrival_city?: string;
+	arrival_state?: string;
 }
 
 export interface DriverSummary {
@@ -142,6 +153,9 @@ export interface BracketDraft {
 export interface RouteForm {
 	origin: Place;
 	destination: Place;
+	/** Cross-border lanes only: where the goods land before the last mile. */
+	arrivalCity: string;
+	arrivalState: string;
 	transport_mode: string;
 	service_level: string;
 	/** "" means no preferred driver. */
@@ -158,7 +172,7 @@ export const etaValue = (eta?: string | null) => (eta ?? "").replace(/\s*days?\s
 
 export function formFromRoute(route: RouteTemplate | null): RouteForm {
 	if (!route) {
-		return { origin: emptyPlace, destination: emptyPlace, transport_mode: "road", service_level: "Standard", preferred_driver_id: "", brackets: [newBracket("0")] };
+		return { origin: emptyPlace, destination: emptyPlace, arrivalCity: "", arrivalState: "", transport_mode: "road", service_level: "Standard", preferred_driver_id: "", brackets: [newBracket("0")] };
 	}
 	return {
 		origin: {
@@ -177,6 +191,8 @@ export function formFromRoute(route: RouteTemplate | null): RouteForm {
 			countryCode: route.metadata?.destination_country_code || "",
 			stateCode: route.metadata?.destination_state_code || "",
 		},
+		arrivalCity: route.metadata?.arrival_city || "",
+		arrivalState: route.metadata?.arrival_state || "",
 		transport_mode: route.transport_mode,
 		service_level: route.service_level,
 		preferred_driver_id: route.preferred_driver_id !== null && route.preferred_driver_id !== undefined ? String(route.preferred_driver_id) : "",
@@ -274,6 +290,10 @@ export function buildPayload(form: RouteForm) {
 			destination_state_code: form.destination.stateCode,
 			origin_any_state: form.origin.anyState || undefined,
 			destination_any_state: form.destination.anyState || undefined,
+			/* Blank means no last mile, so an empty box leaves the lane as it
+			   was rather than writing an empty string nobody can match on. */
+			arrival_city: form.arrivalCity.trim() || undefined,
+			arrival_state: form.arrivalState.trim() || undefined,
 		},
 		preferred_driver_id: form.preferred_driver_id || null,
 	};
