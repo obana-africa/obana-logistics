@@ -418,23 +418,33 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
                  * variable cannot be empty and a division by zero is not a
                  * price. */
                 if (intlV2Template) {
-                    /* A variable may not be empty, so anything the summary
-                       leaves out falls back to a sentence rather than a blank:
-                       a single-item shipment has no per-unit rate, and a
-                       shipment nobody has given a window yet has no dates. */
-                    const perKg = summary.ratePerKg ? `${summary.ratePerKg.plain}/kg` : waMoney(currency, delivery);
-                    const perUnit = summary.ratePerUnit ? `${summary.ratePerUnit.plain}/unit` : perKg;
+                    /* A variable may not be empty, so every one of these has
+                       something to say even when the shipment does not. A
+                       one-leg shipment has no last mile, and "Not applicable"
+                       is the honest word for that — leaving it blank would be
+                       refused by the gateway and leaving it zero would read as
+                       a charge of nothing. */
+                    const crossing = summary.legs?.find((l) => l.kind !== 'local');
+                    const homeRun = summary.legs?.find((l) => l.kind === 'local');
+                    const saidAs = (leg, fallback) =>
+                        leg ? `${leg.plain} ${[leg.from, leg.to].filter(Boolean).join(' to ')}` : fallback;
+
                     intlV2Parameters = [
-                        customerName,                               // {{1}}
-                        summary.from || waPlace(pickup, 'the pickup address'),    // {{2}}
-                        summary.to || waPlace(address, 'the delivery address'),   // {{3}}
-                        summary.weight,                             // {{4}}
-                        perKg,                                      // {{5}}
-                        perUnit,                                    // {{6}}
-                        summary.awbNumber || 'AWB not available',   // {{7}}
-                        summary.eta || 'To be confirmed',           // {{8}}
-                        freightSaid,                                // {{9}}
-                        summary.serviceCharge?.plain ?? waMoney(currency, charge),      // {{10}}
+                        customerName,                                           // {{1}}
+                        /* waPlace, not the summary's own route string. The
+                           gateway replaces a comma with a space, so "Milan,
+                           Lombardy (Italy)" would arrive as "Milan Lombardy
+                           (Italy)". waPlace gives "Milan (Italy)", which is
+                           what that strip was written to avoid mangling. */
+                        waPlace(pickup, 'the pickup address'),                  // {{2}}
+                        waPlace(address, 'the delivery address'),               // {{3}}
+                        summary.weight,                                         // {{4}}
+                        summary.ratePerKg ? `${summary.ratePerKg.plain}/kg` : waMoney(currency, delivery), // {{5}}
+                        summary.awbNumber || 'AWB not available',               // {{6}}
+                        summary.eta || 'To be confirmed',                       // {{7}}
+                        saidAs(crossing, waMoney(currency, delivery)),          // {{8}}  freight
+                        saidAs(homeRun, 'Not applicable'),                      // {{9}}  last mile
+                        summary.serviceCharge?.plain ?? waMoney(currency, charge),       // {{10}}
                         summary.total?.plain ?? waMoney(currency, shipment.shipping_fee) // {{11}}
                     ];
                 }
@@ -446,10 +456,10 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
         //   {{1}} Name {{2}} From {{3}} To {{4}} Weight {{5}} AWB
         //   {{6}} Delivery {{7}} Service charge {{8}} Total, and a second button.
         // And when KUDISMS_WA_CREATED_INTL_V2_TEMPLATE is set, the same with the
-        // rates and the transit window:
+        // rate, the arrival window and the two journeys apart:
         //   {{1}} Name {{2}} From {{3}} To {{4}} Weight {{5}} Rate per kg
-        //   {{6}} Rate per unit {{7}} AWB {{8}} Transit window
-        //   {{9}} Delivery {{10}} Service charge {{11}} Total.
+        //   {{6}} AWB {{7}} Estimated arrival {{8}} Freight {{9}} Last mile
+        //   {{10}} Handling/Service Charge {{11}} Total, and a second button.
         const customerTemplate = intlV2Parameters
             ? intlV2Template
             : intlParameters
