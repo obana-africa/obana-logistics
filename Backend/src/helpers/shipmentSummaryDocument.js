@@ -35,7 +35,24 @@ const PURPLE = '#9333ea'       /* purple-600 — items */
 const ITEMS_WASH = '#fcfaff'   /* purple-50/30 — the items card */
 
 /* The footer, as Obana writes it. */
-const TAGLINE = 'www.obana.africa — One Platform Powering your Business. Marketplace | Financing | Logistics | Thaja'
+/* The footer, as Obana writes it — and each thing it names is a link, so a
+   customer holding the document can reach the one they need without typing
+   anything. Thaja says what it is in brackets: the name on its own tells a
+   first-time reader nothing. */
+const FOOTER = [
+    { text: 'www.obana.africa', url: 'https://obana.africa' },
+    { text: ' \u2014 One Platform Powering your Business. ' },
+    { text: 'Marketplace', url: 'https://shop.obana.africa' },
+    { text: ' | ' },
+    { text: 'Financing', url: 'https://obana.africa/obana-pss' },
+    { text: ' | ' },
+    { text: 'Logistics', url: 'https://logistics.obana.africa' },
+    { text: ' | ' },
+    { text: 'Thaja (POS/Webshop)', url: 'https://taja.obana.africa' }
+]
+
+/** The same line as plain words, for anywhere that cannot carry a link. */
+const TAGLINE = FOOTER.map((part) => part.text).join('')
 
 /* Where payment goes. On every summary, which is the point of a payment
    footer; overridable per environment only if that ever has to differ. */
@@ -450,8 +467,19 @@ const buildShipmentSummaryPdf = (summary) =>
                 doc.font('Helvetica-Bold').fillColor(INK).text(`${account.number}  (${account.currency})`, x, doc.y, { width: 244 })
             })
 
-            doc.font('Helvetica').fontSize(8).fillColor(MUTED)
-            doc.text(TAGLINE, 48, 782, { width: 499, align: 'center' })
+            /* Laid out a piece at a time rather than as one centred string:
+               a link has to be given the box it occupies, and that means
+               knowing where each word starts. Widths are measured first so the
+               whole line still sits in the middle of the page. */
+            doc.font('Helvetica').fontSize(8)
+            const widths = FOOTER.map((part) => doc.widthOfString(printable(part.text)))
+            let fx = 48 + (499 - widths.reduce((a, b) => a + b, 0)) / 2
+            FOOTER.forEach((part, i) => {
+                const text = printable(part.text)
+                doc.fillColor(part.url ? NAVY : MUTED)
+                doc.text(text, fx, 782, { lineBreak: false, link: part.url || null, underline: Boolean(part.url) })
+                fx += widths[i]
+            })
 
             doc.end()
         } catch (error) {
@@ -459,4 +487,4 @@ const buildShipmentSummaryPdf = (summary) =>
         }
     })
 
-module.exports = { buildShipmentSummaryPdf, money, placeLines, ACCOUNTS, TAGLINE }
+module.exports = { buildShipmentSummaryPdf, money, placeLines, ACCOUNTS, TAGLINE, FOOTER }

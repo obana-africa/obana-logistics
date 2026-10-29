@@ -11,9 +11,21 @@
  * Nothing here is sent anywhere. The window is built, printed and closed.
  */
 
-/* The footer, as Obana writes it. */
-const TAGLINE =
-	"www.obana.africa — One Platform Powering your Business. Marketplace | Financing | Logistics | Thaja";
+/* The footer, as Obana writes it — and each thing it names is a link, so a
+   customer holding the document can reach the one they need without typing
+   anything. Thaja says what it is in brackets: the name on its own tells a
+   first-time reader nothing. */
+const FOOTER: { text: string; url?: string }[] = [
+	{ text: "www.obana.africa", url: "https://obana.africa" },
+	{ text: " \u2014 One Platform Powering your Business. " },
+	{ text: "Marketplace", url: "https://shop.obana.africa" },
+	{ text: " | " },
+	{ text: "Financing", url: "https://obana.africa/obana-pss" },
+	{ text: " | " },
+	{ text: "Logistics", url: "https://logistics.obana.africa" },
+	{ text: " | " },
+	{ text: "Thaja (POS/Webshop)", url: "https://taja.obana.africa" },
+];
 
 /* Where payment goes. The same two accounts the issued summary carries. */
 const ACCOUNTS = [
@@ -155,6 +167,9 @@ const documentHtml = (s: ShipmentSummary) => `<!doctype html>
   footer p.strong { font-weight: 700; color: #111827; }
   footer .small { margin-top: 10px; font-size: 10px; color: #6b7280; }
   footer .tagline { display: block; margin-top: 8px; text-align: center; font-size: 10px; color: #6b7280; }
+  /* Printed links keep their colour and underline — on paper that is the only
+     thing saying they can be tapped. */
+  footer .tagline a { color: #1b3b5f; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -213,7 +228,9 @@ const documentHtml = (s: ShipmentSummary) => `<!doctype html>
 		).join("")}
     </div>
     <p class="small">Customs duties and clearance charges at the destination are not included unless stated above.</p>
-    <span class="tagline">${esc(TAGLINE)}</span>
+    <span class="tagline">${FOOTER.map((part) =>
+			part.url ? `<a href="${esc(part.url)}">${esc(part.text)}</a>` : esc(part.text),
+		).join("")}</span>
   </footer>
 </body>
 </html>`;
