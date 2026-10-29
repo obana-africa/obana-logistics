@@ -42,13 +42,13 @@ const ITEMS_WASH = '#fcfaff'   /* purple-50/30 — the items card */
 const FOOTER = [
     { text: 'www.obana.africa', url: 'https://obana.africa' },
     { text: ' \u2014 One Platform Powering your Business. ' },
-    { text: 'Marketplace', url: 'https://shop.obana.africa' },
+    { text: 'Marketplace', url: 'https://marketplace.obana.africa' },
     { text: ' | ' },
-    { text: 'Financing', url: 'https://obana.africa/obana-pss' },
+    { text: 'Financing', url: 'https://marketplace.obana.africa/obana-pss' },
     { text: ' | ' },
     { text: 'Logistics', url: 'https://logistics.obana.africa' },
     { text: ' | ' },
-    { text: 'Thaja (POS/Webshop)', url: 'https://taja.obana.africa' }
+    { text: 'Thaja (POS/Webshop)', url: 'https://thaja.africa' }
 ]
 
 /** The same line as plain words, for anywhere that cannot carry a link. */
