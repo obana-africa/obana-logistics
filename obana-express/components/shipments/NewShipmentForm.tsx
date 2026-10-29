@@ -515,6 +515,9 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
          domestic hop on a shipment crossing two borders, and the customs line
          at the foot only makes sense once the route says otherwise. */
       route: `${placeName(formData.pickup_address)} → ${placeName(formData.delivery_address)}`,
+      /* And the legs, where the journey is priced as two. The document writes
+         them out the way the card above does. */
+      legs: selected?.legs ?? null,
       service: serviceLabel(selected),
       eta: selected.estimated_delivery || selected.eta || null,
       pieces: totalUnits > 0 ? String(totalUnits) : null,

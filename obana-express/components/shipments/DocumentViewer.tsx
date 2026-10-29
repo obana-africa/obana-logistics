@@ -3,7 +3,7 @@
 import { Download, X } from "lucide-react";
 import { lockScroll } from "@/lib/scrollLock";
 import { useEffect, useState } from "react";
-import { type ShipmentDocument, downloadUrl, isPdf, previewUrl } from "@/lib/shipmentDocuments";
+import { type ShipmentDocument, documentLink, isPdf, previewUrl } from "@/lib/shipmentDocuments";
 
 /**
  * A photograph, opened where it was listed.
@@ -14,7 +14,16 @@ import { type ShipmentDocument, downloadUrl, isPdf, previewUrl } from "@/lib/shi
  * page and closes again. A PDF still opens in its own tab, because that is
  * where a browser reads one properly.
  */
-export function DocumentViewer({ doc, onClose }: { doc: ShipmentDocument; onClose: () => void }) {
+export function DocumentViewer({
+	doc,
+	reference,
+	onClose,
+}: {
+	doc: ShipmentDocument;
+	/* Which shipment this hangs off: the API keys a document link on it. */
+	reference?: string | null;
+	onClose: () => void;
+}) {
 	/* Set when the picture itself will not load — a file type the account does
 	   not serve, a link that has expired. Better to say so and offer the file
 	   than leave a broken-image mark on a black screen. */
@@ -50,10 +59,10 @@ export function DocumentViewer({ doc, onClose }: { doc: ShipmentDocument; onClos
 					)}
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
-					{/* Saved rather than opened: the download attribute is ignored
-					    across origins, so the link carries fl_attachment instead. */}
+					{/* Both links go through the API, which signs them. The stored
+					    Cloudinary link answers 401 for a PDF. */}
 					<a
-						href={downloadUrl(doc.url)}
+						href={documentLink(doc, reference)}
 						download={doc.name}
 						onClick={(e) => e.stopPropagation()}
 						className="inline-flex items-center gap-1.5 rounded-lg border border-white/30 px-3 py-1.5 font-medium text-xs transition-colors hover:bg-white/10"
@@ -63,7 +72,7 @@ export function DocumentViewer({ doc, onClose }: { doc: ShipmentDocument; onClos
 					</a>
 					{/* The full file, for printing or sending on. */}
 					<a
-						href={doc.url}
+						href={documentLink(doc, reference, { inline: true })}
 						target="_blank"
 						rel="noopener noreferrer"
 						onClick={(e) => e.stopPropagation()}
@@ -92,7 +101,7 @@ export function DocumentViewer({ doc, onClose }: { doc: ShipmentDocument; onClos
 				>
 					<p className="text-sm text-white/80">This one cannot be shown here.</p>
 					<a
-						href={downloadUrl(doc.url)}
+						href={documentLink(doc, reference)}
 						download={doc.name}
 						className="inline-flex items-center gap-1.5 rounded-lg bg-white px-4 py-2 font-semibold text-slate-900 text-sm"
 					>

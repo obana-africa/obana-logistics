@@ -6,7 +6,7 @@ import {
 	type ShipmentDocument,
 	canPreview,
 	documentDate,
-	downloadUrl,
+	documentLink,
 	thumbUrl,
 } from "@/lib/shipmentDocuments";
 import { DocumentViewer } from "./DocumentViewer";
@@ -26,9 +26,12 @@ import { DocumentViewer } from "./DocumentViewer";
  */
 export function PublicDocuments({
 	documents,
+	reference,
 	className = "",
 }: {
 	documents?: ShipmentDocument[] | null;
+	/* The shipment these hang off. Document links are keyed on it. */
+	reference?: string | null;
 	className?: string;
 }) {
 	const [viewing, setViewing] = useState<ShipmentDocument | null>(null);
@@ -60,7 +63,7 @@ export function PublicDocuments({
 								</button>
 							) : (
 								<a
-									href={d.url}
+									href={documentLink(d, reference, { inline: true })}
 									target="_blank"
 									rel="noopener noreferrer"
 									className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-slate-50 transition-colors hover:bg-slate-100"
@@ -85,7 +88,7 @@ export function PublicDocuments({
 									</button>
 								) : (
 									<a
-										href={d.url}
+										href={documentLink(d, reference, { inline: true })}
 										target="_blank"
 										rel="noopener noreferrer"
 										className="block truncate font-medium text-slate-900 text-sm hover:underline"
@@ -102,7 +105,7 @@ export function PublicDocuments({
 							{/* Saved, not opened — fl_attachment, because the download
 							    attribute does nothing across origins. */}
 							<a
-								href={downloadUrl(d.url)}
+								href={documentLink(d, reference)}
 								download={d.name}
 								onClick={(e) => e.stopPropagation()}
 								aria-label={`Download ${d.name}`}
@@ -116,7 +119,7 @@ export function PublicDocuments({
 				})}
 			</ul>
 
-			{viewing && <DocumentViewer doc={viewing} onClose={() => setViewing(null)} />}
+			{viewing && <DocumentViewer doc={viewing} reference={reference} onClose={() => setViewing(null)} />}
 		</div>
 	);
 }

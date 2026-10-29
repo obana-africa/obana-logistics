@@ -270,6 +270,7 @@ export default function AdminShipmentDetailPage() {
 						<AwbNumber shipmentId={s.id} initial={(s as { awb_number?: string | null }).awb_number} />
 						<ShipmentDocuments
 							shipmentId={s.id}
+							reference={s.shipment_reference}
 							initial={(s as { documents?: ShipmentDocument[] }).documents}
 						/>
 						<Panel title="Tracking history" flush>

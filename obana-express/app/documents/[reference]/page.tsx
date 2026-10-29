@@ -101,7 +101,7 @@ export default function ShipmentDocumentsPage({ params }: { params: Promise<{ re
 								Status: <span className="font-semibold text-slate-900">{state.shipment.display_status}</span>
 							</p>
 						)}
-						<PublicDocuments documents={state.shipment.documents} />
+						<PublicDocuments documents={state.shipment.documents} reference={state.shipment.shipment_reference} />
 						{(state.shipment.documents ?? []).length === 0 && (
 							<p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-slate-500 text-sm">
 								Nothing has been attached to this shipment yet.

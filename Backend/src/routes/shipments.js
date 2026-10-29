@@ -25,6 +25,11 @@ router.get('/recent-customers', auth.authenticateToken, drafts.recentCustomers);
 // Public, unauthenticated tracking (used by the home-page tracking modal / emailed links)
 router.get('/public/track/:shipment_reference', controller.publicTrackShipment);
 
+/* One document on a shipment, for whoever has the reference — the WhatsApp
+   message carries nothing else. Redirects to a link Cloudinary will serve;
+   ?inline=1 opens it instead of saving it. */
+router.get('/public/documents/:shipment_reference/:document_id', controller.publicShipmentDocument);
+
 router.get('/track/:shipment_reference', auth.authenticateToken, controller.getShipment);
     
     

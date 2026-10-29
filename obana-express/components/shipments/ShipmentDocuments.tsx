@@ -10,7 +10,7 @@ import {
 	asDataUrl,
 	documentDate,
 	canPreview,
-	downloadUrl,
+	documentLink,
 	overSize,
 	thumbUrl,
 	uploadFailureReason,
@@ -45,10 +45,14 @@ const asDocs = (value: unknown) => (Array.isArray(value) ? (value as ShipmentDoc
 
 export function ShipmentDocuments({
 	shipmentId,
+	reference,
 	initial,
 	canEdit = true,
 }: {
 	shipmentId: string | number;
+	/* The shipment's reference. Document links are keyed on it, because the
+	   route that signs them is the public one a customer uses too. */
+	reference?: string | null;
 	/** What the shipment already came with, so the panel fills without a second call. */
 	initial?: ShipmentDocument[];
 	canEdit?: boolean;
@@ -162,7 +166,7 @@ export function ShipmentDocuments({
 									</button>
 								) : (
 									<a
-										href={d.url}
+										href={documentLink(d, reference, { inline: true })}
 										target="_blank"
 										rel="noopener noreferrer"
 										className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border bg-muted/50 transition-colors hover:bg-muted"
@@ -185,7 +189,7 @@ export function ShipmentDocuments({
 										</button>
 									) : (
 										<a
-											href={d.url}
+											href={documentLink(d, reference, { inline: true })}
 											target="_blank"
 											rel="noopener noreferrer"
 											className="block truncate font-medium text-sm hover:underline"
@@ -200,7 +204,7 @@ export function ShipmentDocuments({
 									)}
 								</div>
 								<a
-									href={downloadUrl(d.url)}
+									href={documentLink(d, reference)}
 									download={d.name}
 									aria-label={`Download ${d.name}`}
 									title="Download"
@@ -274,7 +278,7 @@ export function ShipmentDocuments({
 
 			{error && <p className="mt-2 text-rose-600 text-sm">{error}</p>}
 
-			{viewing && <DocumentViewer doc={viewing} onClose={() => setViewing(null)} />}
+			{viewing && <DocumentViewer doc={viewing} reference={reference} onClose={() => setViewing(null)} />}
 		</section>
 	);
 }
