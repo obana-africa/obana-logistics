@@ -2833,6 +2833,29 @@ const shipmentController = {
                 return sorry(404, 'That document is no longer attached to this shipment.');
             }
 
+            /* Our own summary is rebuilt rather than fetched.
+            
+               The copy stored at booking was drawn by whatever the code looked
+               like that day: shipments booked before the document was redesigned
+               still have the old receipt sitting in Cloudinary, with none of the
+               links in its footer, and that is the copy a customer taps through
+               to from a WhatsApp message they received weeks ago. Building it
+               again from the shipment costs a moment and means everybody has the
+               current document, with the current figures on it. Only ours —
+               somebody else's uploaded waybill is handed over as it is. */
+            const ours = document.kind === SUMMARY_KIND || document.generated === true;
+            if (ours) {
+                const pdf = await buildShipmentSummaryPdf(summaryPdfFields(shipment, await summaryFor(shipment)));
+                const filename = `Shipment summary ${shipment.shipment_reference}.pdf`.replace(/["\\]/g, '');
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Content-Length', pdf.length);
+                res.setHeader(
+                    'Content-Disposition',
+                    `${req.query.inline === '1' ? 'inline' : 'attachment'}; filename="${filename}"`
+                );
+                return res.status(200).end(pdf);
+            }
+
             const link = await deliverableUrl(document.url, { attachment: req.query.inline !== '1' });
             if (!link) {
                 console.error(`[DOCUMENT] Nothing serves ${document.url} on ${reference}`);
