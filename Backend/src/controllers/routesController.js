@@ -613,6 +613,8 @@ const laneTemplates = (routeTemplates, origin_state, origin_country, destination
  * between jobs can be given with the booking:
  *
  *   rate_per_kg      what a kilo costs on the crossing, in its own currency
+ *   freight          or the crossing as one amount, when the job was quoted
+ *                    as a job rather than by the kilo
  *   last_mile        the inland leg, as an amount rather than a rate
  *   handling_percent Obana's charge on top
  *
@@ -639,6 +641,9 @@ const readPricingOverrides = (body = {}) => {
     const raw = body.pricing && typeof body.pricing === 'object' ? body.pricing : {}
 
     const ratePerKg = positiveAmount(raw.rate_per_kg, PRICING_LIMITS.maxRatePerKg)
+    /* Either way of saying it. A rate wins if both arrive, because it is the
+       more specific of the two and the weight is known. */
+    const freight = positiveAmount(raw.freight, PRICING_LIMITS.maxLastMile)
     /* A rate without a currency is ambiguous, and guessing naira for a figure
        meant in euros is wrong by three orders of magnitude. */
     const rateCurrency = String(raw.rate_currency || 'NGN').trim().toUpperCase()
@@ -650,6 +655,7 @@ const readPricingOverrides = (body = {}) => {
 
     return {
         ratePerKg: ratePerKg && currencyOk ? ratePerKg : null,
+        freight: ratePerKg && currencyOk ? null : freight,
         rateCurrency: ratePerKg && currencyOk ? rateCurrency : null,
         lastMile: positiveAmount(raw.last_mile, PRICING_LIMITS.maxLastMile),
         /* Zero is a real answer here — "charge nothing" — so it is kept, while
@@ -663,7 +669,7 @@ const readPricingOverrides = (body = {}) => {
 
 /** True when anything was actually given. */
 const hasPricingOverrides = (o) =>
-    Boolean(o && (o.ratePerKg !== null || o.lastMile !== null || o.handlingPercent !== null))
+    Boolean(o && (o.ratePerKg !== null || o.freight !== null || o.lastMile !== null || o.handlingPercent !== null))
 const perKiloPrice = async (template, weight) => {
     const meta = template?.metadata ?? {}
     const rate = Number(meta.price_per_kg)
@@ -904,6 +910,10 @@ const laneOptions = async (routeTemplates, origin_state, origin_country, destina
             match.service_charge_percent = overrides.handlingPercent
         }
         const byKilo = typedRate || await perKiloPrice(template, weight)
+        /* Quoted as a job: the amount is the crossing, whatever it weighs. */
+        if (!typedRate && overrides?.freight) {
+            match.base_price = Math.ceil(Number(overrides.freight))
+        }
         if (byKilo) {
             const kobo = (v) => Math.round(v * 100) / 100
             match.base_price = Math.ceil(kobo(byKilo.base))

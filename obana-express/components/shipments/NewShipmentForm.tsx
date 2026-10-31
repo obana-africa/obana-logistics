@@ -126,6 +126,23 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   const [booksResult, setBooksResult] = useState<any>(null);
   const [matchedRoute, setMatchedRoute] = useState<any>(null);
 
+  /* Prices set for this job, instead of the ones the lane holds.
+
+     Finding the right route template and editing it takes longer than the
+     booking does, so the figures that move between jobs are typed here. Blank
+     means "use the lane's", which is what every booking did before this. The
+     crossing can be given either way — by the kilo, or as one amount — because
+     a job is sometimes quoted one way and sometimes the other. */
+  const [pricing, setPricing] = useState({
+    mode: 'kg' as 'kg' | 'flat',
+    rate_per_kg: '',
+    rate_currency: 'EUR',
+    freight: '',
+    last_mile: '',
+    handling_percent: '',
+  });
+  const setPrice = (k: string, v: string) => setPricing((p) => ({ ...p, [k]: v }));
+
   /* An unfinished booking, and the people this account has sent to before.
      Both exist for the same reason: filling this form in is work, and the
      work was being thrown away — once by leaving the page, and once by
@@ -415,6 +432,15 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
         delivery_address: deliveryAddress(),
         items: itemsPayload(),
         weight: shipmentWeight,
+        /* Only what was filled in. An empty box is not an instruction to
+           charge nothing — it means the lane decides, as it always has. */
+        pricing: {
+          rate_per_kg: pricing.mode === 'kg' ? pricing.rate_per_kg.trim() || undefined : undefined,
+          rate_currency: pricing.mode === 'kg' && pricing.rate_per_kg.trim() ? pricing.rate_currency : undefined,
+          freight: pricing.mode === 'flat' ? pricing.freight.trim() || undefined : undefined,
+          last_mile: pricing.last_mile.trim() || undefined,
+          handling_percent: pricing.handling_percent.trim() || undefined,
+        },
       });
       const matched = Array.isArray(response.data) ? response.data[0] : response.data;
       if (matched) {
@@ -1188,6 +1214,126 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
             </div>
 
             <div className="space-y-6">
+              {/* Set the price for this job.
+
+                  The lane's own figures are used for anything left blank, so a
+                  booking that touches nothing behaves exactly as it did before
+                  this existed. Changing a figure re-quotes, so the options
+                  below always show what is actually being charged. */}
+              <details className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+                  Set your own price for this shipment
+                  <span className="ml-2 font-normal text-slate-500">optional</span>
+                </summary>
+
+                <div className="mt-4 space-y-4">
+                  <div className="flex gap-4 text-sm">
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="radio"
+                        name="pricing-mode"
+                        checked={pricing.mode === 'kg'}
+                        onChange={() => setPrice('mode', 'kg')}
+                      />
+                      By the kilo
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="radio"
+                        name="pricing-mode"
+                        checked={pricing.mode === 'flat'}
+                        onChange={() => setPrice('mode', 'flat')}
+                      />
+                      One amount
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {pricing.mode === 'kg' ? (
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                          Rate per kg — the crossing
+                        </label>
+                        <div className="flex gap-2">
+                          <select
+                            aria-label="Currency"
+                            value={pricing.rate_currency}
+                            onChange={(e) => setPrice('rate_currency', e.target.value)}
+                            className="w-24 rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                          >
+                            {['EUR', 'USD', 'GBP', 'NGN', 'CNY'].map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                          <input
+                            inputMode="decimal"
+                            placeholder="10.09"
+                            value={pricing.rate_per_kg}
+                            onChange={(e) => setPrice('rate_per_kg', e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          />
+                        </div>
+                        {pricing.rate_per_kg.trim() && shipmentWeight > 0 && (
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            × {shipmentWeight.toFixed(2)} kg ={' '}
+                            {pricing.rate_currency}{' '}
+                            {(parseFloat(pricing.rate_per_kg.replace(/,/g, '')) * shipmentWeight || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                          Freight — the crossing, as one amount (NGN)
+                        </label>
+                        <input
+                          inputMode="decimal"
+                          placeholder="3,711,787"
+                          value={pricing.freight}
+                          onChange={(e) => setPrice('freight', e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">
+                        Last mile — inland (NGN)
+                      </label>
+                      <input
+                        inputMode="decimal"
+                        placeholder="585,000"
+                        value={pricing.last_mile}
+                        onChange={(e) => setPrice('last_mile', e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">
+                        Handling charge (%)
+                      </label>
+                      <input
+                        inputMode="decimal"
+                        placeholder="5"
+                        value={pricing.handling_percent}
+                        onChange={(e) => setPrice('handling_percent', e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Button onClick={handleMatchRoute} loading={loading} variant="secondary">
+                      Apply and re-quote
+                    </Button>
+                    <span className="text-[11px] text-slate-500">
+                      Anything left blank keeps this route&apos;s own price.
+                    </span>
+                  </div>
+                </div>
+              </details>
+
               <fieldset className="space-y-3">
                 <legend className="sr-only">Delivery options</legend>
                 {priceOptions.map((o, i) => {

@@ -14,7 +14,7 @@ const { readPricingOverrides, hasPricingOverrides } = eval(
 
 test('nothing typed in leaves the lane in charge', () => {
     const o = readPricingOverrides({});
-    assert.deepEqual(o, { ratePerKg: null, rateCurrency: null, lastMile: null, handlingPercent: null });
+    assert.deepEqual(o, { ratePerKg: null, rateCurrency: null, freight: null, lastMile: null, handlingPercent: null });
     assert.equal(hasPricingOverrides(o), false);
 });
 
@@ -67,4 +67,31 @@ test('one figure can be given without the others', () => {
     assert.equal(o.handlingPercent, 5);
     assert.equal(o.ratePerKg, null);
     assert.equal(o.lastMile, null);
+});
+
+/* ── priced as a job, rather than by the kilo ───────────────────────────── */
+
+test('a flat freight amount is accepted on its own', () => {
+    const o = readPricingOverrides({ pricing: { freight: 3711787, last_mile: 585000 } });
+    assert.equal(o.freight, 3711787);
+    assert.equal(o.ratePerKg, null);
+    assert.equal(o.lastMile, 585000);
+    assert.equal(hasPricingOverrides(o), true);
+});
+
+test('a rate wins over an amount when both are given', () => {
+    const o = readPricingOverrides({ pricing: { rate_per_kg: 10.09, rate_currency: 'EUR', freight: 999999 } });
+    assert.equal(o.ratePerKg, 10.09);
+    assert.equal(o.freight, null);
+});
+
+test('a rate refused for a bad currency does not let the amount through by accident', () => {
+    const o = readPricingOverrides({ pricing: { rate_per_kg: 11, rate_currency: 'EUROS', freight: 3711787 } });
+    assert.equal(o.ratePerKg, null);
+    assert.equal(o.freight, 3711787);
+});
+
+test('the rate agreed for Oilclyde, to the kobo', () => {
+    assert.equal(readPricingOverrides({ pricing: { rate_per_kg: '10.09', rate_currency: 'eur' } }).ratePerKg, 10.09);
+    assert.equal(readPricingOverrides({ pricing: { rate_per_kg: '10.09', rate_currency: 'eur' } }).rateCurrency, 'EUR');
 });
