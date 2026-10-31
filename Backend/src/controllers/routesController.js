@@ -1151,6 +1151,29 @@ const withUsdRate = async (results, deliveryAddress, requestPickup) => {
     return results.map((r) => ({ ...r, base_currency: code, naira_per_base: nairaPerUnit }))
 }
 
+/**
+ * What one unit of a currency is worth in naira, for the route form.
+ *
+ * A lane can be priced in euros while its weight brackets are in naira, and
+ * until the browser can convert, the two sit on the same screen disagreeing:
+ * EUR 10.09/kg beside a bracket reading NGN 8,807.25/kg, with no way to tell
+ * that the first overrides the second. Same source as the quote engine, so a
+ * bracket written here is the figure that lane will actually charge.
+ */
+const currencyRate = async (req, res) => {
+    const code = String(req.query.currency || '').trim().toUpperCase()
+    if (!/^[A-Z]{3}$/.test(code)) {
+        return res.status(400).send(utils.responseError('Give a three-letter currency code, e.g. EUR'))
+    }
+    const nairaPerUnit = await nairaPer(code)
+    if (!(nairaPerUnit > 0)) {
+        /* No rate today rather than a wrong one. The form keeps the figures
+           it has and says the conversion is unavailable. */
+        return res.status(503).send(utils.responseError(`No ${code} rate is available right now`, 503))
+    }
+    return res.send({ status: true, data: { currency: code, naira_per_unit: nairaPerUnit } })
+}
+
 const matchTemplate = async (req, res) => {
     let { transport_mode, service_level, delivery_address, items, weight, pickup_address } = req.body
     /* Where the goods land before the last mile, as the booking states it.
@@ -1765,6 +1788,7 @@ const quoteForAddresses = async ({ pickup, delivery, weight, declared = 0, arriv
 }
 
 module.exports = {
+    currencyRate,
     buildTemplateMatch,
     laneTemplates,
     laneOptions,

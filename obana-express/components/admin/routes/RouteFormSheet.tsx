@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Alert, Button, Input, Select } from "@/components/ui";
 import { LocationInput } from "@/components/LocationInput";
+import { apiClient } from "@/lib/api";
 import { Sheet } from "./Sheet";
 import {
 	RATE_CURRENCIES,
@@ -12,6 +13,8 @@ import {
 	buildPayload,
 	driverLabel,
 	formFromRoute,
+	bracketsAtRate,
+	laneRateFromBracket,
 	newBracket,
 	syncBracket,
 	routeTitle,
@@ -67,11 +70,59 @@ export function RouteFormSheet({
 		});
 	}
 
+	/* What a unit of the lane's currency is worth in naira, so the rate above
+	   and the brackets below are the same money rather than two prices that
+	   disagree. 1 for a lane already in naira; 0 while it is being fetched or
+	   when no rate can be had, and nothing is converted on 0. */
+	const [nairaPerUnit, setNairaPerUnit] = useState(form.rateCurrency === "NGN" ? 1 : 0);
+	const [rateError, setRateError] = useState("");
+
+	useEffect(() => {
+		const code = form.rateCurrency;
+		if (code === "NGN") {
+			setNairaPerUnit(1);
+			setRateError("");
+			return;
+		}
+		let live = true;
+		apiClient
+			.currencyRate(code)
+			.then((res) => {
+				if (!live) return;
+				setNairaPerUnit(Number(res?.data?.naira_per_unit) || 0);
+				setRateError("");
+			})
+			.catch(() => {
+				if (!live) return;
+				setNairaPerUnit(0);
+				/* The figures on screen are left exactly as they are. Quietly
+				   converting at a guessed rate would write a wrong price. */
+				setRateError(`No ${code} rate right now, so the brackets below are not being converted.`);
+			});
+		return () => {
+			live = false;
+		};
+	}, [form.rateCurrency]);
+
 	/* Price and rate move together — see syncBracket. Typing one fills the
 	   other, so a lane sold by the kilo and a lane sold as a job are both
-	   entered the way they were actually agreed. */
+	   entered the way they were actually agreed.
+
+	   A bracket's ₦/kg is also the lane's rate, in the lane's currency: edit
+	   it here and the box at the top follows, which is the other half of the
+	   two never contradicting each other. */
 	const updateBracket = (key: number, field: keyof Omit<BracketDraft, "key">, value: string) =>
-		setForm((prev) => ({ ...prev, brackets: prev.brackets.map((b) => (b.key === key ? syncBracket(b, field, value) : b)) }));
+		setForm((prev) => {
+			const brackets = prev.brackets.map((b) => (b.key === key ? syncBracket(b, field, value) : b));
+			if (!prev.ratePerKg.trim()) return { ...prev, brackets };
+			const edited = brackets.find((b) => b.key === key);
+			const lane = edited ? laneRateFromBracket(edited.rate, nairaPerUnit) : null;
+			return { ...prev, brackets, ratePerKg: lane ?? prev.ratePerKg };
+		});
+
+	/** The lane rate changed, so the brackets are restated at it. */
+	const setLaneRate = (value: string) =>
+		setForm((prev) => ({ ...prev, ratePerKg: value, brackets: bracketsAtRate(prev.brackets, value, nairaPerUnit) }));
 
 	const addBracket = () => {
 		const fresh = newBracket();
@@ -284,7 +335,7 @@ export function RouteFormSheet({
 								value={form.ratePerKg}
 								error={shown?.ratePerKg}
 								helperText="Given, this decides the freight and the weight brackets below become the fallback."
-								onChange={(ev) => setForm((prev) => ({ ...prev, ratePerKg: ev.target.value }))}
+								onChange={(ev) => setLaneRate(ev.target.value)}
 							/>
 						</div>
 						<Select
@@ -361,23 +412,31 @@ export function RouteFormSheet({
 				</Section>
 
 				<Section title="Weight brackets" description="Price and delivery time for each weight range. Brackets can share an edge (0–5 kg, 5–10 kg) but must not overlap.">
-					{/* Said out loud, because the alternative is a screen that
-					    shows one price and quotes another.
-
-					    A rate per kilo overrides these brackets entirely. Italy
-					    to Lagos reads ₦2,157,776.90 here and quotes ₦3,711,787
-					    — EUR 10.09 × 245 kg — and nothing on the page connected
-					    the two. Somebody correcting the bracket would have
-					    changed a number the lane does not use, saved it, and
-					    seen the quote come back exactly as before. */}
-					{form.ratePerKg.trim() && (
-						<p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 text-sm">
-							These are the fallback. This lane prices at{" "}
+					{/* The brackets are the lane rate, written out per weight
+					    range. They used to be a second price that disagreed
+					    with it — EUR 10.09/kg at the top, NGN 8,807.25/kg down
+					    here — and nothing said the first overrode the second,
+					    so correcting the bracket changed a number the lane
+					    does not use. Now either one moves the other. */}
+					{form.ratePerKg.trim() && nairaPerUnit > 0 && (
+						<p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 text-sm">
+							Priced at{" "}
 							<span className="font-semibold tabular-nums">
 								{form.rateCurrency} {form.ratePerKg.trim()}/kg
-							</span>{" "}
-							— set under Pricing above — so the brackets below are only used if that rate is cleared.
+							</span>
+							{form.rateCurrency !== "NGN" && (
+								<>
+									{" = "}
+									<span className="font-semibold tabular-nums">
+										₦{(parseFloat(form.ratePerKg) * nairaPerUnit || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}/kg
+									</span>
+								</>
+							)}
+							. Change it here or above — the two stay in step.
 						</p>
+					)}
+					{rateError && (
+						<p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 text-sm">{rateError}</p>
 					)}
 					{shown?.brackets && (
 						<p data-invalid="true" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">

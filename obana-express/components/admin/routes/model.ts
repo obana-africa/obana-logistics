@@ -215,6 +215,36 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * Typing either fills the other. Moving the weights keeps the price and
  * recalculates the rate, because the price is what was agreed.
  */
+/**
+ * The brackets restated at a lane rate.
+ *
+ * A lane priced per kilo overrides its brackets in the quote engine, so a
+ * form that leaves the old bracket prices on screen is showing a number the
+ * lane will not charge — EUR 10.09/kg beside a bracket reading NGN 8,807.25/kg,
+ * the two contradicting each other with nothing to say which wins. Changing
+ * the rate rewrites them, so what is on screen is what the lane charges.
+ *
+ * `nairaPerUnit` converts the lane's currency to the naira the brackets are
+ * kept in; it is 1 for a lane already priced in naira.
+ */
+export function bracketsAtRate(brackets: BracketDraft[], ratePerKg: string, nairaPerUnit: number): BracketDraft[] {
+	const rate = parseFloat(ratePerKg);
+	if (!ratePerKg.trim() || !Number.isFinite(rate) || rate <= 0 || !(nairaPerUnit > 0)) return brackets;
+	const perKgNaira = round2(rate * nairaPerUnit);
+	return brackets.map((b) => {
+		const width = bracketWidth(b);
+		if (!width) return b;
+		return { ...b, rate: String(perKgNaira), price: String(round2(perKgNaira * width)) };
+	});
+}
+
+/** A bracket's ₦/kg expressed back in the lane's own currency. */
+export function laneRateFromBracket(bracketRateNaira: string, nairaPerUnit: number): string | null {
+	const naira = parseFloat(bracketRateNaira);
+	if (!bracketRateNaira.trim() || !Number.isFinite(naira) || naira <= 0 || !(nairaPerUnit > 0)) return null;
+	return String(round2(naira / nairaPerUnit));
+}
+
 export function syncBracket(b: BracketDraft, field: keyof Omit<BracketDraft, "key">, value: string): BracketDraft {
 	const next = { ...b, [field]: value };
 	if (field === "eta") return next;
