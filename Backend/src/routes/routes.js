@@ -13,6 +13,10 @@ router.delete('/:id', auth.authenticateToken, auth.verifyRole(['admin']), contro
 
 // Matching endpoint
 router.post('/match', auth.authenticateToken, controller.matchTemplate)
+
+/* For the route form, so a lane priced in euros can show what its weight
+   brackets come to in naira. Admin-only: it is the rate our own quotes use. */
+router.get('/currency-rate', auth.authenticateToken, auth.verifyRole(['admin']), controller.currencyRate)
 // Public price check for the website (no login).
 router.post('/quote', rateLimit({ windowMs: 10 * 60 * 1000, max: 20, message: 'Too many quotes in a short time. Please wait a few minutes and try again.' }), controller.publicQuote)
 // A saved quote, so the booking page can pick up where the quote page left off.

@@ -381,6 +381,12 @@ class ApiClient {
     return response.data;
   }
 
+  /** What one unit of `currency` is worth in naira — the same rate the quote engine uses. */
+  async currencyRate(currency: string) {
+    const response = await this.client.get<ApiResponse>(`/routes/currency-rate`, { params: { currency } });
+    return response.data;
+  }
+
   async deleteRoute(id: string) {
     const response = await this.client.delete<ApiResponse>(`/routes/${id}`);
     return response.data;
