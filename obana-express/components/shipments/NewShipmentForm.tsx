@@ -547,7 +547,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
       service: serviceLabel(selected),
       eta: selected.estimated_delivery || selected.eta || null,
       pieces: totalUnits > 0 ? String(totalUnits) : null,
-      rate: shipmentWeight > 0 ? withUsd(deliveryPart / shipmentWeight) : null,
+      rate: shipmentWeight > 0 ? withUsd(carriageBase() / shipmentWeight) : null,
       conversionNote: converts ? `Converted at ${formatMoney(1, baseCurrency)} = ${formatMoney(nairaPerBase, 'NGN')}` : null,
       weight: `${shipmentWeight.toFixed(2)} kg`,
       charges,
@@ -650,6 +650,21 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
     const what = leg.kind === 'local' ? 'Last mile (local)' : 'Total Freight Charge';
     const where = [leg.from, leg.to].filter(Boolean).join(' → ');
     return where ? `${what} · ${where}` : what;
+  };
+
+  /* What a kilo of the crossing costs.
+
+     The last mile is a job, not a rate: it is the same money whether the
+     parcel weighs 10kg or 245kg, so dividing it by the weight invents a
+     per-kilo figure nobody quoted. Folding the home run in read a real
+     NGN 15,150/kg as NGN 19,349/kg — EUR 10.09 shown as EUR 13. Where the
+     journey is priced as one leg there is nothing to separate and the whole
+     base stands. */
+  const carriageBase = () => {
+    const crossing = (selected?.legs ?? []).filter((leg) => leg.kind !== 'local');
+    return crossing.length
+      ? crossing.reduce((sum, leg) => sum + (Number(leg.base_price) || 0), 0)
+      : Number(selected?.base_price ?? selected?.price ?? 0);
   };
 
   const freightRows = () =>
@@ -1499,7 +1514,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
                     <p className="text-gray-600">Shipping rate / kilo</p>
                     <p className="font-bold text-green-600 text-lg">
                       {shipmentWeight > 0 && selected.base_price
-                        ? withUsd(selected.base_price / shipmentWeight)
+                        ? withUsd(carriageBase() / shipmentWeight)
                         : withUsd(selected.price)}
                     </p>
                   </div>
