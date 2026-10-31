@@ -195,7 +195,24 @@ const buildShipmentSummary = async (shipment, { pickup, delivery, items = [], co
 
     /* Still worked out, because the block above prints it and the WhatsApp
        message carries it — it is simply no longer a line in the breakdown. */
-    const perKiloFigure = weight > 0 ? { key: 'rate_per_kg', label: 'Rate per kg', ...figure(deliveryPart / weight) } : null
+    /* What a kilo of freight costs — the crossing only.
+    
+       It was the whole delivery divided by the weight, last mile included, so
+       a 245 kg job carried at EUR 10.09/kg displayed EUR 13: the inland leg is
+       a job, not a rate, and dividing it by the weight invents a per-kilo
+       figure nobody quoted. Someone reading EUR 13 and lowering the rate to
+       EUR 11 would have raised the price without meaning to.
+    
+       The international leg where there are legs; the whole delivery where
+       there is only one, which is the same number as before for a shipment
+       that never leaves the country. */
+    const carriagePart = legs
+        ? legs
+              .filter((leg) => leg.kind !== 'local')
+              .reduce((sum, leg) => sum + (Number(leg.base_price) || 0), 0)
+        : deliveryPart
+    const perKiloBase = carriagePart > 0 ? carriagePart : deliveryPart
+    const perKiloFigure = weight > 0 ? { key: 'rate_per_kg', label: 'Rate per kg', ...figure(perKiloBase / weight) } : null
 
     const by = (key) => (key === 'rate_per_kg' ? perKiloFigure : lines.find((l) => l.key === key) ?? null)
 
