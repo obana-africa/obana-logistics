@@ -6,6 +6,7 @@ import { Alert, Button, Input, Select } from "@/components/ui";
 import { LocationInput } from "@/components/LocationInput";
 import { Sheet } from "./Sheet";
 import {
+	RATE_CURRENCIES,
 	SERVICE_LEVELS,
 	TRANSPORT_MODES,
 	buildPayload,
@@ -251,6 +252,93 @@ export function RouteFormSheet({
 								}}
 								options={SERVICE_LEVELS}
 								error={shown?.service_level}
+							/>
+						</div>
+					</div>
+				</Section>
+
+				{/* What this lane charges, in one place.
+
+				    These three lived in three different places and none of
+				    them was the route: the rate only in the weight brackets,
+				    the last mile as a per-kilo figure no screen could show,
+				    and the handling charge in a server-wide environment
+				    variable. So an agreed price could be typed into a booking
+				    and had to be typed again on the next one. Set here, it is
+				    simply what the lane costs. */}
+				<Section
+					title="Pricing"
+					description="All optional. Leave a box empty and this lane prices exactly as it does today."
+				>
+					<div className="grid gap-4 sm:grid-cols-3">
+						<div className="sm:col-span-2" data-invalid={shown?.ratePerKg ? "true" : undefined}>
+							<Input
+								label="Rate per kg"
+								type="number"
+								inputMode="decimal"
+								step="any"
+								min="0"
+								placeholder="10.09"
+								value={form.ratePerKg}
+								error={shown?.ratePerKg}
+								helperText="Given, this decides the freight and the weight brackets below become the fallback."
+								onChange={(ev) => setForm((prev) => ({ ...prev, ratePerKg: ev.target.value }))}
+							/>
+						</div>
+						<Select
+							label="Currency"
+							value={form.rateCurrency}
+							options={RATE_CURRENCIES}
+							onChange={(ev) => setForm((prev) => ({ ...prev, rateCurrency: ev.target.value }))}
+						/>
+					</div>
+
+					{/* What that rate comes to on a real shipment. A rate in a
+					    foreign currency is hard to sanity-check on its own, and
+					    the figure people actually argue about is the total. */}
+					{form.ratePerKg.trim() && (
+						<p className="text-slate-500 text-xs">
+							{form.rateCurrency} {form.ratePerKg.trim()} × 245 kg ={" "}
+							<span className="font-semibold tabular-nums text-slate-700">
+								{form.rateCurrency}{" "}
+								{((parseFloat(form.ratePerKg) || 0) * 245).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+							</span>
+						</p>
+					)}
+
+					<div className="grid gap-4 sm:grid-cols-2">
+						{/* Only on a lane that crosses a border — the same
+						    condition as the arrival city above, because there
+						    is no last mile without one. */}
+						{form.origin.countryCode && form.destination.countryCode && form.origin.countryCode !== form.destination.countryCode && (
+							<div data-invalid={shown?.lastMile ? "true" : undefined}>
+								<Input
+									label="Last mile — inland (₦)"
+									type="number"
+									inputMode="decimal"
+									step="any"
+									min="0"
+									placeholder="585000"
+									value={form.lastMile}
+									error={shown?.lastMile}
+									helperText="An amount, not a rate: the inland run costs the same at 10 kg and at 245 kg. Empty uses your domestic routes."
+									onChange={(ev) => setForm((prev) => ({ ...prev, lastMile: ev.target.value }))}
+								/>
+							</div>
+						)}
+						<div data-invalid={shown?.handlingPercent ? "true" : undefined}>
+							<Input
+								label="Handling charge (%)"
+								type="number"
+								inputMode="decimal"
+								step="any"
+								min="0"
+								max="100"
+								placeholder="10"
+								value={form.handlingPercent}
+								error={shown?.handlingPercent}
+								helperText="Empty uses the server-wide charge. 0 charges nothing on this lane."
+								onChange={(ev) => setForm((prev) => ({ ...prev, handlingPercent: ev.target.value }))}
 							/>
 						</div>
 					</div>

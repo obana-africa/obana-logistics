@@ -724,7 +724,7 @@ const priceTemplate = (template, weight) => {
        belongs. The lines add up to the total exactly, because a quote whose
        parts do not sum is worse than one that rounds a naira oddly. */
     const kobo = (v) => Math.round(v * 100) / 100;
-    const percent = routeMarkupPercent();
+    const percent = routeMarkupPercent(template);
     match.base_price = Math.ceil(kobo(base));
     match.service_charge_percent = percent;
     match.service_charge = Math.ceil(kobo((match.base_price * percent) / 100));
@@ -741,8 +741,26 @@ const priceTemplate = (template, weight) => {
     return match;
 };
 
-/** ROUTE_MARKUP_PERCENT on the server (default 10). Set it to 0 to charge route prices as entered. */
-const routeMarkupPercent = () => {
+/**
+ * Obana's charge on this lane, as a percentage.
+ *
+ * The lane's own figure first, then ROUTE_MARKUP_PERCENT on the server
+ * (default 10). It was only ever the server setting, so agreeing five per cent
+ * on one corridor meant changing it for every lane in the business or not at
+ * all — and the booking override, being per shipment, had to be retyped by
+ * whoever remembered. Set on the route, it is simply what that lane charges.
+ *
+ * Set it to 0 to charge that lane's prices as entered.
+ */
+const routeMarkupPercent = (template = null) => {
+    const own = template?.metadata?.service_charge_percent;
+    if (own !== undefined && own !== null && own !== '') {
+        const n = Number(own);
+        /* Zero is a real answer — "charge nothing on this lane" — so it is
+           kept; anything unusable falls through to the server setting rather
+           than quietly charging nothing. */
+        if (Number.isFinite(n) && n >= 0 && n <= 100) return n;
+    }
     const raw = process.env.ROUTE_MARKUP_PERCENT;
     const n = raw === undefined || raw === '' ? NaN : Number(raw);
     return Number.isFinite(n) && n >= 0 ? n : 10;
@@ -864,6 +882,26 @@ const lastMileFor = async (routeTemplates, arrival, destinationState, destinatio
     /* Its own rate, where the lane has one: door delivery after an arrival is
        not the domestic run somebody books on its own, and pricing it from that
        lane would mean setting this also reprices every direct booking on it. */
+    /* An amount, where the lane names one.
+
+       The inland run is quoted as a job: a truck from Lagos to Port Harcourt
+       costs what it costs whether it carries 10kg or 245kg. Only a rate could
+       be stored, so an agreed NGN 585,000 had to be entered as 2,387.755 per
+       kilo — which reproduces 585,000 at exactly one weight and nothing else,
+       and lands on 585,001 after rounding even there. Checked before the rate,
+       because a lane that states an amount has said the more specific thing. */
+    const flat = Number(template?.metadata?.last_mile_flat)
+    if (flat > 0) {
+        return {
+            from: arrival.city,
+            base_price: Math.ceil(flat),
+            price: Math.ceil(flat),
+            service_level: serviceLevel,
+            transport_mode: 'road',
+            eta: null
+        }
+    }
+
     const ownRate = lastMileRateFor(template)
     if (ownRate > 0) {
         return {
