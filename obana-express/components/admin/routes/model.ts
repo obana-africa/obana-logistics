@@ -119,14 +119,20 @@ export function routeCountries(r: RouteTemplate) {
 	return `${from || "—"} → ${to || "—"}`;
 }
 
-/** Price per kg — the same formula the route form has always used (bracket width, or max when the width is unusable). */
-export function calculateUnitPrice(b: { min: string; max: string; price: string }): number | null {
+/** The kilos a bracket covers — its width, or its max where the width is unusable. */
+export function bracketWidth(b: { min: string; max: string }): number | null {
 	const min = parseFloat(b.min);
 	const max = parseFloat(b.max);
+	const width = Number.isNaN(max - min) || max - min <= 0 ? (max > 0 ? max : null) : max - min;
+	return width && width > 0 ? width : null;
+}
+
+/** Price per kg — the same formula the route form has always used. */
+export function calculateUnitPrice(b: { min: string; max: string; price: string }): number | null {
 	const price = parseFloat(b.price);
 	if (Number.isNaN(price) || price <= 0) return null;
-	const width = Number.isNaN(max - min) || max - min <= 0 ? (max > 0 ? max : null) : max - min;
-	if (!width || width <= 0) return null;
+	const width = bracketWidth(b);
+	if (!width) return null;
 	return Number((price / width).toFixed(2));
 }
 
@@ -166,6 +172,8 @@ export interface BracketDraft {
 	min: string;
 	max: string;
 	price: string;
+	/** ₦ per kg. The same money as `price`, read the other way round. */
+	rate: string;
 	/** Days only, e.g. "3" or "2-3" — saved as "<value> days". */
 	eta: string;
 }
@@ -191,7 +199,37 @@ export interface RouteForm {
 }
 
 let keySeq = 0;
-export const newBracket = (min = ""): BracketDraft => ({ key: ++keySeq, min, max: "", price: "", eta: "" });
+export const newBracket = (min = ""): BracketDraft => ({ key: ++keySeq, min, max: "", price: "", rate: "", eta: "" });
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * A bracket priced either way round.
+ *
+ * The rate and the price are one number read two ways, and which one a person
+ * has to hand depends on how the lane was sold: a carrier quotes ₦2,925 a kilo,
+ * a customer agrees ₦585,000 for the job. Only the price could be typed, so the
+ * rate — the figure on the badge, and the one people actually compare between
+ * carriers — had to be worked out by hand and re-entered as a total.
+ *
+ * Typing either fills the other. Moving the weights keeps the price and
+ * recalculates the rate, because the price is what was agreed.
+ */
+export function syncBracket(b: BracketDraft, field: keyof Omit<BracketDraft, "key">, value: string): BracketDraft {
+	const next = { ...b, [field]: value };
+	if (field === "eta") return next;
+	const width = bracketWidth(next);
+
+	if (field === "rate") {
+		const rate = parseFloat(value);
+		next.price = value.trim() && Number.isFinite(rate) && rate > 0 && width ? String(round2(rate * width)) : "";
+		return next;
+	}
+
+	const price = parseFloat(next.price);
+	next.rate = next.price.trim() && Number.isFinite(price) && price > 0 && width ? String(round2(price / width)) : "";
+	return next;
+}
 
 const emptyPlace: Place = { city: "", state: "", country: "", countryCode: "", stateCode: "" };
 
@@ -230,7 +268,11 @@ export function formFromRoute(route: RouteTemplate | null): RouteForm {
 		lastMile: str(route.metadata?.last_mile_flat),
 		handlingPercent: str(route.metadata?.service_charge_percent),
 		brackets: Array.isArray(route.weight_brackets)
-			? route.weight_brackets.map((b) => ({ key: ++keySeq, min: str(b.min), max: str(b.max), price: str(b.price), eta: etaValue(b.eta) }))
+			? route.weight_brackets.map((b) => {
+					const draft = { key: ++keySeq, min: str(b.min), max: str(b.max), price: str(b.price), rate: "", eta: etaValue(b.eta) };
+					const rate = calculateUnitPrice(draft);
+					return { ...draft, rate: rate === null ? "" : String(rate) };
+				})
 			: [],
 	};
 }

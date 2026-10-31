@@ -10,11 +10,10 @@ import {
 	SERVICE_LEVELS,
 	TRANSPORT_MODES,
 	buildPayload,
-	calculateUnitPrice,
 	driverLabel,
 	formFromRoute,
-	formatPerKg,
 	newBracket,
+	syncBracket,
 	routeTitle,
 	validateRoute,
 	type BracketDraft,
@@ -68,8 +67,11 @@ export function RouteFormSheet({
 		});
 	}
 
+	/* Price and rate move together — see syncBracket. Typing one fills the
+	   other, so a lane sold by the kilo and a lane sold as a job are both
+	   entered the way they were actually agreed. */
 	const updateBracket = (key: number, field: keyof Omit<BracketDraft, "key">, value: string) =>
-		setForm((prev) => ({ ...prev, brackets: prev.brackets.map((b) => (b.key === key ? { ...b, [field]: value } : b)) }));
+		setForm((prev) => ({ ...prev, brackets: prev.brackets.map((b) => (b.key === key ? syncBracket(b, field, value) : b)) }));
 
 	const addBracket = () => {
 		const fresh = newBracket();
@@ -368,7 +370,6 @@ export function RouteFormSheet({
 						{form.brackets.map((b, i) => {
 							const e = shown?.bracket[i] ?? {};
 							const invalid = Object.values(e).some(Boolean);
-							const unit = calculateUnitPrice(b);
 							return (
 								<li
 									key={b.key}
@@ -380,9 +381,6 @@ export function RouteFormSheet({
 									<div className="mb-3 flex items-center justify-between gap-3">
 										<p className="text-sm font-semibold text-slate-900">Bracket {i + 1}</p>
 										<div className="flex items-center gap-1">
-											<span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-700 ring-1 ring-inset ring-slate-200" aria-label="Price per kg">
-												{formatPerKg(unit)}
-											</span>
 											<button
 												type="button"
 												onClick={() => removeBracket(b.key)}
@@ -393,9 +391,13 @@ export function RouteFormSheet({
 											</button>
 										</div>
 									</div>
-									<div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+									<div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
 										<Input label="Min (kg)" required type="number" inputMode="decimal" step="any" min="0" placeholder="0" value={b.min} error={e.min} onChange={(ev) => updateBracket(b.key, "min", ev.target.value)} />
 										<Input label="Max (kg)" required type="number" inputMode="decimal" step="any" min="0" placeholder="10" value={b.max} error={e.max} onChange={(ev) => updateBracket(b.key, "max", ev.target.value)} />
+										{/* Either box fills the other. The badge that used to sit
+										    in the corner showed this same figure and could not be
+										    typed into, which is the whole of what is new here. */}
+										<Input label="Rate (₦/kg)" type="number" inputMode="decimal" step="any" min="0" placeholder="1200" value={b.rate} onChange={(ev) => updateBracket(b.key, "rate", ev.target.value)} />
 										<Input label="Price (₦)" required type="number" inputMode="decimal" step="any" min="0" placeholder="5000" value={b.price} error={e.price} onChange={(ev) => updateBracket(b.key, "price", ev.target.value)} />
 										<Input
 											label="ETA"
