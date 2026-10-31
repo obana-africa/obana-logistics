@@ -604,6 +604,66 @@ const laneTemplates = (routeTemplates, origin_state, origin_country, destination
  * Returns null unless a lane says it is priced this way, so every existing
  * lane keeps its weight brackets and prices exactly as before.
  */
+/**
+ * Prices typed in while booking, instead of the ones the lane holds.
+ *
+ * A lane can be priced by the kilo, but only by editing the route template —
+ * and finding the right one for Lagos to Port Harcourt, or Italy to Nigeria,
+ * takes longer than the booking does. So the three figures that actually move
+ * between jobs can be given with the booking:
+ *
+ *   rate_per_kg      what a kilo costs on the crossing, in its own currency
+ *   last_mile        the inland leg, as an amount rather than a rate
+ *   handling_percent Obana's charge on top
+ *
+ * Anything left out keeps the lane's own figure, so a booking that overrides
+ * nothing prices exactly as it does today. Every value is checked here, once,
+ * because a number typed into a form reaches a customer's invoice: a negative
+ * rate, a percentage of 900, or "11,0" meant as eleven would each be a quote
+ * nobody agreed.
+ */
+const PRICING_LIMITS = {
+    maxRatePerKg: Number(process.env.MAX_RATE_PER_KG || 1000000),
+    maxLastMile: Number(process.env.MAX_LAST_MILE || 100000000),
+    maxHandlingPercent: Number(process.env.MAX_HANDLING_PERCENT || 100),
+}
+
+const positiveAmount = (value, ceiling) => {
+    if (value === undefined || value === null || value === '') return null
+    const n = Number(String(value).replace(/,/g, ''))
+    if (!Number.isFinite(n) || n <= 0 || n > ceiling) return null
+    return n
+}
+
+const readPricingOverrides = (body = {}) => {
+    const raw = body.pricing && typeof body.pricing === 'object' ? body.pricing : {}
+
+    const ratePerKg = positiveAmount(raw.rate_per_kg, PRICING_LIMITS.maxRatePerKg)
+    /* A rate without a currency is ambiguous, and guessing naira for a figure
+       meant in euros is wrong by three orders of magnitude. */
+    const rateCurrency = String(raw.rate_currency || 'NGN').trim().toUpperCase()
+    const currencyOk = /^[A-Z]{3}$/.test(rateCurrency)
+
+    const handling = raw.handling_percent === undefined || raw.handling_percent === null || raw.handling_percent === ''
+        ? null
+        : Number(String(raw.handling_percent).replace(/,/g, ''))
+
+    return {
+        ratePerKg: ratePerKg && currencyOk ? ratePerKg : null,
+        rateCurrency: ratePerKg && currencyOk ? rateCurrency : null,
+        lastMile: positiveAmount(raw.last_mile, PRICING_LIMITS.maxLastMile),
+        /* Zero is a real answer here — "charge nothing" — so it is kept, while
+           a missing value still means "use the lane's". */
+        handlingPercent:
+            handling !== null && Number.isFinite(handling) && handling >= 0 && handling <= PRICING_LIMITS.maxHandlingPercent
+                ? handling
+                : null,
+    }
+}
+
+/** True when anything was actually given. */
+const hasPricingOverrides = (o) =>
+    Boolean(o && (o.ratePerKg !== null || o.lastMile !== null || o.handlingPercent !== null))
 const perKiloPrice = async (template, weight) => {
     const meta = template?.metadata ?? {}
     const rate = Number(meta.price_per_kg)
@@ -818,7 +878,7 @@ const lastMileFor = async (routeTemplates, arrival, destinationState, destinatio
     return { ...chosen, from: arrival.city }
 }
 
-const laneOptions = async (routeTemplates, origin_state, origin_country, destination_state, destination_country, weight, places = null) => {
+const laneOptions = async (routeTemplates, origin_state, origin_country, destination_state, destination_country, weight, places = null, overrides = null) => {
     const seen = new Set()
     const options = []
     for (const { template } of laneTemplates(routeTemplates, origin_state, origin_country, destination_state, destination_country)) {
@@ -831,7 +891,19 @@ const laneOptions = async (routeTemplates, origin_state, origin_country, destina
         /* A lane priced by the kilo in its own currency overrides the bracket
            it would otherwise have used. The handling charge is then worked out
            on that figure, so the split still adds to the total. */
-        const byKilo = await perKiloPrice(template, weight)
+        /* A rate typed in while booking outranks both the lane's per-kilo rate
+           and its weight brackets: it is the figure a person has just agreed
+           with the customer. */
+        const typedRate = overrides?.ratePerKg
+            ? await perKiloPrice(
+                  { metadata: { price_per_kg: overrides.ratePerKg, price_currency: overrides.rateCurrency } },
+                  weight,
+              )
+            : null
+        if (overrides?.handlingPercent !== null && overrides?.handlingPercent !== undefined) {
+            match.service_charge_percent = overrides.handlingPercent
+        }
+        const byKilo = typedRate || await perKiloPrice(template, weight)
         if (byKilo) {
             const kobo = (v) => Math.round(v * 100) / 100
             match.base_price = Math.ceil(kobo(byKilo.base))
@@ -840,6 +912,14 @@ const laneOptions = async (routeTemplates, origin_state, origin_country, destina
             match.priced_per_kg = { rate: byKilo.rate, currency: byKilo.currency }
         }
         seen.add(key)
+
+        /* The charge follows whichever base and percent ended up in play. */
+        {
+            const kobo = (v) => Math.round(v * 100) / 100
+            const pct = Number(match.service_charge_percent ?? 0)
+            match.service_charge = Math.ceil(kobo((Number(match.base_price ?? match.price) * pct) / 100))
+            match.price = Math.ceil(Number(match.base_price ?? match.price)) + match.service_charge
+        }
 
         let base = Math.ceil(Number(match.base_price ?? match.price))
         let legs = null
@@ -872,7 +952,11 @@ const laneOptions = async (routeTemplates, origin_state, origin_country, destina
 
         if (lastMile) {
             const carriage = base
-            const home = Math.ceil(Number(lastMile.base_price ?? lastMile.price))
+            /* Typed in, or the lane's. An amount rather than a rate, because
+               the inland leg is quoted as a job, not by the kilo. */
+            const home = overrides?.lastMile
+                ? Math.ceil(Number(overrides.lastMile))
+                : Math.ceil(Number(lastMile.base_price ?? lastMile.price))
             base = carriage + home
             legs = [
                 {
@@ -1023,6 +1107,9 @@ const matchTemplate = async (req, res) => {
     let { transport_mode, service_level, delivery_address, items, weight, pickup_address } = req.body
     /* Where the goods land before the last mile, as the booking states it.
        Blank means one journey, exactly as before. */
+    /* Prices typed in while booking, if any. Checked once here so every lane
+       priced below sees the same validated figures. */
+    const pricingOverrides = readPricingOverrides(req.body)
     const arrival = req.body.arrival_city
         ? { city: String(req.body.arrival_city).trim(), state: String(req.body.arrival_state ?? '').trim() }
         : null
@@ -1125,7 +1212,7 @@ const matchTemplate = async (req, res) => {
                     destinationCountry: delivery_address?.country || destinationCountry,
                     destinationCity: delivery_address?.city || delivery_address?.state || '',
                     arrival: arrival || null
-                })
+                }, pricingOverrides)
 
             shipmentResults.push({
                 external: false,
@@ -1403,7 +1490,7 @@ const quoteAddress = (place, countryCode) => ({
 
 /* `arrival` is where the goods land in the destination country, when the
    person booking has said. It turns the last stretch into its own priced leg. */
-const buildQuoteOptions = async ({ origin, destination, originCode, destCode, weight, declared, arrival }) => {
+const buildQuoteOptions = async ({ origin, destination, originCode, destCode, weight, declared, arrival, overrides = null }) => {
     const options = []
 
     // 1. Obana fleet: one option per mode/service on this lane, from its best-fitting template (no Lagos fallback for quotes).
@@ -1416,7 +1503,7 @@ const buildQuoteOptions = async ({ origin, destination, originCode, destCode, we
         destinationCity: destination.city || destination.state || '',
         arrival: arrival || null
     }
-    for (const o of await laneOptions(templates, origin.state, originCode, destination.state, destCode, weight, places)) {
+    for (const o of await laneOptions(templates, origin.state, originCode, destination.state, destCode, weight, places, overrides)) {
         options.push({
             id: o.id,
             provider: 'obana',
@@ -1614,7 +1701,7 @@ const heldQuoteOption = (quote, { optionId, pickup, delivery, weight }) => {
 }
 
 /** Server-side price options for a pickup/delivery pair — used to price store shipments. */
-const quoteForAddresses = async ({ pickup, delivery, weight, declared = 0, arrival = null }) => {
+const quoteForAddresses = async ({ pickup, delivery, weight, declared = 0, arrival = null, overrides = null }) => {
     const originCode = String(formatCountryCode(pickup.country_code || pickup.country)).toUpperCase()
     const destCode = String(formatCountryCode(delivery.country_code || delivery.country)).toUpperCase()
     return buildQuoteOptions({
@@ -1624,7 +1711,8 @@ const quoteForAddresses = async ({ pickup, delivery, weight, declared = 0, arriv
         destCode,
         weight,
         declared,
-        arrival
+        arrival,
+        overrides
     })
 }
 
