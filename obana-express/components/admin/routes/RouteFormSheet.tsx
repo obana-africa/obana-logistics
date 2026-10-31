@@ -361,6 +361,24 @@ export function RouteFormSheet({
 				</Section>
 
 				<Section title="Weight brackets" description="Price and delivery time for each weight range. Brackets can share an edge (0–5 kg, 5–10 kg) but must not overlap.">
+					{/* Said out loud, because the alternative is a screen that
+					    shows one price and quotes another.
+
+					    A rate per kilo overrides these brackets entirely. Italy
+					    to Lagos reads ₦2,157,776.90 here and quotes ₦3,711,787
+					    — EUR 10.09 × 245 kg — and nothing on the page connected
+					    the two. Somebody correcting the bracket would have
+					    changed a number the lane does not use, saved it, and
+					    seen the quote come back exactly as before. */}
+					{form.ratePerKg.trim() && (
+						<p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 text-sm">
+							These are the fallback. This lane prices at{" "}
+							<span className="font-semibold tabular-nums">
+								{form.rateCurrency} {form.ratePerKg.trim()}/kg
+							</span>{" "}
+							— set under Pricing above — so the brackets below are only used if that rate is cleared.
+						</p>
+					)}
 					{shown?.brackets && (
 						<p data-invalid="true" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
 							{shown.brackets}
