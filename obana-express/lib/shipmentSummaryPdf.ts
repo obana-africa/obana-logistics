@@ -27,13 +27,6 @@ const FOOTER: { text: string; url?: string }[] = [
 	{ text: "Thaja (POS/Webshop)", url: "https://thaja.africa" },
 ];
 
-/* The question every customer asks after the total: is there more to pay when
-   the goods land? There is not. Duty and clearing are priced into the figures
-   above, so the footer says so plainly rather than leaving it to be asked.
-   Worded once here because the issued PDF carries the same sentence. */
-const CUSTOMS_NOTE =
-	"Customs duties and clearance charges at the destination are included in the total above.";
-
 /* Where payment goes. The same two accounts the issued summary carries. */
 const ACCOUNTS = [
 	{ name: "Icon Tech & Ecommerce Service Limited", bank: "Sterling Bank", number: "0118874437", currency: "NGN" },
@@ -172,7 +165,6 @@ const documentHtml = (s: ShipmentSummary) => `<!doctype html>
   footer .accounts div { flex: 1; }
   footer p { margin: 0 0 1px; color: #4b5563; }
   footer p.strong { font-weight: 700; color: #111827; }
-  footer .small { margin-top: 10px; font-size: 10px; color: #6b7280; }
   footer .tagline { display: block; margin-top: 8px; text-align: center; font-size: 10px; color: #6b7280; }
   /* Printed links keep their colour and underline — on paper that is the only
      thing saying they can be tapped. */
@@ -234,7 +226,6 @@ const documentHtml = (s: ShipmentSummary) => `<!doctype html>
       </div>`,
 		).join("")}
     </div>
-    <p class="small">${esc(CUSTOMS_NOTE)}</p>
     <span class="tagline">${FOOTER.map((part) =>
 			part.url ? `<a href="${esc(part.url)}">${esc(part.text)}</a>` : esc(part.text),
 		).join("")}</span>
