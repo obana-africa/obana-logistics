@@ -54,6 +54,13 @@ const FOOTER = [
 /** The same line as plain words, for anywhere that cannot carry a link. */
 const TAGLINE = FOOTER.map((part) => part.text).join('')
 
+/* The question every customer asks after the total: is there more to pay when
+   the goods land? There is not. Duty and clearing are priced into the figures
+   above, so the footer says so plainly rather than leaving it to be asked.
+   The same sentence as the printed summary, kept in step by hand because the
+   two documents are built in different apps. */
+const CUSTOMS_NOTE = 'Customs duties and clearance charges at the destination are included in the total above.'
+
 /* Where payment goes. On every summary, which is the point of a payment
    footer; overridable per environment only if that ever has to differ. */
 const ACCOUNTS = [
@@ -449,10 +456,11 @@ const buildShipmentSummaryPdf = (summary) =>
             /* ── How to pay, and who we are ──────────────────────────────── */
             /* The payment block sits at the foot of the page, and goes to a
                second one rather than off the bottom when the goods ran long. */
-            /* The block needs about seventy points, and the tagline sits at
-               782. Anything above that fits on this page. */
-            if (doc.y > 698) doc.addPage()
-            const footerTop = Math.max(doc.y + 14, 690)
+            /* The block needs about eighty-five points — the rule, the two
+               accounts and the customs line — and the tagline sits at 782.
+               Anything above that fits on this page. */
+            if (doc.y > 676) doc.addPage()
+            const footerTop = Math.max(doc.y + 14, 676)
             doc.y = footerTop
             doc.moveTo(48, footerTop).lineTo(547, footerTop).lineWidth(0.5).strokeColor(RULE).stroke()
             doc.y = footerTop + 12
@@ -466,6 +474,11 @@ const buildShipmentSummaryPdf = (summary) =>
                 doc.text(account.bank, x, doc.y, { width: 244 })
                 doc.font('Helvetica-Bold').fillColor(INK).text(`${account.number}  (${account.currency})`, x, doc.y, { width: 244 })
             })
+
+            /* Under the accounts, where someone reading what to pay is already
+               looking, and clear of the tagline at 782. */
+            doc.font('Helvetica').fontSize(8).fillColor(MUTED)
+            doc.text(printable(CUSTOMS_NOTE), 48, doc.y + 8, { width: 499 })
 
             /* Laid out a piece at a time rather than as one centred string:
                a link has to be given the box it occupies, and that means
@@ -487,4 +500,4 @@ const buildShipmentSummaryPdf = (summary) =>
         }
     })
 
-module.exports = { buildShipmentSummaryPdf, money, placeLines, ACCOUNTS, TAGLINE, FOOTER }
+module.exports = { buildShipmentSummaryPdf, money, placeLines, ACCOUNTS, TAGLINE, FOOTER, CUSTOMS_NOTE }

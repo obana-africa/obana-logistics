@@ -27,6 +27,13 @@ const FOOTER: { text: string; url?: string }[] = [
 	{ text: "Thaja (POS/Webshop)", url: "https://thaja.africa" },
 ];
 
+/* The question every customer asks after the total: is there more to pay when
+   the goods land? There is not. Duty and clearing are priced into the figures
+   above, so the footer says so plainly rather than leaving it to be asked.
+   Worded once here because the issued PDF carries the same sentence. */
+const CUSTOMS_NOTE =
+	"Customs duties and clearance charges at the destination are included in the total above.";
+
 /* Where payment goes. The same two accounts the issued summary carries. */
 const ACCOUNTS = [
 	{ name: "Icon Tech & Ecommerce Service Limited", bank: "Sterling Bank", number: "0118874437", currency: "NGN" },
@@ -227,7 +234,7 @@ const documentHtml = (s: ShipmentSummary) => `<!doctype html>
       </div>`,
 		).join("")}
     </div>
-    <p class="small">Customs duties and clearance charges at the destination are not included unless stated above.</p>
+    <p class="small">${esc(CUSTOMS_NOTE)}</p>
     <span class="tagline">${FOOTER.map((part) =>
 			part.url ? `<a href="${esc(part.url)}">${esc(part.text)}</a>` : esc(part.text),
 		).join("")}</span>
