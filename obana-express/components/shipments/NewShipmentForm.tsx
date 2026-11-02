@@ -538,8 +538,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
          is where the number is written. */
       awbNumber: typedAwb || pendingDocs.find((d) => d.kind.toUpperCase() === 'AWB')?.note || null,
       /* The countries too, where they differ. "Benguela → Aba" reads as a
-         domestic hop on a shipment crossing two borders, and the customs line
-         at the foot only makes sense once the route says otherwise. */
+         domestic hop on a shipment that crossed two borders. */
       route: `${placeName(formData.pickup_address)} → ${placeName(formData.delivery_address)}`,
       /* And the legs, where the journey is priced as two. The document writes
          them out the way the card above does. */
@@ -1470,8 +1469,7 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
 
                         The countries are on the crossing, because "Alberton →
                         Aba" reads as a domestic hop on a shipment that crosses
-                        two borders, and the customs line at the foot of the
-                        summary only makes sense once the route says so. */}
+                        two borders. */}
                     {selected?.legs && selected.legs.length > 1 ? (
                       <div className="font-semibold text-gray-900">
                         {selected.legs.map((leg, li) => (

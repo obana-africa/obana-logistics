@@ -16,6 +16,36 @@ const PDFDocument = require('pdfkit')
 
 const LOGO = path.join(__dirname, '..', 'assets', 'obana-logo.png')
 
+/* Liberation Sans, because the naira sign is not optional on a Nigerian
+   invoice. The fonts built into every PDF reader have no glyph for it, nor for
+   the arrow between two legs of a journey, so the screen said "₦15,196" and
+   "Italy → Nigeria" while the paper said "NGN 15,196" and "Italy to Nigeria"
+   for the same shipment. Liberation Sans carries both and is metrically
+   identical to Helvetica — "Hello world" sets 49.46pt against Helvetica's
+   49.50 — so every line falls where it did. pdfkit embeds only the glyphs
+   used, about 16KB a document.
+
+   OFL, vendored with its licence beside it. If the files ever go missing the
+   document still builds, in Helvetica, with the two characters spelt out. */
+const FONT_DIR = path.join(__dirname, '..', 'assets', 'fonts')
+const FACES = {
+    regular: path.join(FONT_DIR, 'LiberationSans-Regular.ttf'),
+    bold: path.join(FONT_DIR, 'LiberationSans-Bold.ttf')
+}
+const HAS_FACES = fs.existsSync(FACES.regular) && fs.existsSync(FACES.bold)
+if (!HAS_FACES) {
+    console.warn('[SUMMARY] Liberation Sans is not in src/assets/fonts — falling back to Helvetica')
+}
+const SANS = HAS_FACES ? 'Sans' : 'Helvetica'
+const SANS_BOLD = HAS_FACES ? 'Sans-Bold' : 'Helvetica-Bold'
+
+/** pdfkit registers fonts per document, so every document asks for them. */
+const registerFaces = (doc) => {
+    if (!HAS_FACES) return
+    doc.registerFont(SANS, FACES.regular)
+    doc.registerFont(SANS_BOLD, FACES.bold)
+}
+
 /* The confirm screen's palette, so the document somebody downloads is the one
    they were just looking at rather than a second design of the same facts.
    Tailwind's values, named for what they are used on. */
@@ -54,13 +84,6 @@ const FOOTER = [
 /** The same line as plain words, for anywhere that cannot carry a link. */
 const TAGLINE = FOOTER.map((part) => part.text).join('')
 
-/* The question every customer asks after the total: is there more to pay when
-   the goods land? There is not. Duty and clearing are priced into the figures
-   above, so the footer says so plainly rather than leaving it to be asked.
-   The same sentence as the printed summary, kept in step by hand because the
-   two documents are built in different apps. */
-const CUSTOMS_NOTE = 'Customs duties and clearance charges at the destination are included in the total above.'
-
 /* Where payment goes. On every summary, which is the point of a payment
    footer; overridable per environment only if that ever has to differ. */
 const ACCOUNTS = [
@@ -69,26 +92,37 @@ const ACCOUNTS = [
 ]
 
 /**
- * Text a PDF's standard fonts can actually draw.
+ * Text the document's font can actually draw.
  *
- * Helvetica and its siblings are encoded WinAnsi, which has no naira sign and
- * no arrow: the first printed as a stray colon and the second as "!'" — in the
- * middle of a route, on a document sent to a customer. Embedding a Unicode
- * font would fix the glyphs and add the better part of a megabyte to the
- * service for two characters, so the two are spelt instead. Everything else a
- * Latin address needs — accents, dashes, the middle dot — WinAnsi already has.
+ * With Liberation Sans embedded this is barely a filter: the face covers the
+ * naira sign, the arrow, the euro, every accent a European address uses. It
+ * stays because a name pasted out of an email can carry anything, and a
+ * character the font has no glyph for draws as an empty box in the middle of
+ * an address. The ranges below are what these documents are made of — Latin,
+ * punctuation, currency, arrows.
+ *
+ * Without the fonts the built-in Helvetica is WinAnsi, which has no naira sign
+ * and no arrow — the first drew as a stray colon, the second as "!'" — so
+ * those two are spelt out instead.
  */
 const SUBSTITUTES = [
     [/\u20a6\s?/g, 'NGN '],
     [/\s*(\u2192|\u2794|\u27a1)\s*/g, ' to ']
 ]
 
+/* Latin-1 and Latin Extended-A/B, general punctuation, currency symbols,
+   letterlike forms and arrows. */
+const DRAWABLE = /[^\u0000-\u024f\u2000-\u206f\u20a0-\u20bf\u2100-\u214f\u2190-\u21ff]/g
+
 const printable = (value) => {
     let text = String(value ?? '')
-    for (const [pattern, replacement] of SUBSTITUTES) text = text.replace(pattern, replacement)
-    /* Anything still outside Latin-1 would draw as a blank or the wrong glyph;
-       dropping it is less confusing than printing nonsense. */
-    return text.replace(/[^\u0000-\u00ff\u2013\u2014\u2018\u2019\u201c\u201d\u2022\u00b7]/g, '')
+    if (!HAS_FACES) {
+        for (const [pattern, replacement] of SUBSTITUTES) text = text.replace(pattern, replacement)
+        /* WinAnsi is narrower than the above, but it is a fallback path: the
+           euro and the dashes it does have, and the rest is already gone. */
+        return text.replace(/[^\u0000-\u00ff\u20ac\u2013\u2014\u2018\u2019\u201c\u201d\u2022]/g, '')
+    }
+    return text.replace(DRAWABLE, '')
 }
 
 const str = (v) => printable(v).trim()
@@ -131,7 +165,7 @@ const placeLines = (address) =>
  */
 const chargeRow = (doc, left, right, { bold = false, rule = true, top } = {}) => {
     const y = top ?? doc.y
-    doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 11 : 10).fillColor(bold ? INK : MUTED)
+    doc.font(bold ? SANS_BOLD : SANS).fontSize(bold ? 11 : 10).fillColor(bold ? INK : MUTED)
     doc.text(left, 48, y, { width: 300 })
     doc.fillColor(INK).text(right, 348, y, { width: 199, align: 'right' })
     const bottom = doc.y + 6
@@ -144,7 +178,7 @@ const chargeRow = (doc, left, right, { bold = false, rule = true, top } = {}) =>
 
 const sectionHeading = (doc, text) => {
     doc.moveDown(0.4)
-    doc.font('Helvetica-Bold').fontSize(8).fillColor(MUTED).text(String(text).toUpperCase(), 48, doc.y, { characterSpacing: 1.1 })
+    doc.font(SANS_BOLD).fontSize(8).fillColor(MUTED).text(String(text).toUpperCase(), 48, doc.y, { characterSpacing: 1.1 })
     doc.moveDown(0.35)
 }
 
@@ -168,7 +202,7 @@ const INNER_W = CARD_W - PAD * 2
 const COL_W = Math.floor((INNER_W - 16) / 2)
 const COL2_X = INNER_X + COL_W + 16
 
-const heightOf = (doc, text, { font = 'Helvetica', size = 10, width = INNER_W } = {}) => {
+const heightOf = (doc, text, { font = SANS, size = 10, width = INNER_W } = {}) => {
     doc.font(font).fontSize(size)
     return doc.heightOfString(String(text ?? ''), { width })
 }
@@ -215,20 +249,20 @@ const boxMark = (doc, x, y, color) => {
 /** A card heading: the mark, then the words, as on screen. */
 const cardHeading = (doc, y, mark, color, text) => {
     mark(doc, INNER_X, y, color)
-    doc.font('Helvetica-Bold').fontSize(11).fillColor(INK).text(str(text), INNER_X + 19, y + 1, { width: INNER_W - 19 })
+    doc.font(SANS_BOLD).fontSize(11).fillColor(INK).text(str(text), INNER_X + 19, y + 1, { width: INNER_W - 19 })
     return y + 20
 }
 
 /** One label-over-value cell out of the grid on the confirm screen. */
 const cell = (doc, x, y, width, label, value, { color = INK, size = 10, bold = true } = {}) => {
-    doc.font('Helvetica').fontSize(9).fillColor(MUTED).text(str(label), x, y, { width })
-    doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(size).fillColor(color)
+    doc.font(SANS).fontSize(9).fillColor(MUTED).text(str(label), x, y, { width })
+    doc.font(bold ? SANS_BOLD : SANS).fontSize(size).fillColor(color)
     doc.text(str(value) || '—', x, y + 12, { width })
     return doc.y
 }
 
 const cellHeight = (doc, label, value, { size = 10, width = COL_W } = {}) =>
-    12 + heightOf(doc, str(value) || '—', { font: 'Helvetica-Bold', size, width })
+    12 + heightOf(doc, str(value) || '—', { font: SANS_BOLD, size, width })
 
 /* The route, written the way the screen writes it: one line per leg, each
    named, because "Villaverla to Port Harcourt" over a consignment that clears
@@ -239,7 +273,7 @@ const routeLines = (summary) => {
     if (legs.length > 1) {
         return legs.map((leg) => ({
             tag: leg.kind === 'local' ? 'Last mile' : 'Freight',
-            text: [str(leg.from), str(leg.to)].filter(Boolean).join(' to ')
+            text: [str(leg.from), str(leg.to)].filter(Boolean).join(' \u2192 ')
         }))
     }
     return [{ tag: '', text: str(summary.route) }]
@@ -250,7 +284,7 @@ const routeLines = (summary) => {
    underneath sat on top of it. */
 const routeHeight = (doc, lines) =>
     lines.reduce(
-        (sum, line) => sum + heightOf(doc, line.text, { font: 'Helvetica-Bold', size: 10, width: COL_W - (line.tag ? 44 : 0) }),
+        (sum, line) => sum + heightOf(doc, line.text, { font: SANS_BOLD, size: 10, width: COL_W - (line.tag ? 44 : 0) }),
         0
     )
 
@@ -278,6 +312,7 @@ const buildShipmentSummaryPdf = (summary) =>
     new Promise((resolve, reject) => {
         try {
             const doc = new PDFDocument({ size: 'A4', margin: 48 })
+            registerFaces(doc)
             const chunks = []
             doc.on('data', (c) => chunks.push(c))
             doc.on('end', () => resolve(Buffer.concat(chunks)))
@@ -287,15 +322,15 @@ const buildShipmentSummaryPdf = (summary) =>
             if (fs.existsSync(LOGO)) {
                 doc.image(LOGO, 48, 44, { width: 104 })
             } else {
-                doc.font('Helvetica-Bold').fontSize(18).fillColor(NAVY).text('obana', 48, 48)
+                doc.font(SANS_BOLD).fontSize(18).fillColor(NAVY).text('obana', 48, 48)
             }
 
             const issued = summary.issuedAt ? new Date(summary.issuedAt) : new Date()
-            doc.font('Helvetica').fontSize(9).fillColor(MUTED)
+            doc.font(SANS).fontSize(9).fillColor(MUTED)
             doc.text('SHIPMENT SUMMARY', 348, 46, { width: 199, align: 'right', characterSpacing: 1.1 })
-            doc.font('Helvetica-Bold').fontSize(13).fillColor(INK)
+            doc.font(SANS_BOLD).fontSize(13).fillColor(INK)
             doc.text(str(summary.reference) || '—', 348, 60, { width: 199, align: 'right' })
-            doc.font('Helvetica').fontSize(9).fillColor(MUTED)
+            doc.font(SANS).fontSize(9).fillColor(MUTED)
             doc.text(issued.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }), 348, 78, {
                 width: 199,
                 align: 'right'
@@ -354,15 +389,15 @@ const buildShipmentSummaryPdf = (summary) =>
                 row.pair.forEach((fact, index) => {
                     const x = index === 0 ? INNER_X : COL2_X
                     if (fact.route) {
-                        doc.font('Helvetica').fontSize(9).fillColor(MUTED).text('Route', x, cy, { width: COL_W })
+                        doc.font(SANS).fontSize(9).fillColor(MUTED).text('Route', x, cy, { width: COL_W })
                         let ry = cy + 12
                         for (const line of lines) {
                             let tx = x
                             if (line.tag) {
-                                doc.font('Helvetica').fontSize(8).fillColor(FAINT).text(line.tag, tx, ry + 1, { width: 42 })
+                                doc.font(SANS).fontSize(8).fillColor(FAINT).text(line.tag, tx, ry + 1, { width: 42 })
                                 tx += 44
                             }
-                            doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text(line.text, tx, ry, { width: COL_W - (tx - x) })
+                            doc.font(SANS_BOLD).fontSize(10).fillColor(INK).text(line.text, tx, ry, { width: COL_W - (tx - x) })
                             ry = doc.y
                         }
                     } else {
@@ -382,20 +417,20 @@ const buildShipmentSummaryPdf = (summary) =>
                     if (strong) {
                         doc.moveTo(INNER_X, cy - 3).lineTo(INNER_X + INNER_W, cy - 3).lineWidth(0.7).strokeColor(BLUE_EDGE).stroke()
                     }
-                    doc.font(strong ? 'Helvetica-Bold' : 'Helvetica').fontSize(10).fillColor(strong ? INK : MUTED)
+                    doc.font(strong ? SANS_BOLD : SANS).fontSize(10).fillColor(strong ? INK : MUTED)
                     doc.text(str(line.label), INNER_X, cy, { width: INNER_W - 170 })
-                    doc.font('Helvetica-Bold').fontSize(10).fillColor(INK)
+                    doc.font(SANS_BOLD).fontSize(10).fillColor(INK)
                     doc.text(str(line.value), INNER_X + INNER_W - 170, cy, { width: 170, align: 'right' })
                     cy += 15
                 })
             }
 
             if (noteH) {
-                doc.font('Helvetica').fontSize(8).fillColor(FAINT).text(str(summary.conversionNote), INNER_X, cy, { width: INNER_W })
+                doc.font(SANS).fontSize(8).fillColor(FAINT).text(str(summary.conversionNote), INNER_X, cy, { width: INNER_W })
                 cy += noteH
             }
             if (trackH) {
-                doc.font('Helvetica').fontSize(8).fillColor(FAINT).text(`Track: ${str(summary.trackingUrl)}`, INNER_X, cy + 4, { width: INNER_W })
+                doc.font(SANS).fontSize(8).fillColor(FAINT).text(`Track: ${str(summary.trackingUrl)}`, INNER_X, cy + 4, { width: INNER_W })
             }
 
             y += cardH + 12
@@ -417,10 +452,10 @@ const buildShipmentSummaryPdf = (summary) =>
             for (const side of sides) {
                 doc.roundedRect(side.x, y, half, sideH, 8).lineWidth(1).fillAndStroke(side.wash, RULE)
                 pinMark(doc, side.x + PAD, y + PAD, side.color)
-                doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text(side.title, side.x + PAD + 17, y + PAD + 1, { width: half - PAD * 2 - 17 })
+                doc.font(SANS_BOLD).fontSize(10).fillColor(INK).text(side.title, side.x + PAD + 17, y + PAD + 1, { width: half - PAD * 2 - 17 })
                 let ly = y + PAD + 20
                 side.lines.forEach((line, index) => {
-                    doc.font(index === 0 ? 'Helvetica-Bold' : 'Helvetica').fontSize(10).fillColor(index === 0 ? INK : MUTED)
+                    doc.font(index === 0 ? SANS_BOLD : SANS).fontSize(10).fillColor(index === 0 ? INK : MUTED)
                     doc.text(line, side.x + PAD, ly, { width: half - PAD * 2 })
                     ly = doc.y
                 })
@@ -430,23 +465,35 @@ const buildShipmentSummaryPdf = (summary) =>
             /* ── What is in the box ───────────────────────────────────────── */
             const items = (summary.items || []).filter((i) => str(i.name))
             if (items.length) {
-                const rowH = 26
-                const itemsH = 20 + PAD * 2 + items.length * rowH
+                /* A row is as tall as its name needs. "REEL OF CABLE FOR MAIN
+                   ELECTRIC LINE 4G16-LENGTH: 138mt IK 3439D" wraps to two
+                   lines, and a fixed 26pt row printed the weight underneath
+                   straight through the second one. Measured first, because the
+                   card is drawn before anything goes in it. */
+                const NAME_W = INNER_W - 190
+                const rows = items.map((item) => {
+                    const nameH = heightOf(doc, str(item.name), { font: SANS_BOLD, size: 10, width: NAME_W })
+                    /* The sub-line sits under the name, and the row leaves 9pt
+                       for it and 5pt of air before the rule. */
+                    return { item, nameH, height: Math.max(26, nameH + 14) }
+                })
+                const itemsH = 20 + PAD * 2 + rows.reduce((sum, r) => sum + r.height, 0)
                 doc.roundedRect(CARD_X, y, CARD_W, itemsH, 8).lineWidth(1).fillAndStroke(ITEMS_WASH, RULE)
                 let iy = cardHeading(doc, y + PAD, boxMark, PURPLE, `Items (${items.length})`)
-                items.forEach((item, index) => {
-                    doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text(str(item.name), INNER_X, iy, { width: INNER_W - 190 })
-                    doc.font('Helvetica').fontSize(8).fillColor(FAINT).text(`${str(item.weight)} each`, INNER_X, iy + 12, { width: INNER_W - 190 })
-                    doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text(str(item.weight), INNER_X + INNER_W - 190, iy, { width: 190, align: 'right' })
+                rows.forEach(({ item, nameH, height }, index) => {
+                    doc.font(SANS_BOLD).fontSize(10).fillColor(INK).text(str(item.name), INNER_X, iy, { width: NAME_W })
+                    const subY = iy + nameH + 1
+                    doc.font(SANS).fontSize(8).fillColor(FAINT).text(`${str(item.weight)} each`, INNER_X, subY, { width: NAME_W })
+                    doc.font(SANS_BOLD).fontSize(10).fillColor(INK).text(str(item.weight), INNER_X + INNER_W - 190, iy, { width: 190, align: 'right' })
                     /* Blank rather than NGN 0.00: an unstated value is not a
                        worthless parcel. */
                     if (str(item.value)) {
-                        doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${str(item.value)} each`, INNER_X + INNER_W - 190, iy + 12, { width: 190, align: 'right' })
+                        doc.font(SANS).fontSize(8).fillColor(MUTED).text(`${str(item.value)} each`, INNER_X + INNER_W - 190, subY, { width: 190, align: 'right' })
                     }
-                    if (index < items.length - 1) {
-                        doc.moveTo(INNER_X, iy + rowH - 5).lineTo(INNER_X + INNER_W, iy + rowH - 5).lineWidth(0.5).strokeColor(RULE).stroke()
+                    if (index < rows.length - 1) {
+                        doc.moveTo(INNER_X, iy + height - 5).lineTo(INNER_X + INNER_W, iy + height - 5).lineWidth(0.5).strokeColor(RULE).stroke()
                     }
-                    iy += rowH
+                    iy += height
                 })
                 y += itemsH + 12
             }
@@ -456,11 +503,10 @@ const buildShipmentSummaryPdf = (summary) =>
             /* ── How to pay, and who we are ──────────────────────────────── */
             /* The payment block sits at the foot of the page, and goes to a
                second one rather than off the bottom when the goods ran long. */
-            /* The block needs about eighty-five points — the rule, the two
-               accounts and the customs line — and the tagline sits at 782.
-               Anything above that fits on this page. */
-            if (doc.y > 676) doc.addPage()
-            const footerTop = Math.max(doc.y + 14, 676)
+            /* The block needs about seventy points, and the tagline sits at
+               782. Anything above that fits on this page. */
+            if (doc.y > 698) doc.addPage()
+            const footerTop = Math.max(doc.y + 14, 690)
             doc.y = footerTop
             doc.moveTo(48, footerTop).lineTo(547, footerTop).lineWidth(0.5).strokeColor(RULE).stroke()
             doc.y = footerTop + 12
@@ -469,22 +515,17 @@ const buildShipmentSummaryPdf = (summary) =>
             const accountsTop = doc.y
             ACCOUNTS.forEach((account, i) => {
                 const x = i === 0 ? 48 : 303
-                doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text(account.name, x, accountsTop, { width: 244 })
-                doc.font('Helvetica').fontSize(10).fillColor(MUTED)
+                doc.font(SANS_BOLD).fontSize(10).fillColor(INK).text(account.name, x, accountsTop, { width: 244 })
+                doc.font(SANS).fontSize(10).fillColor(MUTED)
                 doc.text(account.bank, x, doc.y, { width: 244 })
-                doc.font('Helvetica-Bold').fillColor(INK).text(`${account.number}  (${account.currency})`, x, doc.y, { width: 244 })
+                doc.font(SANS_BOLD).fillColor(INK).text(`${account.number}  (${account.currency})`, x, doc.y, { width: 244 })
             })
-
-            /* Under the accounts, where someone reading what to pay is already
-               looking, and clear of the tagline at 782. */
-            doc.font('Helvetica').fontSize(8).fillColor(MUTED)
-            doc.text(printable(CUSTOMS_NOTE), 48, doc.y + 8, { width: 499 })
 
             /* Laid out a piece at a time rather than as one centred string:
                a link has to be given the box it occupies, and that means
                knowing where each word starts. Widths are measured first so the
                whole line still sits in the middle of the page. */
-            doc.font('Helvetica').fontSize(8)
+            doc.font(SANS).fontSize(8)
             const widths = FOOTER.map((part) => doc.widthOfString(printable(part.text)))
             let fx = 48 + (499 - widths.reduce((a, b) => a + b, 0)) / 2
             FOOTER.forEach((part, i) => {
@@ -500,4 +541,4 @@ const buildShipmentSummaryPdf = (summary) =>
         }
     })
 
-module.exports = { buildShipmentSummaryPdf, money, placeLines, ACCOUNTS, TAGLINE, FOOTER, CUSTOMS_NOTE }
+module.exports = { buildShipmentSummaryPdf, money, placeLines, ACCOUNTS, TAGLINE, FOOTER }
