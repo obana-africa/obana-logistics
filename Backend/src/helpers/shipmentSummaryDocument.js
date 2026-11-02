@@ -73,22 +73,31 @@ const ACCOUNTS = [
  *
  * Helvetica and its siblings are encoded WinAnsi, which has no naira sign and
  * no arrow: the first printed as a stray colon and the second as "!'" — in the
- * middle of a route, on a document sent to a customer. Embedding a Unicode
- * font would fix the glyphs and add the better part of a megabyte to the
- * service for two characters, so the two are spelt instead. Everything else a
- * Latin address needs — accents, dashes, the middle dot — WinAnsi already has.
+ * middle of a route, on a document sent to a customer. Those two are spelt
+ * out instead, until a Unicode face is embedded.
+ *
+ * WinAnsi is not Latin-1 though, and treating it as such was dropping the
+ * euro: €2,472 went out as "2,472", a figure with no currency on it at all,
+ * on a document quoting a shipper in euros. The characters below are the ones
+ * WinAnsi carries above Latin-1 — the euro among them — so they are kept.
  */
 const SUBSTITUTES = [
     [/\u20a6\s?/g, 'NGN '],
     [/\s*(\u2192|\u2794|\u27a1)\s*/g, ' to ']
 ]
 
+/* WinAnsi's own additions: the euro, the dashes, curly quotes, the bullet,
+   the dagger, the ellipsis, the per-mille and the florin. Latin-1 proper
+   (\u0000–\u00ff) covers the rest of what a European address needs. */
+const WINANSI_EXTRAS = '\u20ac\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u017d'
+    + '\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u017e\u0178'
+
 const printable = (value) => {
     let text = String(value ?? '')
     for (const [pattern, replacement] of SUBSTITUTES) text = text.replace(pattern, replacement)
-    /* Anything still outside Latin-1 would draw as a blank or the wrong glyph;
+    /* Anything still outside WinAnsi would draw as a blank or the wrong glyph;
        dropping it is less confusing than printing nonsense. */
-    return text.replace(/[^\u0000-\u00ff\u2013\u2014\u2018\u2019\u201c\u201d\u2022\u00b7]/g, '')
+    return text.replace(new RegExp(`[^\\u0000-\\u00ff${WINANSI_EXTRAS}]`, 'g'), '')
 }
 
 const str = (v) => printable(v).trim()
@@ -430,23 +439,35 @@ const buildShipmentSummaryPdf = (summary) =>
             /* ── What is in the box ───────────────────────────────────────── */
             const items = (summary.items || []).filter((i) => str(i.name))
             if (items.length) {
-                const rowH = 26
-                const itemsH = 20 + PAD * 2 + items.length * rowH
+                /* A row is as tall as its name needs. "REEL OF CABLE FOR MAIN
+                   ELECTRIC LINE 4G16-LENGTH: 138mt IK 3439D" wraps to two
+                   lines, and a fixed 26pt row printed the weight underneath
+                   straight through the second one. Measured first, because the
+                   card is drawn before anything goes in it. */
+                const NAME_W = INNER_W - 190
+                const rows = items.map((item) => {
+                    const nameH = heightOf(doc, str(item.name), { font: 'Helvetica-Bold', size: 10, width: NAME_W })
+                    /* The sub-line sits under the name, and the row leaves 9pt
+                       for it and 5pt of air before the rule. */
+                    return { item, nameH, height: Math.max(26, nameH + 14) }
+                })
+                const itemsH = 20 + PAD * 2 + rows.reduce((sum, r) => sum + r.height, 0)
                 doc.roundedRect(CARD_X, y, CARD_W, itemsH, 8).lineWidth(1).fillAndStroke(ITEMS_WASH, RULE)
                 let iy = cardHeading(doc, y + PAD, boxMark, PURPLE, `Items (${items.length})`)
-                items.forEach((item, index) => {
-                    doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text(str(item.name), INNER_X, iy, { width: INNER_W - 190 })
-                    doc.font('Helvetica').fontSize(8).fillColor(FAINT).text(`${str(item.weight)} each`, INNER_X, iy + 12, { width: INNER_W - 190 })
+                rows.forEach(({ item, nameH, height }, index) => {
+                    doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text(str(item.name), INNER_X, iy, { width: NAME_W })
+                    const subY = iy + nameH + 1
+                    doc.font('Helvetica').fontSize(8).fillColor(FAINT).text(`${str(item.weight)} each`, INNER_X, subY, { width: NAME_W })
                     doc.font('Helvetica-Bold').fontSize(10).fillColor(INK).text(str(item.weight), INNER_X + INNER_W - 190, iy, { width: 190, align: 'right' })
                     /* Blank rather than NGN 0.00: an unstated value is not a
                        worthless parcel. */
                     if (str(item.value)) {
-                        doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${str(item.value)} each`, INNER_X + INNER_W - 190, iy + 12, { width: 190, align: 'right' })
+                        doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`${str(item.value)} each`, INNER_X + INNER_W - 190, subY, { width: 190, align: 'right' })
                     }
-                    if (index < items.length - 1) {
-                        doc.moveTo(INNER_X, iy + rowH - 5).lineTo(INNER_X + INNER_W, iy + rowH - 5).lineWidth(0.5).strokeColor(RULE).stroke()
+                    if (index < rows.length - 1) {
+                        doc.moveTo(INNER_X, iy + height - 5).lineTo(INNER_X + INNER_W, iy + height - 5).lineWidth(0.5).strokeColor(RULE).stroke()
                     }
-                    iy += rowH
+                    iy += height
                 })
                 y += itemsH + 12
             }
