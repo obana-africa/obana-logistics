@@ -33,6 +33,89 @@ router.get('/recent', (req, res) =>
 // x-webhook-secret or ?secret=, the same way the route-item webhook is.
 router.post('/shipment-trigger', requireWebhookSecret, controller.triggerFromSalesOrder)
 
+/* Replay every manual route order Zoho has that never produced a shipment.
+ *
+ * The 413s left nothing behind on this side — Express refused the body
+ * before any route ran, so there is no requests row to replay FROM. The
+ * only record is in Zoho's own webhook log, which we cannot query. So this
+ * works from state instead: ask Zoho for its recent sales orders, keep the
+ * manual route ones, and run the flow for any we have no shipment for.
+ *
+ * Safe to run repeatedly. handleManualRouteOrder looks for a shipping with
+ * the order's reference before it does anything, so an order that did go
+ * through has its status refreshed rather than a second shipment booked.
+ *
+ * Behind the same webhook secret as the trigger: it books real shipments.
+ */
+router.post('/replay-manual-route-orders', requireWebhookSecret, async (req, res) => {
+    const zoho = require('../helpers/zohoInventory')
+    const { replayManualRouteOrder, isManualRouteOrder } = require('../helpers/webHooksHelper')
+    const db = require('../models/db.js')
+
+    const days = Math.min(Math.max(Number(req.query.days || req.body?.days || 30), 1), 90)
+    const limit = Math.min(Math.max(Number(req.query.limit || req.body?.limit || 50), 1), 200)
+    const dryRun = String(req.query.dry_run || req.body?.dry_run || '') === 'true'
+
+    const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+
+    const replayed = []
+    const skipped = []
+    const failed = []
+
+    try {
+        /* One page is deliberate. This books shipments and writes back to
+           Zoho three times per order; a hundred at once is a lot of moving
+           parts to start from one request, and the caller can run it again. */
+        const list = await zoho.call('GET', '/salesorders', {
+            params: { date_start: since, per_page: 200, sort_column: 'date', sort_order: 'D' },
+        })
+        const candidates = (list?.salesorders || []).slice(0, limit)
+
+        for (const brief of candidates) {
+            const ref = brief.salesorder_number
+            try {
+                // The list view carries no line_items, and the route item is
+                // what decides whether this order is ours at all.
+                const order = await zoho.getSalesOrder(brief.salesorder_id)
+                if (!order || !isManualRouteOrder(order)) {
+                    skipped.push({ ref, reason: 'not a manual route order' })
+                    continue
+                }
+                const existing = await db.shippings.findOne({ where: { order_reference: ref } })
+                if (existing) {
+                    skipped.push({ ref, reason: 'shipment already exists' })
+                    continue
+                }
+                if (dryRun) {
+                    replayed.push({ ref, dryRun: true })
+                    continue
+                }
+                const result = await replayManualRouteOrder(order)
+                replayed.push({ ref, result })
+            } catch (error) {
+                failed.push({ ref, error: error?.response?.data?.message || error.message })
+            }
+        }
+
+        return res.status(200).json({
+            success: true,
+            window: { since, days },
+            checked: candidates.length,
+            replayed: replayed.length,
+            skipped: skipped.length,
+            failed: failed.length,
+            details: { replayed, skipped, failed },
+        })
+    } catch (error) {
+        console.error('[zoho replay] failed:', error?.response?.data || error.message)
+        return res.status(500).json({
+            success: false,
+            message: error?.response?.data?.message || error.message,
+            partial: { replayed, skipped, failed },
+        })
+    }
+})
+
 // And the other direction: a status changed in Zoho, pushed back onto the
 // Obana shipment so the two never disagree about where a parcel is.
 router.post('/shipment-status', requireWebhookSecret, controller.statusFromZoho)
