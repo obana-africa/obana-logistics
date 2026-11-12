@@ -15,6 +15,22 @@ const app = express();
 // Render sits behind a proxy; needed for the real client IP (rate limits).
 app.set("trust proxy", 1);
 
+/* Log the request BEFORE any body parser runs.
+ *
+ * This log used to sit further down, after the parsers. A body parser that
+ * rejects a request answers 413 itself and never calls next(), so a rejected
+ * webhook never reached the log line — it produced NO output at all. That is
+ * why /requests/zohoSalesOrder failed for two months in silence: Zoho showed
+ * "Payload Too Large", our logs showed nothing, and the two were impossible
+ * to connect. Content-Length is logged with it so the size is on the record
+ * whether or not the body is accepted.
+ */
+app.use((req, res, next) => {
+	const len = req.headers["content-length"];
+	console.log(`${req.method} - ${req.url}${len ? ` - ${len}b` : ""}`);
+	next();
+});
+
 /* Zoho's workflow-rule webhooks post the ENTIRE sales order, and a sales order
    with eighty items carries every line's custom fields twice over — well past
    express.json()'s 100kb default. Express then answers 413 "Payload Too Large"
@@ -68,7 +84,24 @@ app.use("/requests", (req, res, next) =>
         : next()
 );
 
-app.use(express.json());
+/* The default, raised — because 100kb has now caught us three times.
+ *
+ *   /zoho/shipment-trigger      413, fixed 26 Sep
+ *   /shipments/**\/documents     413, every real waybill rejected
+ *   /requests/zohoSalesOrder    413, two months of silent failures
+ *
+ * Each was found the same way: something real stopped working, and the
+ * cause looked like anything but a body parser. Each fix was scoped to the
+ * one path, which is tidy and left the next endpoint carrying the same
+ * trap. A fourth was only a matter of time.
+ *
+ * 5mb is far above any legitimate JSON body this API takes — Zoho's largest
+ * sales order is a few hundred kilobytes — and far below anything that
+ * threatens a 512MB instance. The narrower mounts above stay: they are
+ * larger still for documents, and they are documentation of what those
+ * endpoints actually carry.
+ */
+app.use(express.json({ limit: "5mb" }));
 const http = require("http");
 
 
@@ -167,10 +200,7 @@ app.get("/", (req, res) => {
  **/
 
 app.use(express.urlencoded({ extended: false }));
-app.use((req, res, next) => {
-	console.log(`${req.method} - ${req.url}`);
-	next();
-});
+// Request logging now happens before the body parsers, at the top of this file.
 
 app.use("/shipments", shipmentRoutes);
 app.use("/users", usersRoute);
@@ -184,6 +214,36 @@ app.use("/stores", require("./src/routes/stores"));
 app.use("/zoho", zohoRoutes);
 app.use("/vendor-shipments", require("./src/routes/vendorShipments"));
  
+/* Say it out loud when a body is refused.
+ *
+ * Until now there was no error handler at all, so body-parser's 413 fell
+ * through to Express's default: an HTML stack-trace page, and nothing in the
+ * log naming the path or the size. Three separate 413 outages were diagnosed
+ * from the CALLER's side — Zoho's failure log — because this side said
+ * nothing. If a fourth limit is ever too low, this line is what will tell us,
+ * with the real byte count rather than a guess.
+ */
+app.use((err, req, res, next) => {
+	if (err && (err.type === "entity.too.large" || err.status === 413)) {
+		console.error(
+			`[413] body refused on ${req.method} ${req.originalUrl} — ` +
+				`${req.headers["content-length"] ?? "unknown"} bytes, limit ${err.limit ?? "?"}. ` +
+				`Raise the limit for this path in app.js if this is legitimate traffic.`,
+		);
+		return res.status(413).json({
+			success: false,
+			error: "payload_too_large",
+			received: Number(req.headers["content-length"]) || null,
+			limit: err.limit ?? null,
+		});
+	}
+	if (err && err.type === "entity.parse.failed") {
+		console.error(`[400] unparseable body on ${req.method} ${req.originalUrl}`);
+		return res.status(400).json({ success: false, error: "invalid_json" });
+	}
+	return next(err);
+});
+
 server.listen(PORT, () => {
 	console.log(`Obana Logistics is running on port ${PORT}`);
 });
