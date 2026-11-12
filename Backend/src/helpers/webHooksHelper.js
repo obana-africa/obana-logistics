@@ -644,3 +644,38 @@ class WeebHooksHelper {
 }
 
 module.exports.WeebHooksHelper = WeebHooksHelper
+
+/**
+ * Replay a manual route order without a webhook.
+ *
+ * The 413s left no trace on this side — Express refused the body before any
+ * route ran, so there is no requests row and no webhook_logs row to replay
+ * FROM. The only record is in Zoho's own log, which we cannot query. So a
+ * replay has to work from STATE: take the sales order as Zoho holds it now
+ * and run the same flow the webhook would have.
+ *
+ * handleManualRouteOrder is already idempotent — it looks for a shipping
+ * with this order_reference before doing anything — so replaying an order
+ * that did succeed updates its status rather than booking a second one.
+ *
+ * Exported separately because the class needs a req/res to answer a webhook
+ * and a replay has neither; the two parts of its job are separable, and
+ * this is the half that is actually about shipments.
+ */
+module.exports.replayManualRouteOrder = async (salesorder) => {
+    const helper = new WeebHooksHelper('zohoSalesOrder', { body: { salesorder } }, null, null)
+    // handleManualRouteOrder only writes to this.log on the webhook path.
+    helper.log = { response: null, save: async () => {} }
+    return helper.handleManualRouteOrder(salesorder)
+}
+
+/** Whether this sales order is one the manual route flow should act on. */
+module.exports.isManualRouteOrder = (salesorder) => {
+    if (!salesorder || !Array.isArray(salesorder.line_items)) return false
+    const cfHash = salesorder.custom_field_hash || {}
+    const metaRaw = cfHash.cf_meta_data
+    const hasMetaData =
+        metaRaw !== undefined && metaRaw !== null &&
+        String(metaRaw).trim() !== '' && String(metaRaw).trim() !== '{}'
+    return !hasMetaData && salesorder.line_items.some((li) => isRouteLineItem(li))
+}

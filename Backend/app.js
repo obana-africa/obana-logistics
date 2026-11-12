@@ -45,6 +45,29 @@ app.use("/shipments", (req, res, next) =>
         : next()
 );
 
+/* The same trap again, at the endpoint Zoho is actually configured to call.
+ *
+ * The /zoho mount above was added for /zoho/shipment-trigger, but the
+ * workflow rule posts to /requests/zohoSalesOrder — which falls through to
+ * the default parser below and its 100kb. So Zoho sent the whole sales
+ * order, Express answered 413 "Payload Too Large" before any route ran, and
+ * the shipment was never booked. SO-00722: three attempts, all 413, status
+ * "Invoiced" in Zoho and nothing on this side.
+ *
+ * Scoped to POSTs at that one path, and mounted BEFORE the general parser:
+ * body-parser marks a request once it has read it, so the later instance
+ * stands aside rather than fighting this one.
+ *
+ * The route is dispatched from the endpoints table rather than declared in
+ * src/routes, so there is no router to attach this to — the path is matched
+ * here instead.
+ */
+app.use("/requests", (req, res, next) =>
+    req.method === "POST" && /\/zohoSalesOrder\/?$/i.test(req.path)
+        ? express.json({ limit: "10mb" })(req, res, next)
+        : next()
+);
+
 app.use(express.json());
 const http = require("http");
 
