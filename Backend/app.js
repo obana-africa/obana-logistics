@@ -68,7 +68,24 @@ app.use("/requests", (req, res, next) =>
         : next()
 );
 
-app.use(express.json());
+/* The default, raised — because 100kb has now caught us three times.
+ *
+ *   /zoho/shipment-trigger      413, fixed 26 Sep
+ *   /shipments/**\/documents     413, every real waybill rejected
+ *   /requests/zohoSalesOrder    413, two months of silent failures
+ *
+ * Each was found the same way: something real stopped working, and the
+ * cause looked like anything but a body parser. Each fix was scoped to the
+ * one path, which is tidy and left the next endpoint carrying the same
+ * trap. A fourth was only a matter of time.
+ *
+ * 5mb is far above any legitimate JSON body this API takes — Zoho's largest
+ * sales order is a few hundred kilobytes — and far below anything that
+ * threatens a 512MB instance. The narrower mounts above stay: they are
+ * larger still for documents, and they are documentation of what those
+ * endpoints actually carry.
+ */
+app.use(express.json({ limit: "5mb" }));
 const http = require("http");
 
 
