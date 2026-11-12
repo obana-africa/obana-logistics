@@ -53,16 +53,75 @@ router.post('/replay-manual-route-orders', requireWebhookSecret, async (req, res
     const db = require('../models/db.js')
 
     const days = Math.min(Math.max(Number(req.query.days || req.body?.days || 30), 1), 90)
+    // 200 is the ceiling for a scan; a named list is bounded by the list
+    // itself, and two months of failures is about thirty orders.
     const limit = Math.min(Math.max(Number(req.query.limit || req.body?.limit || 50), 1), 200)
     const dryRun = String(req.query.dry_run || req.body?.dry_run || '') === 'true'
 
     const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+
+    /* An explicit list beats a date scan when you have one.
+     *
+     * Zoho's failure log names the orders outright (SO-00660 … SO-00722,
+     * two months of them), and looking each one up is a handful of calls
+     * against a scan of every sales order in the window — most of which are
+     * not route orders at all. It is also exact: no order silently missed
+     * because the window or the page size fell short. */
+    const wanted = String(
+        req.query.salesorder_numbers || req.body?.salesorder_numbers || ''
+    )
+        .split(/[\s,]+/)
+        .map((n) => n.trim())
+        .filter(Boolean)
 
     const replayed = []
     const skipped = []
     const failed = []
 
     try {
+        if (wanted.length > 0) {
+            for (const ref of wanted.slice(0, limit)) {
+                try {
+                    const brief = await zoho.findSalesOrderByNumber(ref)
+                    if (!brief) {
+                        skipped.push({ ref, reason: 'no such sales order in Zoho' })
+                        continue
+                    }
+                    const order = await zoho.getSalesOrder(brief.salesorder_id)
+                    if (!order || !isManualRouteOrder(order)) {
+                        skipped.push({ ref, reason: 'not a manual route order' })
+                        continue
+                    }
+                    const existing = await db.shippings.findOne({
+                        where: { order_reference: order.salesorder_number },
+                    })
+                    if (existing) {
+                        skipped.push({ ref, reason: 'shipment already exists' })
+                        continue
+                    }
+                    if (dryRun) {
+                        replayed.push({ ref, dryRun: true })
+                        continue
+                    }
+                    replayed.push({ ref, result: await replayManualRouteOrder(order) })
+                } catch (error) {
+                    failed.push({
+                        ref,
+                        error: error?.response?.data?.message || error.message,
+                    })
+                }
+            }
+            return res.status(200).json({
+                success: true,
+                mode: 'by_number',
+                requested: wanted.length,
+                replayed: replayed.length,
+                skipped: skipped.length,
+                failed: failed.length,
+                details: { replayed, skipped, failed },
+            })
+        }
+
         /* One page is deliberate. This books shipments and writes back to
            Zoho three times per order; a hundred at once is a lot of moving
            parts to start from one request, and the caller can run it again. */
