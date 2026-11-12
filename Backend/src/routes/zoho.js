@@ -47,6 +47,79 @@ router.post('/shipment-trigger', requireWebhookSecret, controller.triggerFromSal
  *
  * Behind the same webhook secret as the trigger: it books real shipments.
  */
+/* Replay the shipment flow for orders whose webhook failed.
+ *
+ * The companion to replay-manual-route-orders, for the OTHER two rules —
+ * "Create Shipment" and "Updates Shipment-Book", which post to
+ * /zoho/shipment-trigger. A webhook that 413'd or timed out left no trace
+ * here, so there is nothing to replay FROM; this works from the order
+ * numbers Zoho's own failure log names.
+ *
+ * It runs exactly the path the webhook runs — resolveAndFulfil, the same
+ * function triggerFromSalesOrder calls — so a replayed order is rated,
+ * booked, tracked and written back identically. fulfil checks for an
+ * existing shipping for the order first, so replaying one that succeeded
+ * reconciles it rather than booking a second.
+ *
+ * Inline, not fire-and-forget: a replay is run by a person watching, and
+ * the whole point is to see which ones worked.
+ */
+router.post('/replay-shipments', requireWebhookSecret, async (req, res) => {
+    const numbers = String(
+        req.query.salesorder_numbers || req.body?.salesorder_numbers || ''
+    )
+        .split(/[\s,]+/)
+        .map((n) => n.trim())
+        .filter(Boolean)
+
+    if (numbers.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message:
+                'salesorder_numbers is required, comma separated — e.g. ' +
+                '?salesorder_numbers=SO-00719,SO-00720. Take them from Zoho\'s ' +
+                'workflow log, filtered to Failure.',
+        })
+    }
+
+    const dryRun = String(req.query.dry_run || req.body?.dry_run || '') === 'true'
+    const done = []
+    const failed = []
+
+    for (const ref of numbers.slice(0, 100)) {
+        try {
+            if (dryRun) {
+                // Say whether it would do anything, without booking.
+                const existing = await require('../models/db.js').shippings.findOne({
+                    where: { order_reference: ref },
+                })
+                done.push({
+                    ref,
+                    dryRun: true,
+                    wouldSkip: !!existing,
+                    reason: existing ? 'shipment already exists' : 'would book',
+                })
+                continue
+            }
+            const result = await controller.resolveAndFulfil({ salesOrderNumber: ref })
+            done.push({ ref, result })
+        } catch (error) {
+            failed.push({
+                ref,
+                error: error?.zoho?.message || error?.message || String(error),
+            })
+        }
+    }
+
+    return res.status(200).json({
+        success: failed.length === 0,
+        requested: numbers.length,
+        done: done.length,
+        failed: failed.length,
+        details: { done, failed },
+    })
+})
+
 router.post('/replay-manual-route-orders', requireWebhookSecret, async (req, res) => {
     const zoho = require('../helpers/zohoInventory')
     const { replayManualRouteOrder, isManualRouteOrder } = require('../helpers/webHooksHelper')
