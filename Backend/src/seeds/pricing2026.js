@@ -127,6 +127,68 @@ const TIERS = {
     ],
 };
 
+/**
+ * How a price grows with weight.
+ *
+ * Every Nigerian courier prices in weight bands, not per kilo — GIGL quotes
+ * 0–2 kg, 3–5 kg and 5 kg+ as three figures, and a 1 kg and a 2 kg parcel on
+ * the same route cost the same. The table above is the 5–10 kg figure, which
+ * is the one the market research was done against, and these scale it.
+ *
+ *   0–1 kg   × 0.45     an envelope or a shirt
+ *   1–2 kg   × 0.55
+ *   2–5 kg   × 0.75
+ *   5–10 kg  × 1        the benchmarked rate
+ *   10–20 kg × 1.6
+ *   20–50 kg × 3
+ *
+ * Above the top band priceTemplate extrapolates pro rata, which gives roughly
+ * the per-kilo rate a courier charges for a heavy job and needs no band of
+ * its own.
+ *
+ * Against a Lagos Standard of ₦3,000 that is ₦1,500 / ₦1,650 / ₦2,250 /
+ * ₦3,000 / ₦4,800 / ₦9,000 before the service charge — a small parcel across
+ * Lagos quoted ₦1,650, where it belongs, instead of ₦12,100.
+ */
+const WEIGHT_LADDER = [
+    { min: 0, max: 1, factor: 0.45 },
+    { min: 1, max: 2, factor: 0.55 },
+    { min: 2, max: 5, factor: 0.75 },
+    { min: 5, max: 10, factor: 1 },
+    { min: 10, max: 20, factor: 1.6 },
+    { min: 20, max: 50, factor: 3 },
+];
+
+/**
+ * A bracket at or above this weight was agreed for a job, not taken off a
+ * price list. Lagos → Port Harcourt carries ₦585,000 from 50 kg; nothing here
+ * may touch it.
+ */
+const NEGOTIATED_FROM_KG = 50;
+
+/** Round to something a customer can read. */
+const tidy = (n) => Math.ceil(n / 50) * 50;
+
+/**
+ * The full set of weight brackets for one service on one lane.
+ *
+ * Replaces whatever parcel brackets a route is carrying rather than adjusting
+ * them. Adjusting is what left a Lagos lane with one 0–90 kg bracket at
+ * ₦11,000 — a shirt and a fridge the same price, and a reprice that skipped
+ * the row entirely because it was looking for a bracket ending at 10.
+ */
+function ladderFor(lane, mode, level) {
+    const rate = rateFor(lane, mode, level);
+    if (!rate) return null;
+    return WEIGHT_LADDER.map((band) => ({
+        min: band.min,
+        max: band.max,
+        price: tidy(rate.price * band.factor),
+        eta: `${rate.eta} days`,
+        unit_price: Number((tidy(rate.price * band.factor) / (band.max - band.min)).toFixed(2)),
+    }));
+}
+
 /** Which tier a lane falls in. `null` zones mean "not a Nigerian lane". */
 function tierFor({ sameState, originZone, destinationZone }) {
     if (sameState) return 'same';
@@ -154,4 +216,14 @@ function rateFor(lane, mode, level) {
     );
 }
 
-module.exports = { TIERS, ZONE_GAP, zoneGap, tierFor, servicesFor, rateFor };
+module.exports = {
+    TIERS,
+    ZONE_GAP,
+    WEIGHT_LADDER,
+    NEGOTIATED_FROM_KG,
+    zoneGap,
+    tierFor,
+    servicesFor,
+    rateFor,
+    ladderFor,
+};
