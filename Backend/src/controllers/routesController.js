@@ -13,6 +13,7 @@ const { parsePhoneNumber } = require('libphonenumber-js');
 const util = require('../utility/utils.js');
 const querystring = require('node:querystring');
 const { cityBand, bandedPrice } = require('../seeds/cityBands');
+const { atLeastMinimum } = require('../seeds/pricing2026');
 
 
 require('dotenv').config()
@@ -984,6 +985,15 @@ const laneOptions = async (routeTemplates, origin_state, origin_country, destina
                 match.base_price = bandedPrice(match.base_price ?? match.price, band)
                 match.city_band = band
             }
+            /* The floor holds after the band, not just in the table.
+             *
+             * A local run is 0.65 of the lane's price, and the lightest band
+             * is 0.45 of it again — which took a 0.2 kg parcel from Ikeja to
+             * Ikeja down to ₦990 quoted. Nobody rides to a shop, waits,
+             * collects and delivers for that; the number was not a price but
+             * a booking that would quietly fail. Every courier here publishes
+             * a floor rather than refusing the job, and so do we. */
+            match.base_price = atLeastMinimum(match.base_price ?? match.price, service.service_level)
         }
 
         /* The charge follows whichever base and percent ended up in play. */

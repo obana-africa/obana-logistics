@@ -239,6 +239,65 @@ it('every band carries the service eta, not a mixture', () => {
     assert.strictEqual([...etas][0], '0-1 days');
 });
 
+/* ── Coverage, and the floor ────────────────────────────────────────────── */
+
+const { atLeastMinimum, MINIMUM_BASE } = require('./pricing2026');
+
+it('every tier sells all three service levels by road', () => {
+    // The seed gave intra-state lanes no Economy and the far-north lanes no
+    // road Express, so a shopper crossing one city had no cheap option and
+    // one going north had no fast one short of a flight.
+    for (const [tier, services] of Object.entries(TIERS)) {
+        for (const level of ['Economy', 'Standard', 'Express']) {
+            assert.ok(
+                services.some((x) => x.mode === 'road' && x.level === level),
+                `tier ${tier} does not sell road ${level}`
+            );
+        }
+    }
+});
+
+it('nothing is ever quoted below what the job is worth', () => {
+    // A local run is 0.65 of the lane, and the lightest band 0.45 of that
+    // again — which took Ikeja to Ikeja down to ₦990 quoted. Nobody rides to
+    // a shop, waits, collects and delivers for that.
+    for (const level of Object.keys(MINIMUM_BASE)) {
+        assert.strictEqual(atLeastMinimum(1, level), MINIMUM_BASE[level]);
+        assert.strictEqual(atLeastMinimum(0, level), MINIMUM_BASE[level]);
+    }
+});
+
+it('the floor never moves a price that is already above it', () => {
+    assert.strictEqual(atLeastMinimum(9000, 'Standard'), 9000);
+});
+
+it('the floor keeps the services in order rather than flattening them', () => {
+    // One floor for all three would make Economy, Standard and Express the
+    // same number on exactly the smallest jobs.
+    assert.ok(
+        atLeastMinimum(1, 'Express') > atLeastMinimum(1, 'Standard'),
+        'Express must stay above Standard at the floor'
+    );
+    assert.ok(
+        atLeastMinimum(1, 'Standard') > atLeastMinimum(1, 'Economy'),
+        'Standard must stay above Economy at the floor'
+    );
+});
+
+it('the floor sits where this market actually starts', () => {
+    // Fez from ₦1,000, Kwik's short Lagos runs ₦800–1,500, Yenagoa from
+    // ₦2,000, GIGL's smallest intra-city band ₦3,000. Quoted, with the
+    // service charge, the cheapest thing we sell is ₦1,320.
+    const cheapest = quoted(MINIMUM_BASE.Economy);
+    assert.ok(cheapest >= 1200, `₦${cheapest} is below what anyone will do the job for`);
+    assert.ok(cheapest <= 3300, `₦${cheapest} is above the market's own floor`);
+});
+
+it('an unknown service level has no floor to apply', () => {
+    // A partner level or something hand-typed: left exactly as it came.
+    assert.strictEqual(atLeastMinimum(50, 'Courier Partner'), 50);
+});
+
 let failed = 0;
 for (const [name, fn] of cases) {
     try {

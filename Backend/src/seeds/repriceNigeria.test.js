@@ -34,7 +34,9 @@ it('a Lagos city run drops to a city price, and grows with weight', () => {
     const edit = repriceRoute(
         route({ level: 'Standard', brackets: [{ min: 0, max: 90, price: 11000, eta: '1 days' }] })
     );
-    assert.strictEqual(band(edit, 1).price, 1350, 'a 1 kg parcel is not a 10 kg one');
+    // 0.45 of ₦3,000 is ₦1,350, lifted to the Standard floor of ₦1,500:
+    // below that nobody rides to the shop, waits and delivers.
+    assert.strictEqual(band(edit, 1).price, 1500, 'a 1 kg parcel is not a 10 kg one');
     assert.strictEqual(band(edit, 10).price, 3000);
     assert.strictEqual(band(edit, 50).price, 9000);
     assert.strictEqual(band(edit, 1).eta, '1-2 days');
