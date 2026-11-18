@@ -335,6 +335,20 @@ class WeebHooksHelper {
         }
         console.log(`[manualRoute] origin="${originStr}" destination="${destinationStr}" mode=${transportMode} level=${serviceLevel} brackets=${JSON.stringify(weightBrackets)}`)
 
+        /* Both ends, or nothing.
+         *
+         * These come off the route ITEM's custom fields, and when the item
+         * could not be read they are simply empty — which used to produce a
+         * shipment addressed nowhere, or a failure several steps later whose
+         * message said nothing about the cause. Said here, once, naming the
+         * item, so the log reads as the problem rather than a symptom. */
+        if (!String(originStr || '').trim() || !String(destinationStr || '').trim()) {
+            throw new Error(
+                `Route item "${routeItem?.name || routeLineItem?.name || 'unknown'}" is missing its origin or destination custom field ` +
+                `(origin="${originStr || ''}", destination="${destinationStr || ''}")`
+            )
+        }
+
         // Pickup = route origin; delivery = route destination (contact from salesorder shipping address).
         const pickupAddress = buildRouteAddress(originStr)
         const deliveryFallback = buildRouteAddress(destinationStr)
@@ -634,8 +648,20 @@ class WeebHooksHelper {
             }
             return map
         } catch (e) {
-            console.error('[manualRoute] fetchZohoItems failed:', e?.response?.data || e.message)
-            return {}
+            /* Not {}.
+             *
+             * An empty map used to be returned here and the caller carried on
+             * with it — but the ROUTE item's custom fields are the only place
+             * the origin and destination exist, so an empty map means the
+             * shipment gets built with no idea where it is going. That is how
+             * a 401 from one expired token turned into a sales order with no
+             * shipment and a green tick in Zoho.
+             *
+             * One request fetches every item, so this is all-or-nothing: a
+             * failure here is not a gap in the data, it is the absence of it. */
+            const said = e?.response?.data ? JSON.stringify(e.response.data) : e.message
+            console.error('[manualRoute] fetchZohoItems failed:', said)
+            throw new Error(`Could not read the Zoho items for this order: ${said}`)
         }
     }
 

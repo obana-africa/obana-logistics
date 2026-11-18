@@ -2408,15 +2408,16 @@ const shipmentController = {
         }
     },
 
+    /**
+     * A second copy of the same thing utility/utils.js has, and it had the
+     * same bug: when the refresh failed it returned the STRING
+     * "Zoho-oauthtoken undefined", which is a valid-looking header that every
+     * Zoho call then answers 401 to. Delegated to the one implementation so
+     * there is one place this can be wrong.
+     */
     async getZohoInventoryToken() {
-
-        let zohoInventoryToken;
-        let zohoInventoryTokenData = (await this.refreshToken(this.tokenCredentials(process.env.INVENTORY_REFRESH_TOKEN)))?.data;
-
-        if (zohoInventoryTokenData?.access_token) {
-            zohoInventoryToken = zohoInventoryTokenData.access_token
-        }
-        return 'Zoho-oauthtoken ' + zohoInventoryToken;
+        const { getZohoInventoryToken } = require('../utility/utils.js');
+        return getZohoInventoryToken();
     },
 
     /**
