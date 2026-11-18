@@ -380,10 +380,28 @@ const updateSalesOrderShipment = async (salesOrderId, { shippingCharge, customFi
         return order
     }
 
+    /* A caller that says nothing about the charge must not erase it.
+     *
+     * This is a PUT, and a PUT states the order. Leaving shipping_charge out
+     * does not mean "leave it alone", it means "it has no charge" — so the
+     * figure writeBackToZoho had just written was wiped by the very next call
+     * that only wanted to move the status along. On the order that produced
+     * this, the tracking id and url stayed and the shipping charge went, which
+     * reads as the charge never having been sent at all.
+     *
+     * syncStatusToSalesOrder is the one that does it, and it is right not to
+     * care about the charge — it is a status update. So the charge is carried
+     * from the order itself, which this function has already read, and only a
+     * caller that actually supplies one changes it. */
+    const charge =
+        shippingCharge === undefined ? num(order.shipping_charge) : num(shippingCharge)
+
     const body = await call('put', `salesorders/${encodeURIComponent(salesOrderId)}`, {
         data: {
             line_items,
-            ...(shippingCharge === undefined ? {} : { shipping_charge: num(shippingCharge) }),
+            // Still omitted when there is genuinely nothing to state, so an
+            // order that has never had a charge is not given a zero.
+            ...(charge > 0 ? { shipping_charge: charge } : {}),
             ...(custom_fields.length ? { custom_fields } : {})
         }
     })
