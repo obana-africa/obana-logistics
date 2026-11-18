@@ -276,27 +276,116 @@ it('nothing is ever quoted below what the job is worth', () => {
     // A local run is 0.65 of the lane, and the lightest band 0.45 of that
     // again — which took Ikeja to Ikeja down to ₦990 quoted. Nobody rides to
     // a shop, waits, collects and delivers for that.
-    for (const level of Object.keys(MINIMUM_BASE)) {
-        assert.strictEqual(atLeastMinimum(1, level), MINIMUM_BASE[level]);
-        assert.strictEqual(atLeastMinimum(0, level), MINIMUM_BASE[level]);
+    for (const [tier, floors] of Object.entries(MINIMUM_BASE)) {
+        for (const level of Object.keys(floors)) {
+            assert.strictEqual(atLeastMinimum(1, level, tier), floors[level]);
+            assert.strictEqual(atLeastMinimum(0, level, tier), floors[level]);
+        }
     }
 });
 
 it('the floor never moves a price that is already above it', () => {
-    assert.strictEqual(atLeastMinimum(9000, 'Standard'), 9000);
+    assert.strictEqual(atLeastMinimum(90000, 'Standard', 'same'), 90000);
 });
 
 it('the floor keeps the services in order rather than flattening them', () => {
     // One floor for all three would make Economy, Standard and Express the
     // same number on exactly the smallest jobs.
-    assert.ok(
-        atLeastMinimum(1, 'Express') > atLeastMinimum(1, 'Standard'),
-        'Express must stay above Standard at the floor'
-    );
-    assert.ok(
-        atLeastMinimum(1, 'Standard') > atLeastMinimum(1, 'Economy'),
-        'Standard must stay above Economy at the floor'
-    );
+    for (const tier of Object.keys(MINIMUM_BASE)) {
+        assert.ok(
+            atLeastMinimum(1, 'Express', tier) > atLeastMinimum(1, 'Standard', tier),
+            `tier ${tier}: Express must stay above Standard at the floor`
+        );
+        assert.ok(
+            atLeastMinimum(1, 'Standard', tier) > atLeastMinimum(1, 'Economy', tier),
+            `tier ${tier}: Standard must stay above Economy at the floor`
+        );
+    }
+});
+
+it('the lightest band matches what couriers charge for the same journey', () => {
+    /* GIGL publishes 0–2 kg rates per route; our lightest band is what a
+       0.2 kg parcel pays. The first attempt put ONE flat floor under every
+       lane, and a 0.2 kg parcel from Ikeja to Ado-Ekiti came out at ₦2,200 —
+       less than GIGL charges to cross a single city. */
+    const light = (lane, level) => quoted(ladderFor(lane, 'road', level)[0].price);
+    const checks = [
+        ['Lagos → Abuja', { originZone: 'SW', destinationZone: 'NC' }, [6000, 9000]],
+        ['Lagos → Kano', { originZone: 'SW', destinationZone: 'NW' }, [7000, 11000]],
+        ['Lagos → Enugu', { originZone: 'SW', destinationZone: 'SE' }, [7000, 10500]],
+    ];
+    for (const [label, lane, [low, high]] of checks) {
+        const price = light(lane, 'Standard');
+        assert.ok(price <= high, `${label}: ₦${price} is above the market (₦${low}–${high})`);
+        assert.ok(price >= low * 0.85, `${label}: ₦${price} is far under the market (₦${low}–${high})`);
+    }
+});
+
+it('a light parcel costs more the further it goes', () => {
+    /* The bug this exists to stop: a flat floor made every journey the same
+       price for anything under a kilo, so 300 km cost what crossing Ikeja
+       costs. */
+    const order = [
+        { sameState: true },
+        { originZone: 'SW', destinationZone: 'SW' },
+        { originZone: 'SW', destinationZone: 'NC' },
+        { originZone: 'SW', destinationZone: 'SE' },
+        { originZone: 'SW', destinationZone: 'NW' },
+    ];
+    for (const level of ['Economy', 'Standard', 'Express']) {
+        const prices = order.map((lane) => ladderFor(lane, 'road', level)[0].price);
+        for (let i = 1; i < prices.length; i += 1) {
+            assert.ok(
+                prices[i] > prices[i - 1],
+                `${level}: a 0.2 kg parcel on tier ${i} (₦${prices[i]}) must cost more than tier ${i - 1} (₦${prices[i - 1]})`
+            );
+        }
+    }
+});
+
+it('leaving the pickup town costs more than staying in it', () => {
+    /* Obana is based in Lagos and most of what it carries starts there, so
+       this is the journey it does most often. One flat intra-state floor
+       paid a rider walking down the road the same as a rider crossing into
+       the next town: Ikeja → Ikeja and Ikeja → Agege were both ₦2,750. */
+    const { atLeastCityMinimum, CITY_BAND_MINIMUM } = require('./pricing2026');
+    const { bandedPrice } = require('./cityBands');
+    for (const level of ['Economy', 'Standard', 'Express']) {
+        const lightest = ladderFor({ sameState: true }, 'road', level)[0].price;
+        const price = (band) =>
+            atLeastCityMinimum(bandedPrice(lightest, band), level, band);
+        assert.ok(
+            price('city') > price('local'),
+            `${level}: leaving the town (₦${price('city')}) must cost more than staying in it (₦${price('local')})`
+        );
+        assert.ok(
+            price('metro') > price('city'),
+            `${level}: crossing the state (₦${price('metro')}) must cost more than crossing the town (₦${price('city')})`
+        );
+    }
+    // And every band of it still clears the floor the state as a whole has.
+    for (const band of Object.keys(CITY_BAND_MINIMUM)) {
+        for (const level of ['Economy', 'Standard', 'Express']) {
+            assert.ok(
+                CITY_BAND_MINIMUM[band][level] >= MINIMUM_BASE.same[level],
+                `${band} ${level} sits under the state floor`
+            );
+        }
+    }
+});
+
+it('a run across the state still costs less than leaving it', () => {
+    /* The ceiling on the other side. A metro run inside Lagos must not cost
+       more than a run to the next state, or the bands have overtaken the
+       tier above them. */
+    const { atLeastCityMinimum, CITY_BAND_MINIMUM } = require('./pricing2026');
+    for (const level of ['Economy', 'Standard', 'Express']) {
+        assert.ok(
+            CITY_BAND_MINIMUM.metro[level] <= MINIMUM_BASE[0][level],
+            `${level}: a metro run (₦${CITY_BAND_MINIMUM.metro[level]}) has overtaken the next zone (₦${MINIMUM_BASE[0][level]})`
+        );
+    }
+    void atLeastCityMinimum;
 });
 
 it('nothing anywhere can be quoted under ₦2,000', () => {
@@ -304,7 +393,7 @@ it('nothing anywhere can be quoted under ₦2,000', () => {
     // openly and sets it at ₦2,000; GIGL's smallest intra-city band is
     // ₦3,000. A ₦990 pickup is not a cheap delivery, it is a delivery that
     // gets accepted and then quietly dropped.
-    const cheapest = quoted(MINIMUM_BASE.Economy);
+    const cheapest = quoted(MINIMUM_BASE.same.Economy);
     assert.ok(cheapest >= 2000, `₦${cheapest} is below the floor`);
     assert.ok(cheapest <= 3300, `₦${cheapest} is above the market's own floor`);
 });
@@ -317,7 +406,8 @@ it('the floor survives a local run, which is where it was breaking', () => {
     for (const level of ['Economy', 'Standard', 'Express']) {
         const lightest = ladderFor({ sameState: true }, 'road', level)[0];
         for (const band of ['local', 'city', 'metro']) {
-            const price = atLeastMinimum(bandedPrice(lightest.price, band), level);
+            const { atLeastCityMinimum } = require('./pricing2026');
+            const price = atLeastCityMinimum(bandedPrice(lightest.price, band), level, band);
             assert.ok(
                 quoted(price) >= 2000,
                 `${level} on a ${band} run quotes ₦${quoted(price)}`
@@ -328,7 +418,7 @@ it('the floor survives a local run, which is where it was breaking', () => {
 
 it('an unknown service level has no floor to apply', () => {
     // A partner level or something hand-typed: left exactly as it came.
-    assert.strictEqual(atLeastMinimum(50, 'Courier Partner'), 50);
+    assert.strictEqual(atLeastMinimum(50, 'Courier Partner', 'same'), 50);
 });
 
 let failed = 0;

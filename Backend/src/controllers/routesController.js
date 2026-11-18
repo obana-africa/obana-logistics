@@ -13,7 +13,7 @@ const { parsePhoneNumber } = require('libphonenumber-js');
 const util = require('../utility/utils.js');
 const querystring = require('node:querystring');
 const { cityBand, bandedPrice } = require('../seeds/cityBands');
-const { atLeastMinimum } = require('../seeds/pricing2026');
+const { atLeastCityMinimum } = require('../seeds/pricing2026');
 
 
 require('dotenv').config()
@@ -983,17 +983,21 @@ const laneOptions = async (routeTemplates, origin_state, origin_country, destina
             const band = cityBand(destination_state, places?.originCity, places?.destinationCity)
             if (band !== 'city') {
                 match.base_price = bandedPrice(match.base_price ?? match.price, band)
-                match.city_band = band
             }
-            /* The floor holds after the band, not just in the table.
+            match.city_band = band
+            /* The floor for THIS band, not for the state as a whole.
              *
-             * A local run is 0.65 of the lane's price, and the lightest band
-             * is 0.45 of it again — which took a 0.2 kg parcel from Ikeja to
-             * Ikeja down to ₦990 quoted. Nobody rides to a shop, waits,
-             * collects and delivers for that; the number was not a price but
-             * a booking that would quietly fail. Every courier here publishes
-             * a floor rather than refusing the job, and so do we. */
-            match.base_price = atLeastMinimum(match.base_price ?? match.price, service.service_level)
+             * Two reasons it has to be here. The bands multiply downward — a
+             * local run is 0.65 of the lane's price and the lightest weight
+             * band 0.45 of it again, which took Ikeja → Ikeja to ₦990 before
+             * any floor existed. And one flat intra-state floor paid a rider
+             * walking down the road the same as a rider crossing into the
+             * next town, because both landed on it. */
+            match.base_price = atLeastCityMinimum(
+                match.base_price ?? match.price,
+                service.service_level,
+                band,
+            )
         }
 
         /* The charge follows whichever base and percent ended up in play. */
