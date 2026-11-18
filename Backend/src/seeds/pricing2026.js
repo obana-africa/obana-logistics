@@ -186,8 +186,15 @@ const NEGOTIATED_FROM_KG = 50;
  * three into the same number on exactly the smallest jobs — and "Express
  * costs more than Standard" has to hold at the bottom of the table as well
  * as the top.
+ *
+ * Set so the cheapest thing anybody can be quoted, anywhere, is ₦2,200 —
+ * ₦2,000 plus the service charge. The first pass put it at ₦1,320 and a
+ * partner's checkout showed a ₦990 pickup, which is the number that proved
+ * the point: at that price the job does not get done, it gets accepted and
+ * then quietly dropped, and the customer is the one who finds out. ₦2,000 is
+ * also where the one courier that publishes a floor publicly sets theirs.
  */
-const MINIMUM_BASE = { Economy: 1200, Standard: 1500, Express: 2200 };
+const MINIMUM_BASE = { Economy: 2000, Standard: 2500, Express: 3500 };
 
 const norm = (v) => String(v ?? '').trim().toLowerCase();
 

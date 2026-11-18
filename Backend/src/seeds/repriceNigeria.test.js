@@ -36,8 +36,10 @@ it('a Lagos city run drops to a city price, and grows with weight', () => {
     );
     // 0.45 of ₦3,000 is ₦1,350, lifted to the Standard floor of ₦1,500:
     // below that nobody rides to the shop, waits and delivers.
-    assert.strictEqual(band(edit, 1).price, 1500, 'a 1 kg parcel is not a 10 kg one');
-    assert.strictEqual(band(edit, 10).price, 3000);
+    // 0.45 of ₦3,000 is ₦1,350, lifted to the Standard floor of ₦2,500:
+    // below that nobody rides to the shop, waits and delivers.
+    assert.strictEqual(band(edit, 1).price, 2500, 'the lightest band sits on the floor');
+    assert.strictEqual(band(edit, 10).price, 3000, 'the benchmarked band is above it');
     assert.strictEqual(band(edit, 50).price, 9000);
     assert.strictEqual(band(edit, 1).eta, '1-2 days');
     for (const b of edit.brackets) {
@@ -45,15 +47,19 @@ it('a Lagos city run drops to a city price, and grows with weight', () => {
     }
 });
 
-it('every band costs more than the one below it', () => {
+it('no band ever costs less than the one below it', () => {
+    /* The bottom bands sit level on a cheap lane, because the floor lifts
+       them all to the same number. A heavier parcel costing LESS than a
+       lighter one is the thing that must never happen. */
     const edit = repriceRoute(route({ level: 'Standard' }));
     const ordered = [...edit.brackets].sort((a, b) => a.max - b.max);
     for (let i = 1; i < ordered.length; i += 1) {
         assert.ok(
-            ordered[i].price > ordered[i - 1].price,
-            `${ordered[i].min}-${ordered[i].max}kg (₦${ordered[i].price}) must cost more than the band below`
+            ordered[i].price >= ordered[i - 1].price,
+            `${ordered[i].min}-${ordered[i].max}kg (₦${ordered[i].price}) dips below the band under it`
         );
     }
+    assert.ok(ordered[ordered.length - 1].price > ordered[0].price);
 });
 
 it('Standard stays under Express at every weight', () => {
