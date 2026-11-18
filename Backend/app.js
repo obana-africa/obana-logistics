@@ -211,6 +211,11 @@ app.use("/agents", agentRoutes);
 app.use("/locations", locations)
 app.use("/partners", require("./src/routes/partners"));
 app.use("/stores", require("./src/routes/stores"));
+/* The webhook logs, which until now were written and never readable: the
+   controller method existed, no route pointed at it, and a Zoho order that
+   failed to become a shipment left its only trace in a table nobody could
+   open. See src/routes/webhookLogs.js. */
+app.use("/webhooks", require("./src/routes/webhookLogs"));
 app.use("/zoho", zohoRoutes);
 app.use("/vendor-shipments", require("./src/routes/vendorShipments"));
  
