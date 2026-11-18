@@ -8,7 +8,7 @@
  * show what the migration would do before it does it.
  */
 
-const { rateFor, tierFor } = require('./pricing2026');
+const { NEGOTIATED_FROM_KG, ladderFor, rateFor, tierFor } = require('./pricing2026');
 
 /** The zone each state belongs to, as the seed that built the table named them. */
 const STATE_ZONE = {
@@ -91,47 +91,38 @@ function laneOf(row) {
 }
 
 /**
- * The repriced weight brackets for one route, or null to leave it alone.
+ * The new weight brackets for one route, or null to leave it alone.
  *
- * Only the parcel band is repriced — the band the table is about. A lane
- * carrying a negotiated heavy bracket (Lagos → Port Harcourt has ₦585,000
- * from 50 kg, agreed for one job) keeps it: this is a price list for parcels,
- * and a figure somebody agreed for a truck is not in it.
+ * REPLACES the parcel brackets rather than adjusting them. Adjusting is what
+ * went wrong the first time: the sweep looked for a bracket ending at 10 kg,
+ * and the live Lagos Standard row had been hand-edited into a single 0–90 kg
+ * bracket at ₦11,000. So it was skipped in silence — a shirt and a fridge the
+ * same price, Express repriced beside it, and a checkout offering ₦4,950
+ * Express against ₦12,100 Standard.
+ *
+ * A bracket starting at 50 kg or more survives untouched. Lagos → Port
+ * Harcourt carries ₦585,000 from 50 kg, agreed for one job; this is a price
+ * list for parcels and that figure is not in it.
  */
-function repriceRoute(row, { parcelMaxKg = 10 } = {}) {
+function repriceRoute(row) {
     const lane = laneOf(row);
     if (!lane) return null;
 
-    const rate = rateFor(lane, row.transport_mode, row.service_level);
-    if (!rate) return null;
+    const ladder = ladderFor(lane, row.transport_mode, row.service_level);
+    if (!ladder) return null;
 
-    const brackets = Array.isArray(row.weight_brackets) ? row.weight_brackets : [];
-    if (brackets.length === 0) return null;
+    const existing = Array.isArray(row.weight_brackets) ? row.weight_brackets : [];
+    const negotiated = existing.filter(
+        (b) => Number(b?.min ?? 0) >= NEGOTIATED_FROM_KG
+    );
+    const next = [...ladder, ...negotiated];
 
-    let changed = false;
-    const next = brackets.map((b) => {
-        const max = Number(b?.max ?? 0);
-        // The parcel band and nothing else.
-        if (!(max > 0 && max <= parcelMaxKg)) return { ...b };
-        const min = Number(b?.min ?? 0);
-        const span = max - min;
-        const priced = {
-            ...b,
-            price: rate.price,
-            eta: `${rate.eta} days`,
-            ...(b.unit_price !== undefined && span > 0
-                ? { unit_price: Number((rate.price / span).toFixed(2)) }
-                : {}),
-        };
-        if (priced.price !== b.price || priced.eta !== b.eta) changed = true;
-        return priced;
-    });
-
-    return changed ? { id: row.id, lane, rate, brackets: next } : null;
+    const same = JSON.stringify(existing) === JSON.stringify(next);
+    return same ? null : { id: row.id, lane, brackets: next };
 }
 
 /** Every route in the table, repriced. Rows it does not cover are counted. */
-function repriceTable(rows, options) {
+function repriceTable(rows) {
     const edits = [];
     const skipped = [];
     for (const row of rows) {
@@ -140,14 +131,14 @@ function repriceTable(rows, options) {
             skipped.push({ id: row.id, reason: 'not a Nigerian lane this table prices' });
             continue;
         }
-        if (!rateFor(lane, row.transport_mode, row.service_level)) {
+        if (!ladderFor(lane, row.transport_mode, row.service_level)) {
             skipped.push({
                 id: row.id,
                 reason: `tier ${tierFor(lane)} does not sell ${row.transport_mode} ${row.service_level}`,
             });
             continue;
         }
-        const edit = repriceRoute(row, options);
+        const edit = repriceRoute(row);
         if (edit) edits.push(edit);
     }
     return { edits, skipped };

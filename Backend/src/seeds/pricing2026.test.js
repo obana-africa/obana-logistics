@@ -175,6 +175,70 @@ it('asks for a service a tier does not sell and gets null', () => {
     assert.strictEqual(rateFor({ sameState: true }, 'air', 'Express'), null);
 });
 
+/* ── The weight ladder ──────────────────────────────────────────────────── */
+
+const { ladderFor } = require('./pricing2026');
+
+it('a ladder climbs, band by band', () => {
+    const ladder = ladderFor({ sameState: true }, 'road', 'Standard');
+    for (let i = 1; i < ladder.length; i += 1) {
+        assert.ok(
+            ladder[i].price > ladder[i - 1].price,
+            `${ladder[i].min}-${ladder[i].max}kg (₦${ladder[i].price}) must cost more than the band below`
+        );
+    }
+});
+
+it('the bands meet with no gap and no overlap', () => {
+    // A gap is how an 8 kg parcel ended up priced as a 250 kg truck:
+    // priceTemplate picks on max alone, so a weight between two bands falls
+    // into the one above.
+    const ladder = ladderFor({ sameState: true }, 'road', 'Standard');
+    assert.strictEqual(Number(ladder[0].min), 0, 'the ladder must start at nothing');
+    for (let i = 1; i < ladder.length; i += 1) {
+        assert.strictEqual(
+            Number(ladder[i].min),
+            Number(ladder[i - 1].max),
+            `${ladder[i - 1].max}kg to ${ladder[i].min}kg is a gap`
+        );
+    }
+});
+
+it('the benchmarked band is the one the market was checked against', () => {
+    // The tier price IS the 5–10 kg figure; everything else scales from it.
+    const ladder = ladderFor({ originZone: 'SW', destinationZone: 'NC' }, 'road', 'Standard');
+    const five = ladder.find((b) => Number(b.max) === 10);
+    assert.strictEqual(five.price, 10000, 'the 5–10 kg band must be the benchmarked rate');
+});
+
+it('a small parcel is priced like a small parcel', () => {
+    // The whole point of the default dropping to 0.2 kg: a shirt across
+    // Lagos should not be quoted a ten-kilo price.
+    const ladder = ladderFor({ sameState: true }, 'road', 'Standard');
+    const lightest = ladder.find((b) => Number(b.max) === 1);
+    assert.ok(quoted(lightest.price) <= 2000, `₦${quoted(lightest.price)} is still a haul price`);
+});
+
+it('every band of a faster service costs more than the same band of a slower one', () => {
+    for (const lane of [{ sameState: true }, { originZone: 'SW', destinationZone: 'NC' }]) {
+        const standard = ladderFor(lane, 'road', 'Standard');
+        const express = ladderFor(lane, 'road', 'Express');
+        for (let i = 0; i < standard.length; i += 1) {
+            assert.ok(
+                express[i].price > standard[i].price,
+                `${standard[i].min}-${standard[i].max}kg: Express must stay above Standard`
+            );
+        }
+    }
+});
+
+it('every band carries the service eta, not a mixture', () => {
+    const ladder = ladderFor({ sameState: true }, 'road', 'Express');
+    const etas = new Set(ladder.map((b) => b.eta));
+    assert.strictEqual(etas.size, 1, 'a service promises one speed, whatever the parcel weighs');
+    assert.strictEqual([...etas][0], '0-1 days');
+});
+
 let failed = 0;
 for (const [name, fn] of cases) {
     try {

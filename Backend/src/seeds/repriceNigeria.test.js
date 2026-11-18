@@ -26,12 +26,44 @@ const route = (over = {}) => ({
 
 /* ── The lane that was reported ─────────────────────────────────────────── */
 
-it('a Lagos city run drops to a city price', () => {
-    // What the checkout was showing: Standard ₦11,000 base (₦12,100 quoted).
+const band = (edit, max) => edit.brackets.find((b) => Number(b.max) === max);
+
+it('a Lagos city run drops to a city price, and grows with weight', () => {
+    // What the checkout was showing: one 0–90 kg bracket at ₦11,000, so a
+    // shirt and a fridge cost the same ₦12,100.
+    const edit = repriceRoute(
+        route({ level: 'Standard', brackets: [{ min: 0, max: 90, price: 11000, eta: '1 days' }] })
+    );
+    assert.strictEqual(band(edit, 1).price, 1350, 'a 1 kg parcel is not a 10 kg one');
+    assert.strictEqual(band(edit, 10).price, 3000);
+    assert.strictEqual(band(edit, 50).price, 9000);
+    assert.strictEqual(band(edit, 1).eta, '1-2 days');
+    for (const b of edit.brackets) {
+        assert.ok(b.unit_price > 0, 'price per kg must be set on every band');
+    }
+});
+
+it('every band costs more than the one below it', () => {
     const edit = repriceRoute(route({ level: 'Standard' }));
-    assert.strictEqual(edit.brackets[0].price, 3000);
-    assert.strictEqual(edit.brackets[0].eta, '1-2 days');
-    assert.strictEqual(edit.brackets[0].unit_price, 300, 'price per kg must follow the price');
+    const ordered = [...edit.brackets].sort((a, b) => a.max - b.max);
+    for (let i = 1; i < ordered.length; i += 1) {
+        assert.ok(
+            ordered[i].price > ordered[i - 1].price,
+            `${ordered[i].min}-${ordered[i].max}kg (₦${ordered[i].price}) must cost more than the band below`
+        );
+    }
+});
+
+it('Standard stays under Express at every weight', () => {
+    // The checkout that prompted this offered Express ₦4,950 against
+    // Standard ₦12,100, because one row had been repriced and the other had
+    // not. Band by band, that must be impossible.
+    const standard = repriceRoute(route({ level: 'Standard' }));
+    const express = repriceRoute(route({ level: 'Express' }));
+    for (const b of standard.brackets) {
+        const e = band(express, Number(b.max));
+        assert.ok(e.price > b.price, `${b.min}-${b.max}kg: Express ₦${e.price} must be above Standard ₦${b.price}`);
+    }
 });
 
 it('and its Express ends up ABOVE its Standard', () => {
@@ -67,8 +99,14 @@ it('leaves a negotiated heavy bracket alone', () => {
             ],
         })
     );
-    assert.strictEqual(edit.brackets[1].price, 585000, 'the heavy bracket must survive');
-    assert.notStrictEqual(edit.brackets[0].price, 15000, 'the parcel band is repriced');
+    const heavy = edit.brackets.find((b) => Number(b.min) === 50);
+    assert.ok(heavy, 'the heavy bracket must survive');
+    assert.strictEqual(heavy.price, 585000);
+    assert.strictEqual(heavy.max, 250);
+    assert.ok(
+        edit.brackets.some((b) => Number(b.max) === 10 && b.price !== 15000),
+        'the parcel bands are replaced'
+    );
 });
 
 it('does not mutate the row it was given', () => {
@@ -125,7 +163,7 @@ it('reprices a lane spelled with "State" on the end', () => {
         weight_brackets: [{ min: 0, max: 10, price: 11000, eta: '1 days' }],
     });
     assert.ok(edit, 'a row spelled "Lagos State" must still be repriced');
-    assert.strictEqual(edit.brackets[0].price, 3000);
+    assert.strictEqual(edit.brackets.find((b) => Number(b.max) === 10).price, 3000);
 });
 
 it('covers every state the seed created', () => {
