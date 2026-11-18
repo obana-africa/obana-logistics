@@ -166,6 +166,38 @@ const WEIGHT_LADDER = [
  */
 const NEGOTIATED_FROM_KG = 50;
 
+/**
+ * What a job is worth doing for at all.
+ *
+ * The ladder and the city band both multiply downward, and they met at the
+ * bottom: a 0.2 kg parcel from Ikeja to Ikeja came out at ₦990 quoted.
+ * Nobody rides to a shop, waits, collects and delivers for that, so the
+ * number was not a price — it was a booking that would quietly fail, or a
+ * rider out of pocket.
+ *
+ * Every courier in this market publishes a floor rather than refusing small
+ * jobs: Fez starts "from ₦1,000", Kwik's short Lagos runs sit around
+ * ₦800–1,500, Yenagoa rates "start from ₦2,000", and GIGL's smallest
+ * intra-city band is ₦3,000. A floor is also the kinder answer — a customer
+ * buying one shirt is told what delivery costs, not told the shop cannot
+ * send it.
+ *
+ * Per service, not one figure, because a single floor would flatten the
+ * three into the same number on exactly the smallest jobs — and "Express
+ * costs more than Standard" has to hold at the bottom of the table as well
+ * as the top.
+ */
+const MINIMUM_BASE = { Economy: 1200, Standard: 1500, Express: 2200 };
+
+const norm = (v) => String(v ?? '').trim().toLowerCase();
+
+/** The price, or the floor for this service, whichever is higher. */
+function atLeastMinimum(price, level) {
+    const key = Object.keys(MINIMUM_BASE).find((k) => norm(k) === norm(level));
+    const floor = key ? MINIMUM_BASE[key] : 0;
+    return Math.max(Number(price) || 0, floor);
+}
+
 /** Round to something a customer can read. */
 const tidy = (n) => Math.ceil(n / 50) * 50;
 
@@ -180,13 +212,16 @@ const tidy = (n) => Math.ceil(n / 50) * 50;
 function ladderFor(lane, mode, level) {
     const rate = rateFor(lane, mode, level);
     if (!rate) return null;
-    return WEIGHT_LADDER.map((band) => ({
-        min: band.min,
-        max: band.max,
-        price: tidy(rate.price * band.factor),
-        eta: `${rate.eta} days`,
-        unit_price: Number((tidy(rate.price * band.factor) / (band.max - band.min)).toFixed(2)),
-    }));
+    return WEIGHT_LADDER.map((band) => {
+        const price = atLeastMinimum(tidy(rate.price * band.factor), level);
+        return {
+            min: band.min,
+            max: band.max,
+            price,
+            eta: `${rate.eta} days`,
+            unit_price: Number((price / (band.max - band.min)).toFixed(2)),
+        };
+    });
 }
 
 /** Which tier a lane falls in. `null` zones mean "not a Nigerian lane". */
@@ -210,7 +245,6 @@ function servicesFor(lane) {
 function rateFor(lane, mode, level) {
     const services = servicesFor(lane);
     if (!services) return null;
-    const norm = (v) => String(v ?? '').trim().toLowerCase();
     return (
         services.find((s) => norm(s.mode) === norm(mode) && norm(s.level) === norm(level)) ?? null
     );
@@ -221,6 +255,8 @@ module.exports = {
     ZONE_GAP,
     WEIGHT_LADDER,
     NEGOTIATED_FROM_KG,
+    MINIMUM_BASE,
+    atLeastMinimum,
     zoneGap,
     tierFor,
     servicesFor,
