@@ -21,7 +21,26 @@ const STATE_ZONE = {
     bauchi: 'NE', gombe: 'NE', adamawa: 'NE', taraba: 'NE', yobe: 'NE', borno: 'NE',
 };
 
-const norm = (v) => String(v ?? '').trim().toLowerCase();
+/**
+ * A state name reduced to the one form this table is keyed on.
+ *
+ * Deliberately the same reduction the quote engine's normalizeState does —
+ * lower case, hyphens and underscores to spaces, runs of space collapsed, a
+ * trailing "state" dropped — because a row the ENGINE happily matches as
+ * Lagos and this file does not is a row that keeps its old price while every
+ * lane around it moves, and says nothing about it.
+ *
+ * Found by running the migration against a row spelled "Lagos State", which
+ * it skipped.
+ */
+const norm = (v) =>
+    String(v ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/[-_]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/ state$/, '')
+        .trim();
 
 /* The spellings that reach this table from elsewhere. The location picker and
    Obana's own routes name the capital "Abuja Federal Capital Territory"; a
@@ -31,10 +50,9 @@ const ALIAS = {
     fct: 'abuja federal capital territory',
     abuja: 'abuja federal capital territory',
     'fct abuja': 'abuja federal capital territory',
+    'abuja fct': 'abuja federal capital territory',
     'federal capital territory': 'abuja federal capital territory',
-    'akwa-ibom': 'akwa ibom',
-    'cross-river': 'cross river',
-    'rivers state': 'rivers',
+    nassarawa: 'nasarawa',
 };
 
 const stateKey = (name) => {

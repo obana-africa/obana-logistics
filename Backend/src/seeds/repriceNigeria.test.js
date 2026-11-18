@@ -97,6 +97,37 @@ it('is not fooled by case or spacing', () => {
     assert.strictEqual(zoneOf('Akwa-Ibom'), 'SS');
 });
 
+it('accepts every spelling the quote engine accepts', () => {
+    /* A row the ENGINE matches as Lagos but this file does not is a row that
+       keeps its old price while every lane around it moves, and says nothing
+       about it. Found by running the migration against "Lagos State", which
+       it skipped. */
+    for (const name of ['Lagos State', 'lagos state', 'LAGOS  STATE']) {
+        assert.strictEqual(zoneOf(name), 'SW', name);
+    }
+    assert.strictEqual(zoneOf('Rivers State'), 'SS');
+    assert.strictEqual(zoneOf('Cross-River'), 'SS');
+    assert.strictEqual(zoneOf('Nassarawa'), 'NC');
+    assert.strictEqual(zoneOf('Abuja FCT'), 'NC');
+});
+
+it('reprices a lane spelled with "State" on the end', () => {
+    const edit = repriceRoute({
+        id: 9,
+        transport_mode: 'road',
+        service_level: 'Standard',
+        metadata: {
+            origin_state: 'Lagos State',
+            origin_country_code: 'NG',
+            destination_state: 'Lagos State',
+            destination_country_code: 'NG',
+        },
+        weight_brackets: [{ min: 0, max: 10, price: 11000, eta: '1 days' }],
+    });
+    assert.ok(edit, 'a row spelled "Lagos State" must still be repriced');
+    assert.strictEqual(edit.brackets[0].price, 3000);
+});
+
 it('covers every state the seed created', () => {
     // 36 states and the FCT. A missing one is a lane that silently keeps an
     // old price while its neighbours move.
