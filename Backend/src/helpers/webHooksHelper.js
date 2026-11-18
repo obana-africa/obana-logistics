@@ -177,8 +177,37 @@ class WeebHooksHelper {
             String(metaRaw).trim() !== '' && String(metaRaw).trim() !== '{}'
         const routeLineItem = salesorder.line_items.find((li) => isRouteLineItem(li))
 
-        if (!routeLineItem  || hasMetaData) {
-            return this.res.status(200).send(utils.responseSuccess({ skipped: true, reason: 'not a manual route order' }))
+        if (!routeLineItem || hasMetaData) {
+            /* Recorded, not just answered.
+             *
+             * A skip is the OTHER way a sales order produces no shipment, and
+             * it looked exactly like a failure from outside: Zoho green, Obana
+             * empty. The difference matters and only this row can tell them
+             * apart — a route item nobody added is a Zoho setup problem, and
+             * cf_meta_data present means the order belongs to the shop flow
+             * and was never ours to book.
+             *
+             * Which of the two it was, by name, because "not a manual route
+             * order" covers both and sends whoever reads it looking in the
+             * wrong place. */
+            const why = !routeLineItem
+                ? 'no Ob-Log- route line item on the sales order'
+                : 'carries cf_meta_data, so it is a shop order, not a manual route order'
+            try {
+                await db.webhook_logs.create({
+                    event_type: 'manual_route_order_skipped',
+                    order_id: salesorder.salesorder_id,
+                    payload: JSON.stringify({
+                        reason: why,
+                        order_ref: salesorder.salesorder_number,
+                        line_item_skus: salesorder.line_items.map((li) => li.sku || li.name),
+                    }),
+                    processed: false,
+                    error_message: why,
+                    source: 'zoho_webhook'
+                })
+            } catch (_) {}
+            return this.res.status(200).send(utils.responseSuccess({ skipped: true, reason: why }))
         }
 
         try {
@@ -199,8 +228,29 @@ class WeebHooksHelper {
                     source: 'zoho_webhook'
                 })
             } catch (_) {}
-            // 200 so Zoho does not enter a retry storm on a business-logic failure.
-            return this.res.status(200).send(utils.responseError(error.message))
+            /* 422, not 200.
+             *
+             * This answered 200 so Zoho would not enter a retry storm, and
+             * the cost of that was the bug this comment is being written for:
+             * a sales order came through, the shipment was never created, and
+             * Zoho's Workflow Logs showed "Success" in green. The failure was
+             * real, recorded in webhook_logs, and invisible in both systems.
+             *
+             * A webhook that did not do its job must not claim it did. 422 is
+             * the honest answer — the payload was understood and could not be
+             * processed — and it is the one Zoho shows as Failed on the same
+             * screen somebody is already looking at.
+             *
+             * The retry worry does not survive contact with the handler:
+             * handleManualRouteOrder looks up an existing shipping by
+             * order_reference before it does anything, so a retry of an order
+             * that DID get through returns the existing reference rather than
+             * creating a second shipment. A retry of one that failed is
+             * another attempt at something that needs to happen anyway.
+             *
+             * A skip is still 200. Not acting on a sales order that was never
+             * ours to act on is not a failure. */
+            return this.res.status(422).send(utils.responseError(error.message))
         }
     }
 
