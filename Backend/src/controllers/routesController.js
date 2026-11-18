@@ -12,6 +12,7 @@ const lookup = require('country-code-lookup')
 const { parsePhoneNumber } = require('libphonenumber-js');
 const util = require('../utility/utils.js');
 const querystring = require('node:querystring');
+const { cityBand, bandedPrice } = require('../seeds/cityBands');
 
 
 require('dotenv').config()
@@ -961,6 +962,30 @@ const laneOptions = async (routeTemplates, origin_state, origin_country, destina
         }
         seen.add(key)
 
+        /* Within one state, how far it actually goes.
+         *
+         * The lane is matched on the two states, so one Lagos row covers
+         * Ikeja → Ikeja and Ikeja → Badagry alike — a run across the street
+         * priced the same as sixty kilometres. The lane keeps one price and
+         * this scales it: a short hop is discounted from it, a run right
+         * across the state is a multiple of it, and the ordinary run across
+         * the city IS it. An unknown town pair lands on that middle band, so
+         * nothing a merchant has priced behaves differently than before.
+         *
+         * Never over a figure a person typed. A rate agreed with a customer,
+         * a freight amount or a per-kilo price is what was agreed, and a
+         * multiplier has no business moving it. */
+        const sameState =
+            normalizeState(origin_state) === normalizeState(destination_state) &&
+            normalizeText(formatCountryCode(origin_country)) === normalizeText(formatCountryCode(destination_country))
+        if (sameState && !typedRate && !byKilo && !overrides?.freight) {
+            const band = cityBand(destination_state, places?.originCity, places?.destinationCity)
+            if (band !== 'city') {
+                match.base_price = bandedPrice(match.base_price ?? match.price, band)
+                match.city_band = band
+            }
+        }
+
         /* The charge follows whichever base and percent ended up in play. */
         {
             const kobo = (v) => Math.round(v * 100) / 100
@@ -1571,6 +1596,10 @@ const buildQuoteOptions = async ({ origin, destination, originCode, destCode, we
     const places = {
         originCountry: origin.country || originCode,
         destinationCountry: destination.country || destCode,
+        /* Both towns, because within one state the distance between them is
+           what the price should turn on (see seeds/cityBands). The lane is
+           still matched on the states; this only adjusts what it charges. */
+        originCity: origin.city || origin.state || '',
         destinationCity: destination.city || destination.state || '',
         arrival: arrival || null
     }
