@@ -214,6 +214,43 @@ const MINIMUM_BASE = {
 
 const norm = (v) => String(v ?? '').trim().toLowerCase();
 
+/**
+ * Within one state, what it costs to LEAVE the pickup town.
+ *
+ * The per-tier floor treats a whole state as one job, so Ikeja → Ikeja and
+ * Ikeja → Agege both sat on ₦2,500 — a rider walking down the road and a
+ * rider crossing into the next town, paid the same. Obana is based in Lagos
+ * and most of what it carries starts there, so this is the journey it does
+ * most often and the one worth getting right.
+ *
+ * Three floors for the three bands cityBands already works out. A run that
+ * stays in the town keeps the state floor; leaving it costs more; crossing
+ * the state costs more again. Set against GIGL's intra-city 0–2 kg band of
+ * ₦3,000–5,000, which the city and metro figures sit inside once the
+ * service charge is on.
+ */
+const CITY_BAND_MINIMUM = {
+    local: { Economy: 2000, Standard: 2500, Express: 3500 },
+    city: { Economy: 2400, Standard: 3000, Express: 4200 },
+    /* Kept strictly under the same-zone floor below: Ikeja → Badagry is
+       sixty kilometres and Lagos → Ado-Ekiti is three hundred, so crossing
+       Lagos may never cost more than leaving it. A test holds the gap. */
+    metro: { Economy: 3000, Standard: 3800, Express: 5200 },
+};
+
+/**
+ * The floor for an intra-state run, by how far across the state it goes.
+ *
+ * Falls back to the plain state floor for a band it does not know, so a
+ * quote can never come out lower than it would have without this.
+ */
+function atLeastCityMinimum(price, level, band) {
+    const floors = CITY_BAND_MINIMUM[band] ?? CITY_BAND_MINIMUM.local;
+    const key = Object.keys(floors).find((k) => norm(k) === norm(level));
+    const floor = key ? floors[key] : 0;
+    return Math.max(Number(price) || 0, floor, atLeastMinimum(price, level, 'same'));
+}
+
 /** The price, or this tier's floor for this service, whichever is higher. */
 function atLeastMinimum(price, level, tier = 'same') {
     const floors = MINIMUM_BASE[tier] ?? MINIMUM_BASE.same;
@@ -281,7 +318,9 @@ module.exports = {
     WEIGHT_LADDER,
     NEGOTIATED_FROM_KG,
     MINIMUM_BASE,
+    CITY_BAND_MINIMUM,
     atLeastMinimum,
+    atLeastCityMinimum,
     zoneGap,
     tierFor,
     servicesFor,

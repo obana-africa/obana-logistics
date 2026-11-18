@@ -343,6 +343,51 @@ it('a light parcel costs more the further it goes', () => {
     }
 });
 
+it('leaving the pickup town costs more than staying in it', () => {
+    /* Obana is based in Lagos and most of what it carries starts there, so
+       this is the journey it does most often. One flat intra-state floor
+       paid a rider walking down the road the same as a rider crossing into
+       the next town: Ikeja → Ikeja and Ikeja → Agege were both ₦2,750. */
+    const { atLeastCityMinimum, CITY_BAND_MINIMUM } = require('./pricing2026');
+    const { bandedPrice } = require('./cityBands');
+    for (const level of ['Economy', 'Standard', 'Express']) {
+        const lightest = ladderFor({ sameState: true }, 'road', level)[0].price;
+        const price = (band) =>
+            atLeastCityMinimum(bandedPrice(lightest, band), level, band);
+        assert.ok(
+            price('city') > price('local'),
+            `${level}: leaving the town (₦${price('city')}) must cost more than staying in it (₦${price('local')})`
+        );
+        assert.ok(
+            price('metro') > price('city'),
+            `${level}: crossing the state (₦${price('metro')}) must cost more than crossing the town (₦${price('city')})`
+        );
+    }
+    // And every band of it still clears the floor the state as a whole has.
+    for (const band of Object.keys(CITY_BAND_MINIMUM)) {
+        for (const level of ['Economy', 'Standard', 'Express']) {
+            assert.ok(
+                CITY_BAND_MINIMUM[band][level] >= MINIMUM_BASE.same[level],
+                `${band} ${level} sits under the state floor`
+            );
+        }
+    }
+});
+
+it('a run across the state still costs less than leaving it', () => {
+    /* The ceiling on the other side. A metro run inside Lagos must not cost
+       more than a run to the next state, or the bands have overtaken the
+       tier above them. */
+    const { atLeastCityMinimum, CITY_BAND_MINIMUM } = require('./pricing2026');
+    for (const level of ['Economy', 'Standard', 'Express']) {
+        assert.ok(
+            CITY_BAND_MINIMUM.metro[level] <= MINIMUM_BASE[0][level],
+            `${level}: a metro run (₦${CITY_BAND_MINIMUM.metro[level]}) has overtaken the next zone (₦${MINIMUM_BASE[0][level]})`
+        );
+    }
+    void atLeastCityMinimum;
+});
+
 it('nothing anywhere can be quoted under ₦2,000', () => {
     // The hard rule. Yenagoa is the one courier that publishes a floor
     // openly and sets it at ₦2,000; GIGL's smallest intra-city band is
@@ -361,7 +406,8 @@ it('the floor survives a local run, which is where it was breaking', () => {
     for (const level of ['Economy', 'Standard', 'Express']) {
         const lightest = ladderFor({ sameState: true }, 'road', level)[0];
         for (const band of ['local', 'city', 'metro']) {
-            const price = atLeastMinimum(bandedPrice(lightest.price, band), level, 'same');
+            const { atLeastCityMinimum } = require('./pricing2026');
+            const price = atLeastCityMinimum(bandedPrice(lightest.price, band), level, band);
             assert.ok(
                 quoted(price) >= 2000,
                 `${level} on a ${band} run quotes ₦${quoted(price)}`
