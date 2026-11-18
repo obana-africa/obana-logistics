@@ -179,13 +179,24 @@ it('asks for a service a tier does not sell and gets null', () => {
 
 const { ladderFor } = require('./pricing2026');
 
-it('a ladder climbs, band by band', () => {
-    const ladder = ladderFor({ sameState: true }, 'road', 'Standard');
-    for (let i = 1; i < ladder.length; i += 1) {
-        assert.ok(
-            ladder[i].price > ladder[i - 1].price,
-            `${ladder[i].min}-${ladder[i].max}kg (₦${ladder[i].price}) must cost more than the band below`
-        );
+it('a ladder climbs, and never dips', () => {
+    /* Not strictly increasing, because the floor flattens the bottom on a
+       cheap lane: within one city the 0–1, 1–2 and 2–5 kg bands all come out
+       at the Standard minimum, which is the floor doing its job. What may
+       never happen is a heavier parcel costing LESS than a lighter one. */
+    for (const lane of [{ sameState: true }, { originZone: 'SW', destinationZone: 'NC' }]) {
+        for (const level of ['Economy', 'Standard', 'Express']) {
+            const ladder = ladderFor(lane, 'road', level);
+            for (let i = 1; i < ladder.length; i += 1) {
+                assert.ok(
+                    ladder[i].price >= ladder[i - 1].price,
+                    `${level} ${ladder[i].min}-${ladder[i].max}kg (₦${ladder[i].price}) dips below the band under it`
+                );
+            }
+            const top = ladder[ladder.length - 1].price;
+            const bottom = ladder[0].price;
+            assert.ok(top > bottom, `${level}: a 50 kg job must cost more than a 1 kg one`);
+        }
     }
 });
 
@@ -211,12 +222,16 @@ it('the benchmarked band is the one the market was checked against', () => {
     assert.strictEqual(five.price, 10000, 'the 5–10 kg band must be the benchmarked rate');
 });
 
-it('a small parcel is priced like a small parcel', () => {
-    // The whole point of the default dropping to 0.2 kg: a shirt across
-    // Lagos should not be quoted a ten-kilo price.
+it('a small parcel is priced like a small parcel, but never below the floor', () => {
+    // Two pulls in opposite directions. A shirt across Lagos must not be
+    // quoted a ten-kilo price; it must also not be quoted ₦990, which is
+    // what a partner's checkout was showing and is not a price anybody does
+    // the job for.
     const ladder = ladderFor({ sameState: true }, 'road', 'Standard');
     const lightest = ladder.find((b) => Number(b.max) === 1);
-    assert.ok(quoted(lightest.price) <= 2000, `₦${quoted(lightest.price)} is still a haul price`);
+    const heaviest = ladder.find((b) => Number(b.max) === 50);
+    assert.ok(quoted(lightest.price) >= 2000, `₦${quoted(lightest.price)} is below what the job is worth`);
+    assert.ok(quoted(lightest.price) < quoted(heaviest.price), 'a shirt is not a 50 kg job');
 });
 
 it('every band of a faster service costs more than the same band of a slower one', () => {
@@ -284,13 +299,31 @@ it('the floor keeps the services in order rather than flattening them', () => {
     );
 });
 
-it('the floor sits where this market actually starts', () => {
-    // Fez from ₦1,000, Kwik's short Lagos runs ₦800–1,500, Yenagoa from
-    // ₦2,000, GIGL's smallest intra-city band ₦3,000. Quoted, with the
-    // service charge, the cheapest thing we sell is ₦1,320.
+it('nothing anywhere can be quoted under ₦2,000', () => {
+    // The hard rule. Yenagoa is the one courier that publishes a floor
+    // openly and sets it at ₦2,000; GIGL's smallest intra-city band is
+    // ₦3,000. A ₦990 pickup is not a cheap delivery, it is a delivery that
+    // gets accepted and then quietly dropped.
     const cheapest = quoted(MINIMUM_BASE.Economy);
-    assert.ok(cheapest >= 1200, `₦${cheapest} is below what anyone will do the job for`);
+    assert.ok(cheapest >= 2000, `₦${cheapest} is below the floor`);
     assert.ok(cheapest <= 3300, `₦${cheapest} is above the market's own floor`);
+});
+
+it('the floor survives a local run, which is where it was breaking', () => {
+    // A local band takes 0.65 of the price AFTER the ladder has taken 0.45
+    // of it, and the two together put Ikeja → Ikeja at ₦990. Whatever those
+    // multipliers do, the answer may not land under the floor.
+    const { bandedPrice } = require('./cityBands');
+    for (const level of ['Economy', 'Standard', 'Express']) {
+        const lightest = ladderFor({ sameState: true }, 'road', level)[0];
+        for (const band of ['local', 'city', 'metro']) {
+            const price = atLeastMinimum(bandedPrice(lightest.price, band), level);
+            assert.ok(
+                quoted(price) >= 2000,
+                `${level} on a ${band} run quotes ₦${quoted(price)}`
+            );
+        }
+    }
 });
 
 it('an unknown service level has no floor to apply', () => {
