@@ -1477,6 +1477,30 @@ const shipmentController = {
             // and treat a repeated order_id as the same shipment.
             let storeCustomer = null;
             let storeQuoteOption = null;
+
+            /* How the fee splits between the delivery and Obana's service
+               charge. Carried from whichever source priced the booking, so the
+               Books estimate can put the charge on its own line instead of
+               burying it in the delivery, and so the split recorded is the one
+               the customer was actually shown. */
+            let feeBreakdown = null;
+
+            /* The transit window the customer was shown, kept with the shipment.
+
+               The route table is edited — a lane re-priced, a service level
+               re-timed — so working the window out again when the message is
+               sent would state today's term for a shipment sold on last week's.
+               Recorded here for the same reason the fee split is: the figure in
+               the message has to be the figure that was agreed.
+
+               DECLARED HERE, beside the two above, and not further down where
+               they used to sit. `let` has a temporal dead zone: the store
+               branch below assigns both of these about thirty lines before the
+               old declarations, so every booking that went through it threw
+               "Cannot access 'bookedTransit' before initialization" and no
+               shipment was ever created. A variable is declared before the
+               first line that touches it, and these now are. */
+            let bookedTransit = null;
             if (req.store) {
                 if (payload.order_id) {
                     const existing = await db.shippings.findOne({ where: { tenant_id: req.store.id, order_reference: String(payload.order_id) } });
@@ -1512,22 +1536,6 @@ const shipmentController = {
                     phone: clip(c.phone || payload.delivery_address.phone, 40)
                 };
             }
-
-            /* How the fee splits between the delivery and Obana's service
-               charge. Carried from whichever source priced the booking, so the
-               Books estimate can put the charge on its own line instead of
-               burying it in the delivery, and so the split recorded is the one
-               the customer was actually shown. */
-            let feeBreakdown = null;
-
-            /* The transit window the customer was shown, kept with the shipment.
-            
-               The route table is edited — a lane re-priced, a service level
-               re-timed — so working the window out again when the message is
-               sent would state today's term for a shipment sold on last week's.
-               Recorded here for the same reason the fee split is: the figure in
-               the message has to be the figure that was agreed. */
-            let bookedTransit = null;
 
             // Booked from a saved quote: the server sets the price from the quote (24 hours, same route,
             // no heavier than quoted), never from the browser. Otherwise the booking is priced as before.
