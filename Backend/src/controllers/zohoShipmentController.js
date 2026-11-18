@@ -760,6 +760,18 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
     // The order already carries fields waiting for this: Shipment Id, Tracking
     // URL, Shipment Status. Filling them is what makes the shipment visible to
     // whoever opens the order in Zoho, rather than only to us.
+    /* Said in the log, because it was not before.
+     *
+     * The charge is the one figure on this write-back that goes into a Zoho
+     * column somebody reads, and the only trace of it was inside the
+     * shipment's metadata. When it stopped arriving there was nothing in the
+     * log to say whether it had been sent, computed wrong, or sent and then
+     * overwritten. */
+    console.log(
+        `[ZOHO SHIPMENT] ${order.salesorder_number} · shipping charge · ` +
+            `₦${feeNgn} → ${baseCurrency} ${feeInBase} at ${rate} (${rateSource})`
+    )
+
     await zoho.updateSalesOrderShipment(order.salesorder_id, {
         shippingCharge: feeInBase,
         customFields: {
