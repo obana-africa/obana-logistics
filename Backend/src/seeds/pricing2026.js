@@ -187,21 +187,38 @@ const NEGOTIATED_FROM_KG = 50;
  * costs more than Standard" has to hold at the bottom of the table as well
  * as the top.
  *
- * Set so the cheapest thing anybody can be quoted, anywhere, is ₦2,200 —
- * ₦2,000 plus the service charge. The first pass put it at ₦1,320 and a
- * partner's checkout showed a ₦990 pickup, which is the number that proved
- * the point: at that price the job does not get done, it gets accepted and
- * then quietly dropped, and the customer is the one who finds out. ₦2,000 is
- * also where the one courier that publishes a floor publicly sets theirs.
+ * Per TIER as well, which the first attempt got wrong. One flat ₦2,000 was
+ * right for a rider crossing Lagos and absurd for a 300 km haul: a 0.2 kg
+ * parcel from Ikeja to Ado-Ekiti came out at ₦2,200, which is less than GIGL
+ * charges to cross a single city. The floor is what the JOB is worth, and
+ * crossing three states is not the same job as crossing Ikeja, so each tier
+ * carries its own.
+ *
+ * The city floor is ₦2,000 — where the one courier that publishes a floor
+ * openly sets theirs, and above the ₦990 pickup a partner's checkout was
+ * showing, which is the number that proved a floor was needed at all. The
+ * rest are set against GIGL's published 0–2 kg rates for the same journeys.
  */
-const MINIMUM_BASE = { Economy: 2000, Standard: 2500, Express: 3500 };
+const MINIMUM_BASE = {
+    /* Within one state: a rider crosses a city. */
+    same: { Economy: 2000, Standard: 2500, Express: 3500 },
+    /* Within a zone, 100–300 km: Lagos → Ibadan, Lagos → Ado-Ekiti. */
+    0: { Economy: 3200, Standard: 4000, Express: 5500 },
+    /* Neighbouring zones, 400–800 km: Lagos → Abuja, Lagos → Port Harcourt. */
+    1: { Economy: 4500, Standard: 5500, Express: 7500 },
+    /* Across the south: Lagos → Enugu. */
+    2: { Economy: 5000, Standard: 6500, Express: 8000 },
+    /* South to the far north: Lagos → Kano, Lagos → Maiduguri. */
+    3: { Economy: 5500, Standard: 7000, Express: 9500 },
+};
 
 const norm = (v) => String(v ?? '').trim().toLowerCase();
 
-/** The price, or the floor for this service, whichever is higher. */
-function atLeastMinimum(price, level) {
-    const key = Object.keys(MINIMUM_BASE).find((k) => norm(k) === norm(level));
-    const floor = key ? MINIMUM_BASE[key] : 0;
+/** The price, or this tier's floor for this service, whichever is higher. */
+function atLeastMinimum(price, level, tier = 'same') {
+    const floors = MINIMUM_BASE[tier] ?? MINIMUM_BASE.same;
+    const key = Object.keys(floors).find((k) => norm(k) === norm(level));
+    const floor = key ? floors[key] : 0;
     return Math.max(Number(price) || 0, floor);
 }
 
@@ -219,8 +236,9 @@ const tidy = (n) => Math.ceil(n / 50) * 50;
 function ladderFor(lane, mode, level) {
     const rate = rateFor(lane, mode, level);
     if (!rate) return null;
+    const tier = tierFor(lane);
     return WEIGHT_LADDER.map((band) => {
-        const price = atLeastMinimum(tidy(rate.price * band.factor), level);
+        const price = atLeastMinimum(tidy(rate.price * band.factor), level, tier);
         return {
             min: band.min,
             max: band.max,

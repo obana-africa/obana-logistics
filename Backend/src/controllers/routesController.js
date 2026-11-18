@@ -993,7 +993,10 @@ const laneOptions = async (routeTemplates, origin_state, origin_country, destina
              * collects and delivers for that; the number was not a price but
              * a booking that would quietly fail. Every courier here publishes
              * a floor rather than refusing the job, and so do we. */
-            match.base_price = atLeastMinimum(match.base_price ?? match.price, service.service_level)
+            /* 'same' explicitly: this whole branch only runs when origin and
+               destination are in one state, and the floor is per journey —
+               a city run's minimum has no business under an interstate one. */
+            match.base_price = atLeastMinimum(match.base_price ?? match.price, service.service_level, 'same')
         }
 
         /* The charge follows whichever base and percent ended up in play. */
