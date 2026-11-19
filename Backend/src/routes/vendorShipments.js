@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { requireServiceSecret } = require('../helpers/webhookAuth')
 const controller = require('../controllers/vendorShipmentController')
+const report = require('../controllers/logisticsReportController')
 
 /* Server-to-server only. Tajiri holds TAJIRI_SERVICE_SECRET and forwards the
    vendor's choice; no vendor ever reaches this service with a token of their
@@ -16,5 +17,8 @@ router.post('/lookup', controller.lookup)
 
 // A vendor moved a shipment along.
 router.post('/status', controller.setStatus)
+
+// Every shipment booked between two dates, for Tajiri's admin logistics dashboard.
+router.get('/report', report.report)
 
 module.exports = router
