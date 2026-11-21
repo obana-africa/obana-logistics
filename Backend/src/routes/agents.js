@@ -1,6 +1,7 @@
+const { wrapAll } = require('../middleware/asyncRoute')
 const express = require('express');
 const router = express.Router();
-const agentController = require('../controllers/agentController');
+const agentController = wrapAll(require('../controllers/agentController'));
 // const { authenticate, isAdmin } = require('./auth');
 
 // All agent routes are protected and for admins only.

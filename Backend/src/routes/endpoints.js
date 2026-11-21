@@ -1,5 +1,6 @@
+const { wrapAll } = require('../middleware/asyncRoute')
 const {Router} = require('express');
-const endpointController = require('../controllers/endpointController')
+const endpointController = wrapAll(require('../controllers/endpointController'))
 
 const router = Router();
 

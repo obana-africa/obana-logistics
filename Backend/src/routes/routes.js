@@ -1,6 +1,7 @@
+const { wrapAll } = require('../middleware/asyncRoute')
 const express = require('express')
 const router = express.Router()
-const controller = require('../controllers/routesController')
+const controller = wrapAll(require('../controllers/routesController'))
 const auth = require('../routes/auth')
 const { rateLimit } = require('../helpers/rateLimit')
 const { requireWebhookSecret } = require('../helpers/webhookAuth')

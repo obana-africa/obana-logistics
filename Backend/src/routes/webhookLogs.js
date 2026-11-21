@@ -1,6 +1,7 @@
+const { wrapAll } = require('../middleware/asyncRoute')
 const express = require('express')
 const router = express.Router()
-const controller = require('../controllers/webhookController')
+const controller = wrapAll(require('../controllers/webhookController'))
 const auth = require('../routes/auth')
 
 /**

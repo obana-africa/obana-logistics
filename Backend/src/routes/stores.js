@@ -1,6 +1,7 @@
+const { wrapAll } = require('../middleware/asyncRoute')
 const express = require('express')
 const router = express.Router()
-const controller = require('../controllers/storesController')
+const controller = wrapAll(require('../controllers/storesController'))
 const auth = require('../routes/auth')
 
 // For store API keys (integrations)

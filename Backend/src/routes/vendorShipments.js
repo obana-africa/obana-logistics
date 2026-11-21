@@ -1,8 +1,9 @@
+const { wrapAll } = require('../middleware/asyncRoute')
 const express = require('express')
 const router = express.Router()
 const { requireServiceSecret } = require('../helpers/webhookAuth')
-const controller = require('../controllers/vendorShipmentController')
-const report = require('../controllers/logisticsReportController')
+const controller = wrapAll(require('../controllers/vendorShipmentController'))
+const report = wrapAll(require('../controllers/logisticsReportController'))
 
 /* Server-to-server only. Tajiri holds TAJIRI_SERVICE_SECRET and forwards the
    vendor's choice; no vendor ever reaches this service with a token of their

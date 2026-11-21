@@ -246,7 +246,25 @@ app.use((err, req, res, next) => {
 		console.error(`[400] unparseable body on ${req.method} ${req.originalUrl}`);
 		return res.status(400).json({ success: false, error: "invalid_json" });
 	}
-	return next(err);
+	/* Anything else: a bug in a handler.
+	
+	   This used to hand the error to Express's default, which renders an HTML
+	   stack-trace page — not JSON — so the caller got a body with no message
+	   and showed its own fallback text. Paired with Express 4 not forwarding
+	   async rejections at all, a failing quote produced no server log naming
+	   the route and no message the caller could repeat back to us. Both ends
+	   of that are fixed: asyncRoute gets the error here, and here says what
+	   it was. */
+	console.error(`[500] ${req.method} ${req.originalUrl} —`, err?.message, '\n', err?.stack);
+	if (res.headersSent) return next(err);
+	return res.status(500).json({
+		status: false,
+		success: false,
+		code: 'server_error',
+		/* The message, because a caller who can quote it can be helped. The
+		   stack stays in the log. */
+		message: err?.message ? `Something went wrong: ${err.message}` : 'Something went wrong handling that request.',
+	});
 });
 
 server.listen(PORT, () => {
