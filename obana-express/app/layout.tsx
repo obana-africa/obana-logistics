@@ -1,12 +1,42 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Inter } from "next/font/google";
+import localFont from "next/font/local";
 import { AuthProvider } from "@/lib/authContext";
 
-// Obana's brand fonts (as on obana.africa) — Bricolage Grotesque for headings, Inter for text.
-// Self-hosted by Next.js: no layout shift, no request to Google.
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const bricolage = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-bricolage", weight: ["400", "600", "700", "800"], display: "swap" });
+/* Obana's brand fonts (as on obana.africa) — Bricolage Grotesque for
+   headings, Inter for text. Served from this repo.
+   
+   The note that used to sit here said "self-hosted by Next.js: no request to
+   Google", and that was half true: next/font/google self-hosts what it
+   serves to the BROWSER, but it downloads each family from fonts.gstatic.com
+   while the BUILD runs. When that call fails Next does not fall back — it
+   still emits the CSS module, now pointing at files it never wrote — and the
+   deploy dies with "module-not-found" inside
+   bricolage_grotesque_<hash>.module.css. Nothing in the repo is wrong when
+   that happens, which is why it builds locally and fails on the host.
+   
+   The files are here now, so the build makes no font request at all and this
+   cannot happen again. Same faces: the variable woff2 Google was serving,
+   latin subset. Variable, so the weight list is gone — 400 through 800 all
+   live in the one file.
+   
+   Both are SIL Open Font License, so shipping them is allowed. */
+const inter = localFont({
+	src: "./fonts/Inter.woff2",
+	variable: "--font-inter",
+	display: "swap",
+	// Measured off the real face, so the first paint does not jump when the
+	// font swaps in.
+	adjustFontFallback: "Arial",
+	fallback: ["system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+});
+const bricolage = localFont({
+	src: "./fonts/BricolageGrotesque.woff2",
+	variable: "--font-bricolage",
+	display: "swap",
+	adjustFontFallback: "Arial",
+	fallback: ["system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+});
 
 export const metadata: Metadata = {
 	metadataBase: new URL("https://logistics.obana.africa"),
