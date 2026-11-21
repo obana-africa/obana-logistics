@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Alert, Button, Input, Select } from "@/components/ui";
 import { LocationInput } from "@/components/LocationInput";
 import { apiClient } from "@/lib/api";
+import { NIGERIAN_STATES } from "@/lib/nigerianStates";
+import { findLastMileRoute } from "./lastMileMatch";
 import { Sheet } from "./Sheet";
 import {
 	RATE_CURRENCIES,
@@ -26,6 +28,10 @@ import {
 	type RouteTemplate,
 } from "./model";
 
+/* The weight the last-mile suggestion is quoted at. The same figure the
+   flat-fee helper text uses, so one number is being talked about throughout. */
+const REFERENCE_KG = 245;
+
 function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
 	return (
 		<section className="space-y-4 border-t border-slate-100 pt-6 first:border-t-0 first:pt-0">
@@ -40,6 +46,7 @@ function Section({ title, description, children }: { title: string; description?
 
 export function RouteFormSheet({
 	route,
+	routes = [],
 	drivers,
 	driversError,
 	saving,
@@ -48,6 +55,8 @@ export function RouteFormSheet({
 	onSave,
 }: {
 	route: RouteTemplate | null;
+	/** Every lane already on sale, so a last mile that exists can be offered. */
+	routes?: RouteTemplate[];
 	drivers: DriverSummary[];
 	driversError: boolean;
 	saving: boolean;
@@ -76,6 +85,39 @@ export function RouteFormSheet({
 	   when no rate can be had, and nothing is converted on 0. */
 	const [nairaPerUnit, setNairaPerUnit] = useState(form.rateCurrency === "NGN" ? 1 : 0);
 	const [rateError, setRateError] = useState("");
+
+	/* Where the freight lands, which is where the inland leg starts: the
+	   destination city of this lane. Nobody is asked to retype it. */
+	const landingCity = form.destination.city || form.destination.state || "";
+
+	/* The cities with a lane from there into the chosen state, read off the
+	   routes themselves — so the list can only offer somewhere served. */
+	const arrivalCityOptions = useMemo(() => {
+		const state = form.arrivalState.trim().toLowerCase();
+		const from = landingCity.trim().toLowerCase();
+		if (!state || !from) return [];
+		const seen = new Set<string>();
+		const out: { value: string; label: string }[] = [];
+		for (const r of routes) {
+			if ((r.origin_city ?? "").trim().toLowerCase() !== from) continue;
+			const meta = r.metadata as { destination_state?: string } | null | undefined;
+			const city = (r.destination_city ?? "").trim();
+			const rState = (meta?.destination_state ?? "").trim().toLowerCase() || city.toLowerCase();
+			if (rState !== state && city.toLowerCase() !== state) continue;
+			if (!city || seen.has(city.toLowerCase())) continue;
+			seen.add(city.toLowerCase());
+			out.push({ value: city, label: city });
+		}
+		return out;
+	}, [routes, landingCity, form.arrivalState]);
+
+	/* What that lane already charges, at the weight the flat fee is described
+	   at. Offered, never written: the button below is the only thing that
+	   fills the box, so an admin who has agreed a different price keeps it. */
+	const lastMileSuggestion = useMemo(
+		() => findLastMileRoute(routes, landingCity, form.arrivalState, REFERENCE_KG, form.arrivalCity),
+		[routes, landingCity, form.arrivalState, form.arrivalCity],
+	);
 
 	useEffect(() => {
 		const code = form.rateCurrency;
@@ -260,19 +302,66 @@ export function RouteFormSheet({
 								<span className="mt-1 block">Leave both blank and nothing changes — one freight charge, as now.</span>
 							</p>
 							<div className="grid gap-3 sm:grid-cols-2">
-								<Input
+								{/* A list, not a text box.
+								    
+								    A state typed by hand does not match a route — "Port Harcourt"
+								    went into this field, reasonably, and the search for a lane from
+								    there found nothing, so the leg was silently never priced. The
+								    values are spelled the way the route table spells them, which is
+								    what the matching normalises against. */}
+								<Select
+									label="Arrival state"
+									placeholder="Choose a state"
+									value={form.arrivalState}
+									onChange={(ev) => {
+										const arrivalState = ev.target.value;
+										setForm((prev) => ({ ...prev, arrivalState, arrivalCity: "" }));
+									}}
+									options={NIGERIAN_STATES}
+								/>
+								{/* The cities this platform actually runs a lane to, in that
+								    state. Typing one it does not serve is the same dead end as
+								    before, one level down. */}
+								<Select
 									label="Arrival city"
-									placeholder="Ikeja"
+									placeholder={arrivalCityOptions.length ? "Choose a city" : "No lanes into that state yet"}
 									value={form.arrivalCity}
 									onChange={(ev) => setForm((prev) => ({ ...prev, arrivalCity: ev.target.value }))}
-								/>
-								<Input
-									label="Arrival state"
-									placeholder="Lagos"
-									value={form.arrivalState}
-									onChange={(ev) => setForm((prev) => ({ ...prev, arrivalState: ev.target.value }))}
+									options={arrivalCityOptions}
 								/>
 							</div>
+							{/* The price this leg already has.
+							    
+							    Lagos → Port Harcourt exists, is priced and is booked on its own
+							    every day. Making an admin look that figure up and retype it into
+							    this lane is how the two drift apart — so it is offered, with the
+							    lane it came from named, and nothing is written until it is
+							    accepted. */}
+							{lastMileSuggestion && (
+								<div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+									<div className="text-sm">
+										<span className="font-medium text-slate-900">
+											{lastMileSuggestion.route.origin_city} → {lastMileSuggestion.route.destination_city}
+										</span>
+										<span className="text-slate-600">
+											{" "}already prices this at ₦{lastMileSuggestion.price.toLocaleString("en-NG")}
+											{lastMileSuggestion.eta ? ` · ${lastMileSuggestion.eta} days` : ""} for {REFERENCE_KG} kg
+										</span>
+									</div>
+									<button
+										type="button"
+										className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-slate-100"
+										onClick={() =>
+											/* The flat fee only. buildPayload already clears
+											   last_mile_per_kg whenever a flat fee is set, so the
+											   two cannot both be in force. */
+											setForm((prev) => ({ ...prev, lastMile: String(Math.round(lastMileSuggestion.price)) }))
+										}
+									>
+										Use this price
+									</button>
+								</div>
+							)}
 						</div>
 					)}
 				</Section>
