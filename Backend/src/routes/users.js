@@ -1,5 +1,6 @@
+const { wrapAll } = require('../middleware/asyncRoute')
 const { Router } = require('express');
-const userController = require('../controllers/userController');
+const userController = wrapAll(require('../controllers/userController'));
 const auth = require('../routes/auth');
 const router = Router();
 const { rateLimit } = require('../helpers/rateLimit')

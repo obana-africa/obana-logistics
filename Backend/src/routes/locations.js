@@ -1,5 +1,6 @@
+const { wrapAll } = require('../middleware/asyncRoute')
 const { Router } = require('express');
-const locationController = require('../controllers/locationController');
+const locationController = wrapAll(require('../controllers/locationController'));
 const router = Router();
 
 router.get('/countries', locationController.getCountries);

@@ -1,8 +1,9 @@
+const { wrapAll } = require('../middleware/asyncRoute')
 const express = require('express')
 const router = express.Router()
 const { requireWebhookSecret } = require('../helpers/webhookAuth')
 const { logZohoRequests, recent } = require('../helpers/zohoRequestLog')
-const controller = require('../controllers/zohoShipmentController')
+const controller = wrapAll(require('../controllers/zohoShipmentController'))
 
 /* Zoho's webhook body format is XML, which neither express.json nor
    express.urlencoded parses — so an XML body arrives as an empty object and

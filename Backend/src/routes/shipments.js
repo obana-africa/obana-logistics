@@ -1,9 +1,10 @@
+const { wrapAll } = require('../middleware/asyncRoute')
 const express = require('express');
 const router = express.Router();
 const db = require('../models/db.js')
-const shipmentController = require('../controllers/shipmentsController');
+const shipmentController = wrapAll(require('../controllers/shipmentsController'));
 const auth = require('../routes/auth');
-const drafts = require('../controllers/shipmentDraftsController');
+const drafts = wrapAll(require('../controllers/shipmentDraftsController'));
 
 const controller =  shipmentController
 

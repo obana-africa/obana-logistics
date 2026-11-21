@@ -1,5 +1,6 @@
+const { wrapAll } = require('../middleware/asyncRoute')
 const {Router} = require('express');
-const tenantController = require('../controllers/tenantController')
+const tenantController = wrapAll(require('../controllers/tenantController'))
 
 const router = Router();
 const tenantAuth = require('./auth')

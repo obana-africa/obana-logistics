@@ -1,3 +1,4 @@
+const { wrapAll, asyncRoute } = require('../middleware/asyncRoute')
 const { isStoreKey, hashKey } = require('../helpers/storeKeys')
 const jwt = require('jsonwebtoken')
 const utils = require('../../utils.js')
@@ -7,8 +8,8 @@ const { getTenantAndEndpoint } = require('../helpers/requestValidator')
 const passport = require('../config/passport');
 const express = require('express');
 const router = express.Router();
-const userController = require('../controllers/userController');
-const { getUser, getUserAttributes } = require('../controllers/userController');
+const userController = wrapAll(require('../controllers/userController'));
+const { getUser, getUserAttributes } = wrapAll(require('../controllers/userController'));
 // routes/auth.js
 const axios = require('axios')
 const db = require('../models/db.js');
@@ -377,7 +378,13 @@ const verifyRole = allowedRoles => {
 
 
 module.exports = {
-  authenticateToken,
+  /* Wrapped individually, not with wrapAll: verifyRole is a factory —
+     verifyRole(['admin']) returns the middleware — so wrapping it would feed
+     the role list in as `req` and break every guarded route. authenticateToken
+     is the async one, and an async middleware that throws in Express 4 sends
+     no response at all: the request hangs and the caller sees a timeout with
+     nothing to say why. getTenantAndEndpoint on the first line can throw. */
+  authenticateToken: asyncRoute(authenticateToken),
   verifyRole,
   router
 }

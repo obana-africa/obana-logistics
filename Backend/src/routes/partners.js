@@ -1,6 +1,7 @@
+const { wrapAll } = require('../middleware/asyncRoute')
 const express = require('express')
 const router = express.Router()
-const controller = require('../controllers/partnersController')
+const controller = wrapAll(require('../controllers/partnersController'))
 const auth = require('../routes/auth')
 
 // Partner carriers & markup — admin only.
