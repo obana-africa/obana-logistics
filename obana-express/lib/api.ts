@@ -381,6 +381,12 @@ class ApiClient {
     return response.data;
   }
 
+  /** The charges a lane falls back to when it names none of its own. */
+  async pricingDefaults() {
+    const response = await this.client.get<ApiResponse>(`/routes/pricing-defaults`);
+    return response.data;
+  }
+
   /** What one unit of `currency` is worth in naira — the same rate the quote engine uses. */
   async currencyRate(currency: string) {
     const response = await this.client.get<ApiResponse>(`/routes/currency-rate`, { params: { currency } });

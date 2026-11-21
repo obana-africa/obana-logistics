@@ -45,17 +45,29 @@ export type LastMileMatch = {
  * The heaviest bracket catches anything above it, because a route that stops
  * quoting past its last bracket would silently drop the leg.
  */
-export function bracketForWeight(
-    brackets: { min_weight?: unknown; max_weight?: unknown; price?: unknown; eta?: unknown }[] | null | undefined,
-    weight: number,
-) {
+type AnyBracket = { min?: unknown; max?: unknown; min_weight?: unknown; max_weight?: unknown; price?: unknown; eta?: unknown };
+
+/* Saved rows call these `min` and `max` (see RawBracket and buildPayload).
+   Reading only `min_weight`/`max_weight` found nothing on real data and the
+   suggestion never appeared — so both spellings are accepted, the stored one
+   first, and a row is usable only once a bound actually parses. */
+const minOf = (b: AnyBracket) => {
+    const a = num(b.min);
+    return Number.isFinite(a) ? a : num(b.min_weight);
+};
+const maxOf = (b: AnyBracket) => {
+    const a = num(b.max);
+    return Number.isFinite(a) ? a : num(b.max_weight);
+};
+
+export function bracketForWeight(brackets: AnyBracket[] | null | undefined, weight: number) {
     const rows = (Array.isArray(brackets) ? brackets : [])
-        .filter((b) => Number.isFinite(num(b.min_weight)) && num(b.price) > 0)
-        .sort((a, b) => num(a.min_weight) - num(b.min_weight));
+        .filter((b) => Number.isFinite(minOf(b)) && num(b.price) > 0)
+        .sort((a, b) => minOf(a) - minOf(b));
     if (!rows.length) return null;
     const hit = rows.find((b) => {
-        const min = num(b.min_weight);
-        const max = num(b.max_weight);
+        const min = minOf(b);
+        const max = maxOf(b);
         return weight >= min && (!Number.isFinite(max) || weight <= max);
     });
     return hit ?? rows[rows.length - 1];

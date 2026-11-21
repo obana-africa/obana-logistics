@@ -55,6 +55,11 @@ export interface RouteMetadata {
 	   domestic routes would have charged. */
 	last_mile_flat?: number | string | null;
 	last_mile_per_kg?: number | string | null;
+	/* The inland leg priced by weight, the way the freight is. A lane that
+	   runs a 35 kg parcel and a 245 kg pallet to the same door is not doing
+	   the same job twice, and one amount could not say so. Absent on every
+	   lane that has not been given them, which is how they stay additive. */
+	last_mile_brackets?: RawBracket[] | null;
 	/** Obana's charge on this lane. Blank means the server-wide setting. */
 	service_charge_percent?: number | string | null;
 }
@@ -193,6 +198,11 @@ export interface RouteForm {
 	rateCurrency: string;
 	/** Cross-border lanes only: the inland leg as an amount, in naira. */
 	lastMile: string;
+	/* How the inland leg is priced. One or the other is in force, never both
+	   — two figures for the same leg is the problem this form had at the top
+	   and it is not worth repeating down here. */
+	lastMileMode: "flat" | "brackets";
+	lastMileBrackets: BracketDraft[];
 	/** Blank means the server-wide charge. "0" means charge nothing here. */
 	handlingPercent: string;
 	brackets: BracketDraft[];
@@ -267,7 +277,7 @@ export const etaValue = (eta?: string | null) => (eta ?? "").replace(/\s*days?\s
 
 export function formFromRoute(route: RouteTemplate | null): RouteForm {
 	if (!route) {
-		return { origin: emptyPlace, destination: emptyPlace, arrivalCity: "", arrivalState: "", transport_mode: "road", service_level: "Standard", preferred_driver_id: "", ratePerKg: "", rateCurrency: "NGN", lastMile: "", handlingPercent: "", brackets: [newBracket("0")] };
+		return { origin: emptyPlace, destination: emptyPlace, arrivalCity: "", arrivalState: "", transport_mode: "road", service_level: "Standard", preferred_driver_id: "", ratePerKg: "", rateCurrency: "NGN", lastMile: "", lastMileMode: "flat", lastMileBrackets: [], handlingPercent: "", brackets: [newBracket("0")] };
 	}
 	return {
 		origin: {
@@ -296,6 +306,12 @@ export function formFromRoute(route: RouteTemplate | null): RouteForm {
 		/* A lane still carrying the old per-kilo last mile shows what that
 		   works out to, rather than an empty box that would wipe it on save. */
 		lastMile: str(route.metadata?.last_mile_flat),
+		/* Brackets only where the lane already has them, so opening and
+		   saving a lane that does not changes nothing about it. */
+		lastMileMode: Array.isArray(route.metadata?.last_mile_brackets) && route.metadata.last_mile_brackets.length ? "brackets" : "flat",
+		lastMileBrackets: Array.isArray(route.metadata?.last_mile_brackets)
+			? route.metadata.last_mile_brackets.map((b) => ({ key: ++keySeq, min: str(b.min), max: str(b.max), price: str(b.price), rate: "", eta: etaValue(b.eta) }))
+			: [],
 		handlingPercent: str(route.metadata?.service_charge_percent),
 		brackets: Array.isArray(route.weight_brackets)
 			? route.weight_brackets.map((b) => {
@@ -338,7 +354,17 @@ export function validateRoute(form: RouteForm): FormErrors {
 	const rate = toNumber(form.ratePerKg);
 	if (form.ratePerKg.trim() && (!Number.isFinite(rate) || rate <= 0)) errors.ratePerKg = "Must be more than 0";
 	const lastMile = toNumber(form.lastMile);
-	if (form.lastMile.trim() && (!Number.isFinite(lastMile) || lastMile <= 0)) errors.lastMile = "Must be more than 0";
+	if (form.lastMileMode === "flat" && form.lastMile.trim() && (!Number.isFinite(lastMile) || lastMile <= 0)) errors.lastMile = "Must be more than 0";
+	/* Checked only in the mode that saves them. A half-filled bracket left
+	   behind by someone who switched back to an amount is not an error,
+	   because it is not what gets written. */
+	if (form.lastMileMode === "brackets") {
+		const rows = form.lastMileBrackets;
+		if (!rows.length) errors.lastMile = "Add at least one weight range, or price it as one amount.";
+		else if (rows.some((b) => !b.min.trim() || !b.max.trim() || !b.price.trim())) errors.lastMile = "Every weight range needs a min, a max and a price.";
+		else if (rows.some((b) => !(toNumber(b.max) > toNumber(b.min)))) errors.lastMile = "Each max must be above its min.";
+		else if (rows.some((b) => !(toNumber(b.price) > 0))) errors.lastMile = "Each price must be more than 0.";
+	}
 	const handling = toNumber(form.handlingPercent);
 	if (form.handlingPercent.trim() && (!Number.isFinite(handling) || handling < 0 || handling > 100)) errors.handlingPercent = "0 to 100";
 
@@ -418,10 +444,22 @@ export function buildPayload(form: RouteForm) {
 			   a price could be set and then never taken off again. */
 			price_per_kg: form.ratePerKg.trim() ? parseFloat(form.ratePerKg) : null,
 			price_currency: form.ratePerKg.trim() ? form.rateCurrency : null,
-			last_mile_flat: form.lastMile.trim() ? parseFloat(form.lastMile) : null,
-			/* An amount supersedes the old per-kilo last mile: leaving both set
-			   would make which one applies depend on reading the pricing code. */
-			last_mile_per_kg: form.lastMile.trim() ? null : undefined,
+			/* Exactly one of the two is written and the other is cleared.
+			   Leaving both set would make which one applies depend on reading
+			   the pricing code, which is the thing this form is fixing. */
+			last_mile_flat: form.lastMileMode === "flat" && form.lastMile.trim() ? parseFloat(form.lastMile) : null,
+			last_mile_brackets:
+				form.lastMileMode === "brackets" && form.lastMileBrackets.length
+					? form.lastMileBrackets.map((b) => ({
+							min: parseFloat(b.min),
+							max: parseFloat(b.max),
+							price: parseFloat(b.price),
+							eta: b.eta.trim() ? `${b.eta.trim()} days` : null,
+							unit_price: calculateUnitPrice(b),
+						}))
+					: null,
+			/* An amount or a bracket supersedes the old per-kilo last mile. */
+			last_mile_per_kg: form.lastMile.trim() || form.lastMileBrackets.length ? null : undefined,
 			service_charge_percent: form.handlingPercent.trim() ? parseFloat(form.handlingPercent) : null,
 		},
 		preferred_driver_id: form.preferred_driver_id || null,

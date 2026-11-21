@@ -5,6 +5,7 @@ const { currencyForCountry, ngnRate } = require('../helpers/fx')
 /* Zoho's naira-per-dollar rate, so the price the customer confirms, the summary
    they are sent and the message they receive all state the same dollars. */
 const { quoteCurrency, nairaPer } = require('../helpers/currencyRates')
+const { priceFromBrackets } = require('../helpers/lastMileBrackets')
 const axios = require('axios')
 const crypto = require('crypto')
 const { getCode } = require('country-list')
@@ -892,6 +893,22 @@ const lastMileFor = async (routeTemplates, arrival, destinationState, destinatio
        kilo — which reproduces 585,000 at exactly one weight and nothing else,
        and lands on 585,001 after rounding even there. Checked before the rate,
        because a lane that states an amount has said the more specific thing. */
+    /* By weight, where the lane says so. The most specific thing a lane can
+       state about this leg — 0–35 kg costs one thing, 35–245 another — so it
+       is read before the single amount and before any rate. A lane without
+       brackets returns null here and is priced exactly as it was. */
+    const byWeight = priceFromBrackets(template?.metadata?.last_mile_brackets, weight)
+    if (byWeight) {
+        return {
+            from: arrival.city,
+            base_price: byWeight.price,
+            price: byWeight.price,
+            service_level: serviceLevel,
+            transport_mode: 'road',
+            eta: byWeight.eta
+        }
+    }
+
     const flat = Number(template?.metadata?.last_mile_flat)
     if (flat > 0) {
         return {
@@ -1210,8 +1227,40 @@ const currencyRate = async (req, res) => {
            it has and says the conversion is unavailable. */
         return res.status(503).send(utils.responseError(`No ${code} rate is available right now`, 503))
     }
-    return res.send({ status: true, data: { currency: code, naira_per_unit: nairaPerUnit } })
+    /* Where the figure came from and when, because a conversion an admin
+       cannot date is one they have to take on trust — and the rate that was
+       eight months stale looked exactly like today's until someone checked. */
+    const meta = await ngnRate(code).catch(() => null)
+    return res.send({
+        status: true,
+        data: {
+            currency: code,
+            naira_per_unit: nairaPerUnit,
+            as_of: meta?.as_of ?? null,
+            source: meta?.source ?? null,
+        },
+    })
 }
+
+/**
+ * The charges a lane falls back to when it names none of its own.
+ *
+ * The route form shows what a shipment will be billed, and that figure
+ * includes Obana's charge — which lives in an environment variable the
+ * browser cannot read. Hardcoding a copy of it in the form would make the
+ * preview right until the day somebody changed the setting, and wrong
+ * silently thereafter. So the server says what it is.
+ *
+ * Read-only, and it exposes nothing a route row does not already show.
+ */
+const pricingDefaults = async (_req, res) =>
+    res.send({
+        status: true,
+        data: {
+            service_charge_percent: routeMarkupPercent(),
+            last_mile_rate_per_kg: Number(process.env.LAST_MILE_RATE_PER_KG) > 0 ? Number(process.env.LAST_MILE_RATE_PER_KG) : 0,
+        },
+    })
 
 const matchTemplate = async (req, res) => {
     let { transport_mode, service_level, delivery_address, items, weight, pickup_address } = req.body
@@ -1832,6 +1881,7 @@ const quoteForAddresses = async ({ pickup, delivery, weight, declared = 0, arriv
 
 module.exports = {
     currencyRate,
+    pricingDefaults,
     buildTemplateMatch,
     laneTemplates,
     laneOptions,
