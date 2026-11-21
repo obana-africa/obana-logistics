@@ -14,7 +14,7 @@ const route = (
     id: number,
     origin: string,
     dest: string,
-    brackets: { min_weight: number; max_weight: number | null; price: number; eta?: string }[],
+    brackets: { min: number; max: number | null; price: number; eta?: string }[],
     extra: Partial<RouteTemplate> = {},
 ): RouteTemplate =>
     ({
@@ -28,10 +28,10 @@ const route = (
     }) as RouteTemplate;
 
 const LAGOS_PH = route(1, "Lagos", "Port Harcourt", [
-    { min_weight: 0, max_weight: 50, price: 180000, eta: "3-5" },
-    { min_weight: 50, max_weight: 245, price: 585000, eta: "5-7" },
+    { min: 0, max: 50, price: 180000, eta: "3-5" },
+    { min: 50, max: 245, price: 585000, eta: "5-7" },
 ]);
-const LAGOS_ABUJA = route(2, "Lagos", "Abuja", [{ min_weight: 0, max_weight: 245, price: 400000 }]);
+const LAGOS_ABUJA = route(2, "Lagos", "Abuja", [{ min: 0, max: 245, price: 400000 }]);
 
 /* ── Finding the lane ───────────────────────────────────────────────────── */
 
@@ -63,7 +63,7 @@ it("case and spacing do not decide whether a lane is found", () => {
 });
 
 it("a state named in metadata matches as well as the city", () => {
-    const r = route(3, "Lagos", "Eleme", [{ min_weight: 0, max_weight: 245, price: 300000 }], {
+    const r = route(3, "Lagos", "Eleme", [{ min: 0, max: 245, price: 300000 }], {
         metadata: { destination_state: "Rivers" } as RouteTemplate["metadata"],
     });
     assert.equal(findLastMileRoute([r], "Lagos", "Rivers", 100)?.price, 300000);
@@ -80,7 +80,7 @@ it("no matching lane suggests nothing at all", () => {
 it("a lane with no usable price is not a suggestion", () => {
     const empty = route(9, "Lagos", "Port Harcourt", []);
     assert.equal(findLastMileRoute([empty], "Lagos", "Port Harcourt", 100), null);
-    const zero = route(10, "Lagos", "Port Harcourt", [{ min_weight: 0, max_weight: 50, price: 0 }]);
+    const zero = route(10, "Lagos", "Port Harcourt", [{ min: 0, max: 50, price: 0 }]);
     assert.equal(findLastMileRoute([zero], "Lagos", "Port Harcourt", 10), null);
 });
 
@@ -92,16 +92,16 @@ it("a blank state or city is not a match", () => {
 /* ── Choosing between several ───────────────────────────────────────────── */
 
 it("the cheapest road lane wins when several serve the state", () => {
-    const dear = route(4, "Lagos", "Port Harcourt", [{ min_weight: 0, max_weight: 245, price: 900000 }]);
+    const dear = route(4, "Lagos", "Port Harcourt", [{ min: 0, max: 245, price: 900000 }]);
     const m = findLastMileRoute([dear, LAGOS_PH], "Lagos", "Port Harcourt", 245);
     assert.equal(m?.price, 585000);
 });
 
 it("a named arrival city is preferred over another in the same state", () => {
-    const eleme = route(5, "Lagos", "Eleme", [{ min_weight: 0, max_weight: 245, price: 120000 }], {
+    const eleme = route(5, "Lagos", "Eleme", [{ min: 0, max: 245, price: 120000 }], {
         metadata: { destination_state: "Rivers" } as RouteTemplate["metadata"],
     });
-    const ph = route(6, "Lagos", "Port Harcourt", [{ min_weight: 0, max_weight: 245, price: 585000 }], {
+    const ph = route(6, "Lagos", "Port Harcourt", [{ min: 0, max: 245, price: 585000 }], {
         metadata: { destination_state: "Rivers" } as RouteTemplate["metadata"],
     });
     // Cheapest would be Eleme; naming the city overrides that.
@@ -109,7 +109,7 @@ it("a named arrival city is preferred over another in the same state", () => {
 });
 
 it("air is not used for a last mile when a road lane exists", () => {
-    const air = route(7, "Lagos", "Port Harcourt", [{ min_weight: 0, max_weight: 245, price: 100 }], {
+    const air = route(7, "Lagos", "Port Harcourt", [{ min: 0, max: 245, price: 100 }], {
         transport_mode: "air",
     });
     assert.equal(findLastMileRoute([air, LAGOS_PH], "Lagos", "Port Harcourt", 245)?.price, 585000);
@@ -123,6 +123,23 @@ it("brackets sharing an edge do not both claim the weight", () => {
 
 it("a weight past the last bracket still prices, on the heaviest", () => {
     assert.equal(bracketForWeight(LAGOS_PH.weight_brackets, 900)?.price, 585000);
+});
+
+/* The shape the app actually saves is `min`/`max` — see RawBracket and
+   buildPayload. These fixtures used `min_weight`/`max_weight`, so the test
+   suite agreed with itself and disagreed with the database: every lookup
+   against a real route found no usable bracket and suggested nothing. Both
+   spellings are read now, and both are pinned here. */
+it("the saved bracket shape (min/max) is what gets priced", () => {
+    const r = route(20, "Lagos", "Port Harcourt", [{ min: 0, max: 245, price: 585000, eta: "3-5" }]);
+    const hit = findLastMileRoute([r], "Lagos", "Port Harcourt", 245);
+    assert.equal(hit?.price, 585000);
+});
+
+it("the older min_weight/max_weight spelling still prices", () => {
+    const legacy = { id: 21, origin_city: "Lagos", destination_city: "Port Harcourt", transport_mode: "road", service_level: "Standard", weight_brackets: [{ min_weight: 0, max_weight: 245, price: 300000 }], metadata: null } as unknown as RouteTemplate;
+    const hit = findLastMileRoute([legacy], "Lagos", "Port Harcourt", 245);
+    assert.equal(hit?.price, 300000);
 });
 
 let failed = 0;
