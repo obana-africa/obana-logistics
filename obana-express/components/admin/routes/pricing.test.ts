@@ -129,6 +129,13 @@ it("only the mode in force prices the inland leg", () => {
 	assert.equal(lastMileAt(f, 245).base, 120000);
 });
 
+it("an inland leg past its table is carried up, not held at the maximum", () => {
+	/* 100,000 over 25 kg is 4,000/kg, so 45 kg is 100,000 + 20 x 4,000. */
+	const f = form({ arrivalState: "Rivers", lastMileMode: "brackets", lastMileBrackets: [bracket("0", "25", "100000")] });
+	assert.equal(lastMileAt(f, 20).base, 100000);
+	assert.equal(lastMileAt(f, 45).base, 180000);
+});
+
 it("stating neither falls back to the domestic routes, as it always has", () => {
 	assert.equal(lastMileAt(form({ arrivalState: "Rivers" }), 245).from, "domestic");
 });

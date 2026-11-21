@@ -393,6 +393,15 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
 
   const resetForm = () => {
     setFormData(emptyForm());
+    /* A blank form is a different shipment, so the next save makes a new
+       draft rather than writing over the last one.
+
+       This was the whole of the "we can only ever have one draft" bug:
+       draftId was set on the first save and never cleared, so saving a
+       second booking — different customer, different city, different weight
+       — sent the first draft's id and replaced it. The earlier one was gone
+       with nothing to say it had been. */
+    setDraftId(null);
     setError('');
     setMatchedRoute(null);
     setSelectedOptionId(null);
@@ -634,6 +643,17 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
         setBooksResult((response as { invoice?: unknown }).invoice ?? null);
         setShowSuccessModal(true);
         setError('');
+        /* The draft has become a shipment, so it stops being a draft.
+           Leaving it would put a half-filled copy of a real booking in the
+           list, which somebody would eventually open and book again. Quietly
+           — the shipment is made either way, and a failure here is not worth
+           a message on the success screen. */
+        if (draftId) {
+          const spent = draftId;
+          setDraftId(null);
+          setDrafts((prev) => prev.filter((d) => d.id !== spent));
+          apiClient.deleteShipmentDraft(spent).catch(() => {});
+        }
         /* The shipment is booked and shown before this starts: the papers are
            an addition to it, not a condition of it. */
         if (pendingDocs.length && response.data.shipment_id) {
