@@ -39,9 +39,9 @@ const maxOf = (b) => {
  *
  * Lower bound inclusive and upper inclusive, so 0–35 and 35–245 share their
  * edge without both claiming 35 — the first one sorted wins it, which is the
- * lighter. Anything above the heaviest bracket is charged on the heaviest
- * rather than dropping the leg, because a shipment that weighs more than the
- * table anticipated still has to be delivered.
+ * lighter. Anything above the heaviest bracket is returned on the heaviest,
+ * and priced up from it by priceFromBrackets, because a shipment heavier
+ * than the table anticipated still has to be delivered.
  */
 const bracketFor = (brackets, weight) => {
     const rows = (Array.isArray(brackets) ? brackets : [])
@@ -57,13 +57,36 @@ const bracketFor = (brackets, weight) => {
     return hit ?? rows[rows.length - 1]
 }
 
-/** { price, eta } for this weight, or null when the lane has no brackets. */
+/**
+ * { price, eta } for this weight, or null when the lane has no brackets.
+ *
+ * Past the heaviest bracket the price is carried up rather than held flat.
+ * Holding it flat meant a table ending at 25 kg charged a 45 kg delivery the
+ * 25 kg price — the lane was priced "up to its maximum" and then stopped
+ * reading the weight at all, which is both wrong money and the reason a
+ * table had to be extended every time somebody sent something heavier.
+ *
+ * Carried up at the heaviest bracket's own rate per kilo, which is the same
+ * arithmetic priceTemplate uses for freight that overruns its table — one
+ * idea of what to do past the end of a table, not two.
+ */
 const priceFromBrackets = (brackets, weight) => {
     const hit = bracketFor(brackets, weight)
     if (!hit) return null
     const price = num(hit.price)
     if (!(price > 0)) return null
-    return { price: Math.ceil(price), eta: hit.eta ? String(hit.eta) : null }
+
+    const w = num(weight)
+    const max = maxOf(hit)
+    const over = Number.isFinite(max) && max > 0 && w > max
+    const total = over ? price + ((w - max) * price) / max : price
+
+    return {
+        price: Math.ceil(total),
+        eta: hit.eta ? String(hit.eta) : null,
+        /* So a quote can say the weight was outside the table. */
+        is_overweight: over || undefined,
+    }
 }
 
 module.exports = { bracketFor, priceFromBrackets }

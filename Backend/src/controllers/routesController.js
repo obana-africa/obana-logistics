@@ -705,6 +705,39 @@ const perKiloPrice = async (template, weight) => {
     return { base: rate * weight * perUnit, currency, rate, nairaPerUnit: perUnit }
 }
 
+/**
+ * A priceable match for a lane that has no bracket covering this weight.
+ *
+ * priceTemplate returns the bracket it charged, and the rest of the quote
+ * reads that object — the ETA, the service charge, the weights. A lane
+ * priced per kilo does not need a bracket to have a price, but it does need
+ * one of these, so this builds the same shape out of what the lane does say.
+ *
+ * The delivery time comes from the heaviest bracket the lane has, because a
+ * 45 kg shipment on a table that stops at 25 takes at least as long as the
+ * heaviest thing the lane has quoted. Prices are filled in by the caller
+ * from the per-kilo figure.
+ */
+const matchFromRate = (template, weight) => {
+    const brackets = Array.isArray(template?.weight_brackets) ? template.weight_brackets : []
+    const heaviest = [...brackets].sort((a, b) => Number(a.max || 0) - Number(b.max || 0)).pop()
+    const percent = routeMarkupPercent(template)
+    return {
+        min: heaviest?.min ?? 0,
+        max: heaviest?.max ?? null,
+        eta: heaviest?.eta ?? null,
+        /* Said plainly: this weight is outside the lane's table and was
+           priced from its rate instead. The same flag the overweight branch
+           sets, so anything already reading it keeps working. */
+        is_overweight: true,
+        priced_without_bracket: true,
+        base_price: 0,
+        service_charge_percent: percent,
+        service_charge: 0,
+        price: 0,
+    }
+}
+
 const priceTemplate = (template, weight) => {
     const brackets = template.weight_brackets || [];
     if (brackets.length === 0) return null;
@@ -918,7 +951,10 @@ const lastMileFor = async (routeTemplates, arrival, destinationState, destinatio
             price: byWeight.price,
             service_level: serviceLevel,
             transport_mode: 'road',
-            eta: byWeight.eta
+            eta: byWeight.eta,
+            /* Carried through so a quote can say the weight was past the
+               lane's table and priced up from it. */
+            is_overweight: byWeight.is_overweight
         }
     }
 
@@ -961,9 +997,6 @@ const laneOptions = async (routeTemplates, origin_state, origin_country, destina
         const service = bookableService(template)
         const key = `${service.transport_mode}|${service.service_level}`
         if (seen.has(key)) continue
-        const match = priceTemplate(template, weight)
-        if (!match || !(Number(match.price) > 0)) continue
-
         /* A lane priced by the kilo in its own currency overrides the bracket
            it would otherwise have used. The handling charge is then worked out
            on that figure, so the split still adds to the total. */
@@ -976,10 +1009,28 @@ const laneOptions = async (routeTemplates, origin_state, origin_country, destina
                   weight,
               )
             : null
+        const byKilo = typedRate || await perKiloPrice(template, weight)
+
+        /* Priced from whatever the lane actually has.
+         *
+         * The bracket table used to decide whether the lane was offered at
+         * all: priceTemplate ran first and anything it could not price was
+         * skipped before the per-kilo rate was ever consulted. So a lane
+         * whose brackets stop at 25 kg had no price for a 45 kg shipment and
+         * showed as "no route" — even though it states a rate per kilo that
+         * answers every weight there is. The customer was told the lane does
+         * not exist because one of its two prices did not cover them.
+         *
+         * The rate is the lane's price and the brackets are its fallback, so
+         * the lane is offered when EITHER can price the weight. Only a lane
+         * with neither is skipped, which is a lane with no price at all. */
+        const match = priceTemplate(template, weight) || (byKilo ? matchFromRate(template, weight) : null)
+        if (!match) continue
+        if (!(Number(match.price) > 0) && !byKilo) continue
+
         if (overrides?.handlingPercent !== null && overrides?.handlingPercent !== undefined) {
             match.service_charge_percent = overrides.handlingPercent
         }
-        const byKilo = typedRate || await perKiloPrice(template, weight)
         /* Quoted as a job: the amount is the crossing, whatever it weighs. */
         if (!typedRate && overrides?.freight) {
             match.base_price = Math.ceil(Number(overrides.freight))

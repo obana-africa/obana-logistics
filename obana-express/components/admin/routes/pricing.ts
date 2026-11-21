@@ -133,7 +133,18 @@ export function lastMileAt(form: RouteForm, weight: number): LastMileQuote {
 			rows.map((b) => ({ min: num(b.min), max: num(b.max), price: num(b.price), eta: b.eta })),
 			weight,
 		);
-		if (hit) return { base: round2(num(hit.price)), from: "brackets", label: `${hit.min}–${hit.max} kg` };
+		if (hit) {
+			/* Past the end of the table the price is carried up at that
+			   bracket's own rate per kilo, the same way the freight is and
+			   the same way priceFromBrackets does it on the server. A table
+			   that stopped reading the weight at its maximum charged a 45 kg
+			   delivery the 25 kg price. */
+			const price = num(hit.price);
+			const max = num(hit.max);
+			const over = Number.isFinite(max) && max > 0 && weight > max;
+			const base = over ? price + ((weight - max) * price) / max : price;
+			return { base: round2(base), from: "brackets", label: over ? `${hit.min}–${hit.max} kg, carried up` : `${hit.min}–${hit.max} kg` };
+		}
 		return { base: 0, from: "none", label: null };
 	}
 
