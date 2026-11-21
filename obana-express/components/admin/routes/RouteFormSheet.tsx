@@ -76,6 +76,12 @@ export function RouteFormSheet({
 	   when no rate can be had, and nothing is converted on 0. */
 	const [nairaPerUnit, setNairaPerUnit] = useState(form.rateCurrency === "NGN" ? 1 : 0);
 	const [rateError, setRateError] = useState("");
+	/* Where the conversion came from and how old it is.
+	   
+	   Without this the form converted silently: a rate eight months out of
+	   date looked exactly like a current one, the brackets carried it, and
+	   the only way to tell was to open Zoho. */
+	const [rateMeta, setRateMeta] = useState<{ source?: string; effective_date?: string | null; age_days?: number | null } | null>(null);
 
 	useEffect(() => {
 		const code = form.rateCurrency;
@@ -90,11 +96,17 @@ export function RouteFormSheet({
 			.then((res) => {
 				if (!live) return;
 				setNairaPerUnit(Number(res?.data?.naira_per_unit) || 0);
+				setRateMeta({
+					source: res?.data?.source,
+					effective_date: res?.data?.effective_date,
+					age_days: res?.data?.age_days,
+				});
 				setRateError("");
 			})
 			.catch(() => {
 				if (!live) return;
 				setNairaPerUnit(0);
+				setRateMeta(null);
 				/* The figures on screen are left exactly as they are. Quietly
 				   converting at a guessed rate would write a wrong price. */
 				setRateError(`No ${code} rate right now, so the brackets below are not being converted.`);
@@ -349,6 +361,26 @@ export function RouteFormSheet({
 					{/* What that rate comes to on a real shipment. A rate in a
 					    foreign currency is hard to sanity-check on its own, and
 					    the figure people actually argue about is the total. */}
+					{/* The rate the brackets below were written at. It is the
+					    link between the two halves of this form, and it was
+					    the one number not on screen. */}
+					{form.rateCurrency !== "NGN" && nairaPerUnit > 0 && (
+						<p className="text-xs text-gray-500">
+							Converted at 1 {form.rateCurrency} = ₦
+							{nairaPerUnit.toLocaleString("en-NG", { maximumFractionDigits: 2 })}
+							{rateMeta?.source === "zoho" ? " · from Zoho Books" : " · daily feed"}
+							{rateMeta?.effective_date ? ` · ${rateMeta.effective_date}` : ""}
+						</p>
+					)}
+					{/* Loud, because a stale cross rate is arithmetically right
+					    and economically wrong — and it writes itself into every
+					    bracket below without looking any different. */}
+					{form.rateCurrency !== "NGN" && (rateMeta?.age_days ?? 0) > 30 && (
+						<p className="text-xs font-medium text-amber-700">
+							That rate is {rateMeta?.age_days} days old. Update {form.rateCurrency} in
+							Zoho → Settings → Currencies before relying on these prices.
+						</p>
+					)}
 					{form.ratePerKg.trim() && (
 						<p className="text-slate-500 text-xs">
 							{form.rateCurrency} {form.ratePerKg.trim()} × 245 kg ={" "}

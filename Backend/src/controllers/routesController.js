@@ -5,6 +5,7 @@ const { currencyForCountry, ngnRate } = require('../helpers/fx')
 /* Zoho's naira-per-dollar rate, so the price the customer confirms, the summary
    they are sent and the message they receive all state the same dollars. */
 const { quoteCurrency, nairaPer } = require('../helpers/currencyRates')
+const { nairaPerCurrency } = require('../helpers/zohoInventory')
 const axios = require('axios')
 const crypto = require('crypto')
 const { getCode } = require('country-list')
@@ -1210,7 +1211,43 @@ const currencyRate = async (req, res) => {
            it has and says the conversion is unavailable. */
         return res.status(503).send(utils.responseError(`No ${code} rate is available right now`, 503))
     }
-    return res.send({ status: true, data: { currency: code, naira_per_unit: nairaPerUnit } })
+
+    /* Where the number came from, and how old it is.
+     *
+     * The form converts a lane's rate into the naira its brackets are kept
+     * in, and showed neither the rate it used nor its age — so a figure eight
+     * months out of date looked exactly like a current one, and the brackets
+     * silently carried it. The admin had no way to tell a good conversion
+     * from a bad one without opening Zoho.
+     *
+     * Best effort: the rate itself has already been resolved above and is
+     * returned whatever this says, so a failure to describe it never costs
+     * the conversion. */
+    let provenance = null
+    try {
+        const fromBooks = await nairaPerCurrency(code)
+        if (fromBooks?.rate > 0) {
+            provenance = {
+                source: 'zoho',
+                effective_date: fromBooks.effective_date,
+                age_days: fromBooks.age_days,
+            }
+        }
+    } catch {
+        /* Falls through: the daily feed answered, or Zoho did not. Either
+           way the caller gets a rate and simply no date to show beside it. */
+    }
+
+    return res.send({
+        status: true,
+        data: {
+            currency: code,
+            naira_per_unit: nairaPerUnit,
+            source: provenance?.source ?? 'feed',
+            effective_date: provenance?.effective_date ?? null,
+            age_days: provenance?.age_days ?? null,
+        },
+    })
 }
 
 const matchTemplate = async (req, res) => {
