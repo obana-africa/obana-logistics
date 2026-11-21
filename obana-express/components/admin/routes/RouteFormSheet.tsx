@@ -591,16 +591,22 @@ export function RouteFormSheet({
 								{/* Two ways to say it, one of them in force.
 
 								    An amount is right for a run quoted as a job: a
-								    truck to Port Harcourt costs what it costs. But a
-								    lane that carries a 35 kg parcel and a 245 kg pallet
-								    to the same door is not doing the same job twice,
-								    and one amount could not say so — the only
-								    alternative was a per-kilo rate, which says the
-								    opposite. Brackets say what is actually true. */}
+								    truck to Port Harcourt costs what it costs. A rate
+								    is right where the run genuinely scales with the
+								    load. Neither could describe a lane that charges one
+								    thing up to 35 kg and another above it, which is what
+								    the ranges are for.
+
+								    The server reads them in a fixed order, so two set at
+								    once would leave one on screen looking applied while
+								    nothing used it. Picking a mode is what stops that:
+								    only the chosen one is saved, and the other two are
+								    cleared. */}
 								<div className="mt-2 inline-flex rounded-lg border border-slate-300 bg-white p-0.5 text-sm">
 									{(
 										[
 											["flat", "One amount"],
+											["perKg", "Per kg"],
 											["brackets", "By weight"],
 										] as const
 									).map(([mode, label]) => (
@@ -646,6 +652,32 @@ export function RouteFormSheet({
 											helperText="The same at 10 kg and at 245 kg. Empty uses your domestic routes."
 											onChange={(ev) => setForm((prev) => ({ ...prev, lastMile: ev.target.value }))}
 										/>
+									</div>
+								) : form.lastMileMode === "perKg" ? (
+									<div className="mt-3 max-w-xs">
+										<Input
+											label="Rate (₦/kg)"
+											type="number"
+											inputMode="decimal"
+											step="any"
+											min="0"
+											placeholder="2387.76"
+											value={form.lastMilePerKg}
+											error={shown?.lastMilePerKg}
+											helperText="For a run that genuinely scales with the load. Empty uses your domestic routes."
+											onChange={(ev) => setForm((prev) => ({ ...prev, lastMilePerKg: ev.target.value }))}
+										/>
+										{/* The same arithmetic the freight rate shows, at
+										    the same reference weight, so the two legs can
+										    be read against each other. */}
+										{form.lastMilePerKg.trim() && (
+											<p className="mt-1 text-slate-500 text-xs">
+												₦{form.lastMilePerKg.trim()} × {REFERENCE_KG} kg ={" "}
+												<span className="font-semibold tabular-nums text-slate-700">
+													{naira(parseFloat(form.lastMilePerKg) * REFERENCE_KG || 0)}
+												</span>
+											</p>
+										)}
 									</div>
 								) : (
 									<div className="mt-3 space-y-3">
@@ -884,6 +916,7 @@ export function RouteFormSheet({
 									<span className="mt-0.5 block text-slate-400 text-xs">
 										{preview.lastMile.from === "brackets" && `From the ${preview.lastMile.label} range on this lane.`}
 										{preview.lastMile.from === "flat" && "The amount set on this lane, whatever it weighs."}
+										{preview.lastMile.from === "perKg" && `The rate set on this lane: ₦${form.lastMilePerKg.trim()}/kg × ${preview.weight} kg.`}
 										{preview.lastMile.from === "domestic" && "Not set here, so your domestic routes price it at booking."}
 									</span>
 								</dt>

@@ -23,6 +23,7 @@ const form = (over: Partial<RouteForm> = {}): RouteForm => ({
 	ratePerKg: "",
 	rateCurrency: "NGN",
 	lastMile: "",
+	lastMilePerKg: "",
 	lastMileMode: "flat",
 	lastMileBrackets: [],
 	handlingPercent: "",
@@ -104,6 +105,27 @@ it("weight brackets price the inland leg by what it actually is", () => {
 	});
 	assert.equal(lastMileAt(f, 30).base, 120000);
 	assert.equal(lastMileAt(f, 200).base, 585000);
+});
+
+it("a per-kilo last mile scales with the load", () => {
+	const l = lastMileAt(form({ arrivalState: "Rivers", lastMileMode: "perKg", lastMilePerKg: "2387.76" }), 245);
+	assert.equal(l.from, "perKg");
+	assert.equal(l.base, 585001.2);
+});
+
+it("only the mode in force prices the inland leg", () => {
+	/* All three filled in, which the form no longer allows — the mode is
+	   what decides, so a figure left over from another mode is ignored
+	   rather than quietly winning. */
+	const f = form({
+		arrivalState: "Rivers",
+		lastMile: "585000",
+		lastMilePerKg: "2387.76",
+		lastMileMode: "brackets",
+		lastMileBrackets: [bracket("0", "245", "120000")],
+	});
+	assert.equal(lastMileAt(f, 245).from, "brackets");
+	assert.equal(lastMileAt(f, 245).base, 120000);
 });
 
 it("stating neither falls back to the domestic routes, as it always has", () => {

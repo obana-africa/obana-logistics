@@ -200,7 +200,40 @@ const deliveryAddressOf = (order, customer = null) => {
  * that it guessed — an unnoticed default is how a heavy item quietly ships at a
  * light item's price, for months.
  */
-const itemsOf = (order, weights) => {
+/**
+ * The rate to price this order's goods in naira with.
+ *
+ * The order's own cf_exchange_rate first, because every other figure on it was
+ * converted with that one and using anything else makes the order stop adding
+ * up. Zoho's currency settings when the order carries none — which is the same
+ * fallback the shipping charge has always used, and the half that was missing
+ * here.
+ *
+ * Null when there is nothing to convert: the order is already in naira, or
+ * Zoho holds no rate at all.
+ */
+const nairaRateFor = async (order) => {
+    const base = String(order.currency_code || 'USD').toUpperCase()
+    if (base === 'NGN') return null
+
+    const onOrder = num(zoho.customField(order, 'cf_exchange_rate'))
+    if (onOrder > 0) return onOrder
+
+    try {
+        const { rate } = await zoho.getNairaRate(order.date ?? null)
+        return num(rate) > 0 ? num(rate) : null
+    } catch (e) {
+        /* Said out loud. An order that cannot be converted used to go through
+           with its dollar figures wearing a naira sign, and ₦13 for a $13
+           shirt reads as a rounding error rather than a missing rate. */
+        console.warn(
+            `[ZOHO SHIPMENT] ${order.salesorder_number} · no NGN rate available (${e.message}) — goods stay in ${base}`
+        )
+        return null
+    }
+}
+
+const itemsOf = (order, weights, nairaRate) => {
     /* A shipment keeps its money in one currency — the shipping fee is priced
        in naira from the route templates, so the goods have to be naira too.
        Zoho prices these orders in the organisation's base currency, USD, and
@@ -210,14 +243,23 @@ const itemsOf = (order, weights) => {
        two different symbols: US$253 an item, and a goods value of ₦1,265 that
        is really 1,265 dollars. */
     const base = String(order.currency_code || 'USD').toUpperCase()
-    const display = String(zoho.customField(order, 'cf_currency_code') || 'NGN').toUpperCase()
-    const rate = num(zoho.customField(order, 'cf_exchange_rate'))
+    const rate = num(nairaRate)
 
-    // Only convert when there is a rate to convert with, and something to
-    // convert to. A missing rate leaves the figures as Zoho stated them, which
-    // is wrong by a factor but not invented.
-    const toNgn = display === 'NGN' && base !== 'NGN' && rate > 0 ? (v) => Math.round(num(v) * rate * 100) / 100 : (v) => num(v)
-    const currency = display === 'NGN' && base !== 'NGN' && rate > 0 ? 'NGN' : base
+    /* Converted whenever there is a rate, regardless of cf_currency_code.
+     *
+     * That custom field used to be part of the condition, so an order raised
+     * without it kept its dollar figures — and SO-00727 showed ₦13 for a $13
+     * shirt and a goods value three orders of magnitude under what was in the
+     * box. The order's base currency is what the figures ARE; a rate is what
+     * turns them into naira. Whether somebody filled in a custom field says
+     * nothing about either.
+     *
+     * The rate itself still comes from cf_exchange_rate first — see
+     * nairaRateFor — so an order that carries one is converted with the same
+     * number every other figure on it used. */
+    const convert = base !== 'NGN' && rate > 0
+    const toNgn = convert ? (v) => Math.round(num(v) * rate * 100) / 100 : (v) => num(v)
+    const currency = convert ? 'NGN' : base
 
     return (Array.isArray(order.line_items) ? order.line_items : []).map((li) => {
         /* rate times quantity, not item_total.
@@ -520,7 +562,12 @@ const fulfil = async (salesOrderId, { requireTriggerField = true } = {}) => {
     const { weights, defaulted, productTypes } = await zoho.getItemWeights(
         (order.line_items || []).map((li) => li.item_id)
     )
-    const items = itemsOf(order, weights)
+    /* Resolved before the goods are priced, not after. The shipping charge
+       below worked this out for itself and the items never did, which is how
+       one shipment ended up with its freight in naira and its goods in
+       dollars. */
+    const nairaRate = await nairaRateFor(order)
+    const items = itemsOf(order, weights, nairaRate)
     if (!items.length) throw new Error(`Sales order ${order.salesorder_number} has no line items to ship`)
 
     const totalKg = items.reduce((sum, i) => sum + (Number(i.weight) || 0) * (Number(i.quantity) || 1), 0)
@@ -713,6 +760,18 @@ const writeBackToZoho = async ({ order, shipment, feeNgn, defaulted, productType
     // The order already carries fields waiting for this: Shipment Id, Tracking
     // URL, Shipment Status. Filling them is what makes the shipment visible to
     // whoever opens the order in Zoho, rather than only to us.
+    /* Said in the log, because it was not before.
+     *
+     * The charge is the one figure on this write-back that goes into a Zoho
+     * column somebody reads, and the only trace of it was inside the
+     * shipment's metadata. When it stopped arriving there was nothing in the
+     * log to say whether it had been sent, computed wrong, or sent and then
+     * overwritten. */
+    console.log(
+        `[ZOHO SHIPMENT] ${order.salesorder_number} · shipping charge · ` +
+            `₦${feeNgn} → ${baseCurrency} ${feeInBase} at ${rate} (${rateSource})`
+    )
+
     await zoho.updateSalesOrderShipment(order.salesorder_id, {
         shippingCharge: feeInBase,
         customFields: {

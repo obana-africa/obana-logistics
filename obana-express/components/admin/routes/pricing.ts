@@ -104,7 +104,7 @@ export function freightAt(form: RouteForm, nairaPerUnit: number, weight: number)
 
 /* ── The inland leg ──────────────────────────────────────────────────────── */
 
-export type LastMileSource = "brackets" | "flat" | "domestic" | "none";
+export type LastMileSource = "brackets" | "flat" | "perKg" | "domestic" | "none";
 
 export type LastMileQuote = { base: number; from: LastMileSource; label: string | null };
 
@@ -113,9 +113,13 @@ export type LastMileQuote = { base: number; from: LastMileSource; label: string 
  *
  * Mirrors `lastMileFor`: an amount stated on the lane is used before any
  * rate, and a lane that states nothing falls back to the domestic routes.
- * Weight brackets are the new, most specific case and are checked first — a
- * lane that has them has said what each weight costs, which is more than
- * either of the others say.
+ * Weight brackets are the most specific case and are checked first — a lane
+ * that has them has said what each weight costs, which is more than either
+ * of the others say.
+ *
+ * The form only ever saves the mode in force, so in practice exactly one of
+ * the three can apply. Reading the mode here rather than the three fields
+ * keeps this preview saying the same thing the save will write.
  *
  * Nothing at all when the lane has no arrival city: without one there is no
  * second leg to charge, which is how every lane behaved before any of this.
@@ -131,6 +135,12 @@ export function lastMileAt(form: RouteForm, weight: number): LastMileQuote {
 		);
 		if (hit) return { base: round2(num(hit.price)), from: "brackets", label: `${hit.min}–${hit.max} kg` };
 		return { base: 0, from: "none", label: null };
+	}
+
+	if (form.lastMileMode === "perKg") {
+		const rate = num(form.lastMilePerKg);
+		if (form.lastMilePerKg.trim() && rate > 0 && weight > 0) return { base: round2(rate * weight), from: "perKg", label: null };
+		return { base: 0, from: "domestic", label: null };
 	}
 
 	const flat = num(form.lastMile);

@@ -198,10 +198,14 @@ export interface RouteForm {
 	rateCurrency: string;
 	/** Cross-border lanes only: the inland leg as an amount, in naira. */
 	lastMile: string;
-	/* How the inland leg is priced. One or the other is in force, never both
-	   — two figures for the same leg is the problem this form had at the top
-	   and it is not worth repeating down here. */
-	lastMileMode: "flat" | "brackets";
+	/** The inland leg as a RATE, for lanes where it scales with weight. */
+	lastMilePerKg: string;
+	/* Which of the three is in force. The server reads them in a fixed order
+	   — brackets, then the amount, then the rate — so any two set at once
+	   leaves one sitting on screen looking applied while nothing uses it,
+	   which is the thing discovered from an invoice. One mode, one figure.
+	   `lastMileBrackets` is only read in "brackets" mode. */
+	lastMileMode: "flat" | "perKg" | "brackets";
 	lastMileBrackets: BracketDraft[];
 	/** Blank means the server-wide charge. "0" means charge nothing here. */
 	handlingPercent: string;
@@ -277,7 +281,7 @@ export const etaValue = (eta?: string | null) => (eta ?? "").replace(/\s*days?\s
 
 export function formFromRoute(route: RouteTemplate | null): RouteForm {
 	if (!route) {
-		return { origin: emptyPlace, destination: emptyPlace, arrivalCity: "", arrivalState: "", transport_mode: "road", service_level: "Standard", preferred_driver_id: "", ratePerKg: "", rateCurrency: "NGN", lastMile: "", lastMileMode: "flat", lastMileBrackets: [], handlingPercent: "", brackets: [newBracket("0")] };
+		return { origin: emptyPlace, destination: emptyPlace, arrivalCity: "", arrivalState: "", transport_mode: "road", service_level: "Standard", preferred_driver_id: "", ratePerKg: "", rateCurrency: "NGN", lastMile: "", lastMilePerKg: "", lastMileMode: "flat", lastMileBrackets: [], handlingPercent: "", brackets: [newBracket("0")] };
 	}
 	return {
 		origin: {
@@ -306,9 +310,18 @@ export function formFromRoute(route: RouteTemplate | null): RouteForm {
 		/* A lane still carrying the old per-kilo last mile shows what that
 		   works out to, rather than an empty box that would wipe it on save. */
 		lastMile: str(route.metadata?.last_mile_flat),
-		/* Brackets only where the lane already has them, so opening and
-		   saving a lane that does not changes nothing about it. */
-		lastMileMode: Array.isArray(route.metadata?.last_mile_brackets) && route.metadata.last_mile_brackets.length ? "brackets" : "flat",
+		lastMilePerKg: str(route.metadata?.last_mile_per_kg),
+		/* Opened in whichever mode the lane is already priced in, so opening
+		   and saving a lane changes nothing about it. Read in the order the
+		   server reads them, so a lane that somehow carries two shows the one
+		   that actually applies. */
+		lastMileMode: Array.isArray(route.metadata?.last_mile_brackets) && route.metadata.last_mile_brackets.length
+			? "brackets"
+			: str(route.metadata?.last_mile_flat).trim()
+				? "flat"
+				: str(route.metadata?.last_mile_per_kg).trim()
+					? "perKg"
+					: "flat",
 		lastMileBrackets: Array.isArray(route.metadata?.last_mile_brackets)
 			? route.metadata.last_mile_brackets.map((b) => ({ key: ++keySeq, min: str(b.min), max: str(b.max), price: str(b.price), rate: "", eta: etaValue(b.eta) }))
 			: [],
@@ -332,6 +345,7 @@ export interface FormErrors {
 	service_level?: string;
 	ratePerKg?: string;
 	lastMile?: string;
+	lastMilePerKg?: string;
 	handlingPercent?: string;
 	brackets?: string;
 	bracket: BracketErrors[];
@@ -354,11 +368,17 @@ export function validateRoute(form: RouteForm): FormErrors {
 	const rate = toNumber(form.ratePerKg);
 	if (form.ratePerKg.trim() && (!Number.isFinite(rate) || rate <= 0)) errors.ratePerKg = "Must be more than 0";
 	const lastMile = toNumber(form.lastMile);
-	if (form.lastMileMode === "flat" && form.lastMile.trim() && (!Number.isFinite(lastMile) || lastMile <= 0)) errors.lastMile = "Must be more than 0";
-	/* Checked only in the mode that saves them. A half-filled bracket left
-	   behind by someone who switched back to an amount is not an error,
-	   because it is not what gets written. */
-	if (form.lastMileMode === "brackets") {
+	const lastMilePerKg = toNumber(form.lastMilePerKg);
+	/* Each mode validates only what it saves. A figure left behind in a mode
+	   nobody is in is not an error, because buildPayload does not write it —
+	   and the modes are exclusive precisely so that two figures can never
+	   both look applied. That used to need a "clear one" error; now it
+	   cannot happen. */
+	if (form.lastMileMode === "flat") {
+		if (form.lastMile.trim() && (!Number.isFinite(lastMile) || lastMile <= 0)) errors.lastMile = "Must be more than 0";
+	} else if (form.lastMileMode === "perKg") {
+		if (form.lastMilePerKg.trim() && (!Number.isFinite(lastMilePerKg) || lastMilePerKg <= 0)) errors.lastMilePerKg = "Must be more than 0";
+	} else {
 		const rows = form.lastMileBrackets;
 		if (!rows.length) errors.lastMile = "Add at least one weight range, or price it as one amount.";
 		else if (rows.some((b) => !b.min.trim() || !b.max.trim() || !b.price.trim())) errors.lastMile = "Every weight range needs a min, a max and a price.";
@@ -405,7 +425,7 @@ export function validateRoute(form: RouteForm): FormErrors {
 	});
 
 	errors.count =
-		[errors.origin, errors.destination, errors.transport_mode, errors.service_level, errors.ratePerKg, errors.lastMile, errors.handlingPercent, errors.brackets].filter(Boolean).length +
+		[errors.origin, errors.destination, errors.transport_mode, errors.service_level, errors.ratePerKg, errors.lastMile, errors.lastMilePerKg, errors.handlingPercent, errors.brackets].filter(Boolean).length +
 		errors.bracket.reduce((n, e) => n + Object.values(e).filter(Boolean).length, 0);
 	return errors;
 }
@@ -444,10 +464,17 @@ export function buildPayload(form: RouteForm) {
 			   a price could be set and then never taken off again. */
 			price_per_kg: form.ratePerKg.trim() ? parseFloat(form.ratePerKg) : null,
 			price_currency: form.ratePerKg.trim() ? form.rateCurrency : null,
-			/* Exactly one of the two is written and the other is cleared.
-			   Leaving both set would make which one applies depend on reading
-			   the pricing code, which is the thing this form is fixing. */
+			/* Exactly one of the three is written and the other two are
+			   cleared. The server reads brackets, then the amount, then the
+			   rate, so any two set at once leaves one looking applied while
+			   nothing uses it — found from an invoice, which is the worst
+			   place. The mode decides, so that cannot happen.
+
+			   null rather than undefined throughout: an empty box is someone
+			   taking the figure OFF, and JSON.stringify drops undefined, so
+			   undefined would leave it set with nothing on screen saying so. */
 			last_mile_flat: form.lastMileMode === "flat" && form.lastMile.trim() ? parseFloat(form.lastMile) : null,
+			last_mile_per_kg: form.lastMileMode === "perKg" && form.lastMilePerKg.trim() ? parseFloat(form.lastMilePerKg) : null,
 			last_mile_brackets:
 				form.lastMileMode === "brackets" && form.lastMileBrackets.length
 					? form.lastMileBrackets.map((b) => ({
@@ -458,8 +485,6 @@ export function buildPayload(form: RouteForm) {
 							unit_price: calculateUnitPrice(b),
 						}))
 					: null,
-			/* An amount or a bracket supersedes the old per-kilo last mile. */
-			last_mile_per_kg: form.lastMile.trim() || form.lastMileBrackets.length ? null : undefined,
 			service_charge_percent: form.handlingPercent.trim() ? parseFloat(form.handlingPercent) : null,
 		},
 		preferred_driver_id: form.preferred_driver_id || null,
