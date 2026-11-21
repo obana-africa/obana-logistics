@@ -101,9 +101,17 @@ export default function CustomerShipmentsPage() {
             <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">My Shipments</h1>
             {total > 0 && <p className="mt-1 text-sm text-gray-500">{total} shipment{total === 1 ? '' : 's'}</p>}
           </div>
-          <Link href="/dashboard/customer/shipments/new" className="shrink-0">
-            <Button variant="primary">+ Create Shipment</Button>
-          </Link>
+          <div className="flex shrink-0 gap-2">
+            {/* Bookings started and not finished. Without a link they were
+                reachable only through the chips on the booking form, which
+                show six — so a seventh was saved and then lost. */}
+            <Link href="/dashboard/customer/shipments/drafts">
+              <Button variant="secondary">Drafts</Button>
+            </Link>
+            <Link href="/dashboard/customer/shipments/new">
+              <Button variant="primary">+ Create Shipment</Button>
+            </Link>
+          </div>
         </div>
 
         {/* Stats Cards */}

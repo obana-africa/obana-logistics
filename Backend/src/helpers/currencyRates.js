@@ -2,8 +2,46 @@ const { currencyForCountry, ngnRate } = require('./fx')
 const { nairaPerUsd } = require('./usdRate')
 const { nairaPerCurrency } = require('./zohoInventory')
 
-/** Past this, a rate from the books is reported as reaching. */
+/** Past this, a rate from the books is too old to charge anybody at. */
 const STALE_AFTER_DAYS = 30
+
+/**
+ * Which of the two rates to charge at, and why.
+ *
+ * Pulled out of nairaPer so the rule can be read and tested on its own: it
+ * decides money, and it had been getting this wrong in production for months
+ * with only a log line to say so.
+ *
+ * `books` is { rate, age_days, effective_date } or null; `feed` is a number
+ * or 0. Returns { rate, from, warn } — `warn` is the sentence to log, or ''.
+ */
+const chooseRate = (code, books, feed, staleAfterDays = STALE_AFTER_DAYS) => {
+    const bookRate = Number(books?.rate) || 0
+    const age = Number(books?.age_days)
+    const fresh = feed > 0
+
+    if (!(bookRate > 0)) return { rate: fresh ? feed : 0, from: fresh ? 'feed' : 'none', warn: '' }
+
+    /* An unknown age is treated as current. The books are the default source
+       and a missing date is not evidence against them. */
+    const stale = Number.isFinite(age) && age > staleAfterDays
+    if (!stale) return { rate: bookRate, from: 'books', warn: '' }
+
+    if (fresh) {
+        return {
+            rate: feed,
+            from: 'feed',
+            warn: `[fx] Zoho's ${code}→NGN rate is ${age} days old (${books.effective_date}) — quoting at today's ${feed.toFixed(2)} instead. Update it in Zoho → Currencies.`,
+        }
+    }
+    /* Dated money still beats no money: without a feed there is nothing to
+       convert with, and naira alone is the thing nobody can read. */
+    return {
+        rate: bookRate,
+        from: 'books',
+        warn: `[fx] Zoho's ${code}→NGN rate is ${age} days old (${books.effective_date}) and no feed rate is available — update it in Zoho → Currencies`,
+    }
+}
 
 /**
  * What one unit of a currency is worth in naira.
@@ -55,26 +93,18 @@ const nairaPer = async (currency) => {
         console.warn(`[fx] no Zoho rate for ${code} (${error.message}) — trying the daily feed`)
         return null
     })
-    if (fromBooks?.rate > 0) {
-        /* Said once, loudly, when the books are reaching. A cross rate is
-           only as current as its stalest leg, and a four-month-old leg
-           produces a number that is arithmetically right and economically
-           wrong. Logged rather than refused: a dated rate from the accounts
-           still beats a fresh one that disagrees with them. */
-        if (fromBooks.age_days > STALE_AFTER_DAYS) {
-            console.warn(
-                `[fx] Zoho's ${code}→NGN rate is ${fromBooks.age_days} days old (${fromBooks.effective_date}) — update it in Zoho → Currencies`,
-            )
-        }
-        return fromBooks.rate
-    }
-
     /* fx quotes the other way round — units of `code` for one naira — so a
        rate near 0.00058 is inverted to the ~1,700 naira a dollar that every
-       caller here expects. */
+       caller here expects. Fetched before the decision below, because a
+       stale book rate is only worth refusing when there is something fresher
+       to refuse it for. */
     const fx = await ngnRate(code).catch(() => null)
     const perNaira = Number(fx?.rate) || 0
-    return perNaira > 0 ? 1 / perNaira : 0
+    const fromFeed = perNaira > 0 ? 1 / perNaira : 0
+
+    const chosen = chooseRate(code, fromBooks, fromFeed)
+    if (chosen.warn) console.warn(chosen.warn)
+    return chosen.rate
 }
 
 /**
@@ -119,4 +149,4 @@ const quoteCurrency = async (fromCode, toCode) => {
     return { code: 'NGN', nairaPerUnit: 0 }
 }
 
-module.exports = { nairaPer, currenciesFor, currencyForCountry, quoteCurrency }
+module.exports = { nairaPer, currenciesFor, currencyForCountry, quoteCurrency, chooseRate, STALE_AFTER_DAYS }
