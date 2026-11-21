@@ -29,6 +29,7 @@ let tokenInflight = null
 
 const orgId = () => String(process.env.ZOHO_ORG_ID || '').trim()
 
+const { nairaPerUnit, rateInForce, ageInDays } = require('./currencyCross')
 const num = (value) => {
     const n = Number(value)
     return Number.isFinite(n) ? n : 0
@@ -250,6 +251,71 @@ const getNairaRate = async (onDate) => {
     }
 }
 
+/**
+ * Naira per one unit of any currency the books hold a rate for.
+ *
+ * getNairaRate above answers one question — naira per dollar — because the
+ * org's base IS the dollar and NGN's own row gives it directly. Every other
+ * currency needs two of Zoho's rates crossed through that base, which is what
+ * currencyCross does and why it is arithmetic in its own file with its own
+ * tests: this decides what a European customer is charged.
+ *
+ * Returns null, never a guess, when Zoho has no rate for the currency — a
+ * blank row on the Currencies screen, which several of them are. The caller
+ * then falls back to the daily feed exactly as it did before this existed.
+ */
+const nairaPerCurrency = async (currency, onDate) => {
+    const code = String(currency || '').trim().toUpperCase()
+    if (!/^[A-Z]{3}$/.test(code)) return null
+    if (code === 'NGN') return { rate: 1, effective_date: null, age_days: 0, stale: false }
+
+    const body = await call('get', 'settings/currencies', { books: true })
+    const currencies = Array.isArray(body?.currencies) ? body.currencies : []
+    const find = (c) => currencies.find((x) => String(x.currency_code).toUpperCase() === c)
+    const ngn = find('NGN')
+    const want = find(code)
+    if (!ngn || !want) return null
+
+    /* The base needs no lookup: one unit of it is worth one of itself. Saves a
+       call on the commonest case, and means a base-currency quote cannot fail
+       because somebody left its own rate row blank. */
+    const baseCode = String(
+        currencies.find((c) => c.is_base_currency)?.currency_code || ''
+    ).toUpperCase()
+
+    const ratesFor = async (cur) => {
+        if (baseCode && String(cur.currency_code).toUpperCase() === baseCode) {
+            return { row: { rate: 1, effective_date: null }, stale: false }
+        }
+        const res = await call('get', `settings/currencies/${cur.currency_id}/exchangerates`, { books: true })
+        return rateInForce(res?.exchange_rates, onDate)
+    }
+
+    const [wantRate, ngnRateRow] = await Promise.all([ratesFor(want), ratesFor(ngn)])
+    if (!wantRate?.row || !ngnRateRow?.row) return null
+
+    const rate = nairaPerUnit(
+        wantRate.row.rate ?? wantRate.row.exchange_rate,
+        ngnRateRow.row.rate ?? ngnRateRow.row.exchange_rate,
+    )
+    if (!(rate > 0)) return null
+
+    /* The OLDER of the two dates, because a cross rate is only as current as
+       its stalest leg. This org's EUR row is four months behind its NGN row,
+       which is why crossing them reads as a euro worth less than a dollar —
+       the number is arithmetically right and economically wrong, and the only
+       honest thing to do is say how old it is. */
+    const dates = [wantRate.row.effective_date, ngnRateRow.row.effective_date].filter(Boolean)
+    const oldest = dates.sort()[0] ?? null
+
+    return {
+        rate,
+        effective_date: oldest,
+        age_days: ageInDays(oldest),
+        stale: Boolean(wantRate.stale || ngnRateRow.stale),
+    }
+}
+
 /* ────────────────────────────────── writes ───────────────────────────────── */
 
 /**
@@ -418,6 +484,7 @@ module.exports = {
     findSalesOrderByNumber,
     getItemWeights,
     getNairaRate,
+    nairaPerCurrency,
     createPackage,
     createShipmentOrder,
     setShipmentStatus,
