@@ -147,6 +147,14 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
      Both exist for the same reason: filling this form in is work, and the
      work was being thrown away — once by leaving the page, and once by
      typing the same customer's details again next week. */
+  /* ?draft=<id> from the drafts list.
+
+     Read off the URL in the effect below rather than with useSearchParams,
+     which opts the whole page out of prerendering unless it is wrapped in a
+     Suspense boundary — and this page is shared by the customer and admin
+     booking screens, neither of which should change how it renders because a
+     draft can now be linked to. */
+  const draftOpened = React.useRef(false);
   const [draftId, setDraftId] = useState<number | string | null>(null);
   const [drafts, setDrafts] = useState<{ id: number; label: string; form: any; updated_at: string }[]>([]);
   const [draftState, setDraftState] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -195,7 +203,22 @@ export default function NewShipmentForm({ role = 'customer', onBehalfOf, onBehal
   /* Loaded once, quietly. Neither is worth an error if it fails: a booking
      can be made without a draft list and without a previous customer. */
   useEffect(() => {
-    apiClient.listShipmentDrafts().then((r) => setDrafts(r?.data ?? [])).catch(() => {});
+    apiClient.listShipmentDrafts().then((r) => {
+      const list = r?.data ?? [];
+      setDrafts(list);
+      /* Arrived from the drafts list with one in mind. Opened here rather
+         than there because continuing is this form's job — the list only
+         names which one, so a draft is restored and re-priced by the same
+         code that has always done it. Done once: after this the person is
+         editing, and reopening the draft under them would discard that. */
+      const wanted = new URLSearchParams(window.location.search).get('draft');
+      if (!wanted || draftOpened.current) return;
+      const found = list.find((d: { id: number }) => String(d.id) === wanted);
+      if (found) {
+        draftOpened.current = true;
+        continueDraft(found);
+      }
+    }).catch(() => {});
     apiClient.getRecentCustomers().then((r) => setCustomers(r?.data ?? [])).catch(() => {});
   }, []);
 

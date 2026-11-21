@@ -681,6 +681,19 @@ const perKiloPrice = async (template, weight) => {
     const currency = String(meta.price_currency || 'NGN').toUpperCase()
     if (currency === 'NGN') return { base: rate * weight, currency, rate }
 
+    /* The rate the lane was priced at, where it states one.
+     *
+     * Without this the quote converted at whatever the books or the daily
+     * feed said at booking time, which is not the rate the person setting
+     * the lane saw or agreed. EUR 12/kg set against ~NGN 1,479 was quoted at
+     * NGN 1,207 — the books' rate, eight months old — a fifth under, with
+     * nothing on either screen explaining the gap. A lane that states its
+     * rate quotes at it, and the route and its own quote cannot disagree.
+     *
+     * A lane that states none is converted exactly as before. */
+    const stated = Number(meta.price_fx_naira_per_unit)
+    if (stated > 0) return { base: rate * weight * stated, currency, rate, nairaPerUnit: stated, rateFrom: 'lane' }
+
     const perUnit = await nairaPer(currency)
     /* No rate today means no price today, rather than a price in the wrong
        currency: quoting ₦10.09 where €10.09 was agreed is off by three
@@ -976,7 +989,14 @@ const laneOptions = async (routeTemplates, origin_state, origin_country, destina
             match.base_price = Math.ceil(kobo(byKilo.base))
             match.service_charge = Math.ceil(kobo((match.base_price * match.service_charge_percent) / 100))
             match.price = match.base_price + match.service_charge
-            match.priced_per_kg = { rate: byKilo.rate, currency: byKilo.currency }
+            match.priced_per_kg = {
+                rate: byKilo.rate,
+                currency: byKilo.currency,
+                /* So the confirm screen converts at the same rate the price
+                   was worked out at, rather than looking one up again. */
+                naira_per_unit: byKilo.nairaPerUnit ?? null,
+                rate_from: byKilo.rateFrom ?? 'feed',
+            }
         }
         seen.add(key)
 
@@ -1203,8 +1223,22 @@ const withUsdRate = async (results, deliveryAddress, requestPickup) => {
         formatCountryCode(pickupOf(crossing)?.country),
         formatCountryCode((crossing.delivery_address || deliveryAddress)?.country)
     )
-    if (!(nairaPerUnit > 0)) return results
-    return results.map((r) => ({ ...r, base_currency: code, naira_per_base: nairaPerUnit }))
+
+    /* The lane's own rate wins the caption too.
+     *
+     * The price came from the lane and this line explained it, so the two
+     * reading differently is worse than either being wrong on its own: the
+     * screen showed "Converted at EUR 1 = NGN 1,207" above figures worked
+     * out at a different rate, and the arithmetic did not check out for
+     * anyone who tried. Only when the lane is priced in the currency the
+     * screen is leading with — otherwise the caption is about money the
+     * lane says nothing about. */
+    const lane = crossing.match?.priced_per_kg
+    const stated = lane && String(lane.currency || '').toUpperCase() === code ? Number(lane.naira_per_unit) : 0
+    const perBase = stated > 0 ? stated : nairaPerUnit
+
+    if (!(perBase > 0)) return results
+    return results.map((r) => ({ ...r, base_currency: code, naira_per_base: perBase }))
 }
 
 /**

@@ -50,6 +50,16 @@ export interface RouteMetadata {
 	   how Italy → Lagos is priced at EUR 10.09/kg rather than by bracket. */
 	price_per_kg?: number | string | null;
 	price_currency?: string | null;
+	/* The naira the lane was priced at, saved with it.
+	
+	   Without this the quote converted at whatever the books or the daily
+	   feed said at booking time, which is not what the person setting the
+	   lane saw or agreed: EUR 12/kg set against ~NGN 1,479 came out at NGN
+	   1,207 on the confirm screen, a fifth lower, and nothing on either
+	   screen explained the gap. The lane states its own rate so the quote
+	   and the route cannot disagree. Absent, and the books and feed decide
+	   as they always have. */
+	price_fx_naira_per_unit?: number | string | null;
 	/* The inland leg as an amount, because it is quoted as a job and not by
 	   the kilo. Takes precedence over last_mile_per_kg and over whatever the
 	   domestic routes would have charged. */
@@ -196,6 +206,8 @@ export interface RouteForm {
 	/** What a kilo costs on this lane. Blank falls back to the brackets. */
 	ratePerKg: string;
 	rateCurrency: string;
+	/** Naira per unit of rateCurrency, as this lane is priced. Blank = live. */
+	fxRate: string;
 	/** Cross-border lanes only: the inland leg as an amount, in naira. */
 	lastMile: string;
 	/** The inland leg as a RATE, for lanes where it scales with weight. */
@@ -281,7 +293,7 @@ export const etaValue = (eta?: string | null) => (eta ?? "").replace(/\s*days?\s
 
 export function formFromRoute(route: RouteTemplate | null): RouteForm {
 	if (!route) {
-		return { origin: emptyPlace, destination: emptyPlace, arrivalCity: "", arrivalState: "", transport_mode: "road", service_level: "Standard", preferred_driver_id: "", ratePerKg: "", rateCurrency: "NGN", lastMile: "", lastMilePerKg: "", lastMileMode: "flat", lastMileBrackets: [], handlingPercent: "", brackets: [newBracket("0")] };
+		return { origin: emptyPlace, destination: emptyPlace, arrivalCity: "", arrivalState: "", transport_mode: "road", service_level: "Standard", preferred_driver_id: "", ratePerKg: "", rateCurrency: "NGN", fxRate: "", lastMile: "", lastMilePerKg: "", lastMileMode: "flat", lastMileBrackets: [], handlingPercent: "", brackets: [newBracket("0")] };
 	}
 	return {
 		origin: {
@@ -307,6 +319,7 @@ export function formFromRoute(route: RouteTemplate | null): RouteForm {
 		preferred_driver_id: route.preferred_driver_id !== null && route.preferred_driver_id !== undefined ? String(route.preferred_driver_id) : "",
 		ratePerKg: str(route.metadata?.price_per_kg),
 		rateCurrency: (route.metadata?.price_currency || "NGN").toUpperCase(),
+		fxRate: str(route.metadata?.price_fx_naira_per_unit),
 		/* A lane still carrying the old per-kilo last mile shows what that
 		   works out to, rather than an empty box that would wipe it on save. */
 		lastMile: str(route.metadata?.last_mile_flat),
@@ -464,6 +477,12 @@ export function buildPayload(form: RouteForm) {
 			   a price could be set and then never taken off again. */
 			price_per_kg: form.ratePerKg.trim() ? parseFloat(form.ratePerKg) : null,
 			price_currency: form.ratePerKg.trim() ? form.rateCurrency : null,
+			/* Saved only where it means something: a naira lane converts
+			   nothing, and a lane with no rate has no price to convert.
+			   Cleared rather than left behind, so emptying the box really
+			   does hand the lane back to the live rate. */
+			price_fx_naira_per_unit:
+				form.ratePerKg.trim() && form.rateCurrency !== "NGN" && form.fxRate.trim() ? parseFloat(form.fxRate) : null,
 			/* Exactly one of the three is written and the other two are
 			   cleared. The server reads brackets, then the amount, then the
 			   rate, so any two set at once leaves one looking applied while

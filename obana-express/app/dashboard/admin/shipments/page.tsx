@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Package, Plus, Search, Trash2, X } from "lucide-react";
+import { FileText, Package, Plus, Search, Trash2, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ButtonLink, EmptyState, ErrorState, ListSkeleton, PageHeader, Pager, Panel, StatusBadge, ToneBadge } from "@/components/dashboard/kit";
 import { apiClient } from "@/lib/api";
@@ -92,9 +92,18 @@ export default function AdminShipmentsPage() {
 					title="Shipments"
 					description="Every shipment on Obana — our fleet and partner carriers."
 					actions={
-						<ButtonLink href="/dashboard/admin/shipments/new" icon={Plus}>
-							New shipment
-						</ButtonLink>
+						<>
+							{/* The way in to bookings that were started and not
+							    finished. Without a link they were reachable only
+							    through the chips on the booking form, which show
+							    six — so a seventh draft was saved and then lost. */}
+							<ButtonLink href="/dashboard/admin/shipments/drafts" icon={FileText} variant="secondary">
+								Drafts
+							</ButtonLink>
+							<ButtonLink href="/dashboard/admin/shipments/new" icon={Plus}>
+								New shipment
+							</ButtonLink>
+						</>
 					}
 				/>
 
