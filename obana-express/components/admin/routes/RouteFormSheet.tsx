@@ -103,10 +103,15 @@ export function RouteFormSheet({
 	   Only when there is neither does anything stop converting, and then the
 	   form says so and offers the box to fix it. */
 	const [liveRate, setLiveRate] = useState<{ nairaPerUnit: number; asOf: string | null } | null>(null);
-	const [manualRate, setManualRate] = useState("");
 	const [rateState, setRateState] = useState<"idle" | "loading" | "failed">("idle");
 
-	const laneRate = resolveRate(form.rateCurrency, liveRate, manualRate);
+	/* The rate lives on the form, so it is saved with the lane. It used to be
+	   local state, on the reasoning that the server converts at quote time —
+	   which turned out to be exactly the problem: the server converted at the
+	   books' rate and quoted a fifth under what this screen had just shown,
+	   with nothing on either screen explaining the gap. A lane that states
+	   its own rate cannot disagree with its own quote. */
+	const laneRate = resolveRate(form.rateCurrency, liveRate, form.fxRate);
 	const nairaPerUnit = laneRate.nairaPerUnit;
 
 	useEffect(() => {
@@ -503,8 +508,7 @@ export function RouteFormSheet({
 								/* A rate typed for euros is not a rate for dollars, so
 								   switching currency drops it rather than silently
 								   reinterpreting it against the wrong money. */
-								setManualRate("");
-								setForm((prev) => ({ ...prev, rateCurrency: ev.target.value }));
+								setForm((prev) => ({ ...prev, rateCurrency: ev.target.value, fxRate: "" }));
 							}}
 						/>
 					</div>
@@ -520,9 +524,12 @@ export function RouteFormSheet({
 					    because an admin looking at today's bank rate knows
 					    something the feed does not.
 
-					    It is never saved on the lane. The server converts at
-					    quote time with its own feed; a rate typed here moves
-					    the figures on this screen and nothing else. */}
+					    Typed, it is saved with the lane and the quote uses it.
+					    It used not to be, on the reasoning that the server
+					    converts at quote time — and the server converted at
+					    the books' rate, which was eight months old, so a lane
+					    set at ~NGN 1,479 quoted at NGN 1,207. Left blank, the
+					    lane follows the live rate as before. */}
 					{form.rateCurrency !== "NGN" && (
 						<div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
 							<div className="flex flex-wrap items-end justify-between gap-3">
@@ -537,8 +544,8 @@ export function RouteFormSheet({
 									</p>
 									<p className="mt-0.5 text-slate-500 text-xs">
 										{rateState === "loading" && "Fetching today's rate…"}
-										{laneRate.origin === "live" && `Live rate${laneRate.asOf ? `, ${new Date(laneRate.asOf).toLocaleDateString()}` : ""}. Type over it to use your own.`}
-										{laneRate.origin === "manual" && "Your own rate. Clear the box to go back to the live one."}
+										{laneRate.origin === "live" && `Live rate${laneRate.asOf ? `, ${new Date(laneRate.asOf).toLocaleDateString()}` : ""}. Type over it to fix this lane's rate, and it is saved with the lane.`}
+										{laneRate.origin === "manual" && "Saved with this lane, and used to quote it. Clear the box to follow the live rate instead."}
 										{laneRate.origin === "none" && rateState !== "loading" && "The live rate could not be fetched, so nothing below is being converted. Type today's rate to carry on."}
 									</p>
 								</div>
@@ -550,17 +557,18 @@ export function RouteFormSheet({
 										step="any"
 										min="0"
 										placeholder={liveRate ? String(liveRate.nairaPerUnit) : "1479.29"}
-										value={manualRate}
+										value={form.fxRate}
 										onChange={(ev) => {
 											const typed = ev.target.value;
-											setManualRate(typed);
 											/* The brackets follow the rate the moment it
 											   changes — that is the whole point of the
 											   two being one number. */
 											const next = resolveRate(form.rateCurrency, liveRate, typed);
-											if (next.nairaPerUnit > 0) {
-												setForm((prev) => ({ ...prev, brackets: bracketsAtRate(prev.brackets, prev.ratePerKg, next.nairaPerUnit) }));
-											}
+											setForm((prev) => ({
+												...prev,
+												fxRate: typed,
+												brackets: next.nairaPerUnit > 0 ? bracketsAtRate(prev.brackets, prev.ratePerKg, next.nairaPerUnit) : prev.brackets,
+											}));
 										}}
 									/>
 								</div>

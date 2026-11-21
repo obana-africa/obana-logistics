@@ -22,6 +22,7 @@ const form = (over: Partial<RouteForm> = {}): RouteForm => ({
 	preferred_driver_id: "",
 	ratePerKg: "",
 	rateCurrency: "NGN",
+	fxRate: "",
 	lastMile: "",
 	lastMilePerKg: "",
 	lastMileMode: "flat",
