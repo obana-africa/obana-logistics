@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+	FileText,
 	Handshake,
 	LayoutDashboard,
 	LogOut,
@@ -31,31 +32,45 @@ interface DashboardLayoutProps {
 	role: Role;
 }
 
-type NavItem = { name: string; href: string; icon: LucideIcon };
+type NavItem = {
+	name: string;
+	href: string;
+	icon: LucideIcon;
+	/* Whether it also gets a slot in the phone tab bar, which holds four.
+	
+	   This used to be "the first four in the list", which quietly tied the
+	   sidebar's order to the phone's contents: putting Drafts where it
+	   belongs, under Shipments, would have pushed Stores & API off a store
+	   owner's tab bar without anyone deciding that. Saying which four is a
+	   choice; counting to four is an accident waiting to happen. */
+	tab?: boolean;
+};
 
-// Only pages that exist. The first four show in the phone tab bar.
+// Only pages that exist. Four items per role carry tab: true.
 const NAV: Record<Role, NavItem[]> = {
 	customer: [
-		{ name: "Overview", href: "/dashboard/customer", icon: LayoutDashboard },
-		{ name: "New shipment", href: "/dashboard/customer/shipments/new", icon: PackagePlus },
-		{ name: "Shipments", href: "/dashboard/customer/shipments", icon: Package },
-		{ name: "Stores & API", href: "/dashboard/customer/stores", icon: Store },
+		{ name: "Overview", href: "/dashboard/customer", icon: LayoutDashboard, tab: true },
+		{ name: "New shipment", href: "/dashboard/customer/shipments/new", icon: PackagePlus, tab: true },
+		{ name: "Shipments", href: "/dashboard/customer/shipments", icon: Package, tab: true },
+		{ name: "Drafts", href: "/dashboard/customer/shipments/drafts", icon: FileText },
+		{ name: "Stores & API", href: "/dashboard/customer/stores", icon: Store, tab: true },
 		{ name: "Account", href: "/dashboard/customer/profile", icon: UserRound },
 	],
 	driver: [
-		{ name: "Deliveries", href: "/dashboard/driver", icon: Truck },
-		{ name: "Account", href: "/dashboard/driver/profile", icon: UserRound },
+		{ name: "Deliveries", href: "/dashboard/driver", icon: Truck, tab: true },
+		{ name: "Account", href: "/dashboard/driver/profile", icon: UserRound, tab: true },
 	],
 	agent: [
-		{ name: "Overview", href: "/dashboard/agent", icon: LayoutDashboard },
-		{ name: "Shipments", href: "/dashboard/agent/shipments", icon: Package },
-		{ name: "Account", href: "/dashboard/agent/profile", icon: UserRound },
+		{ name: "Overview", href: "/dashboard/agent", icon: LayoutDashboard, tab: true },
+		{ name: "Shipments", href: "/dashboard/agent/shipments", icon: Package, tab: true },
+		{ name: "Account", href: "/dashboard/agent/profile", icon: UserRound, tab: true },
 	],
 	admin: [
-		{ name: "Overview", href: "/dashboard/admin", icon: LayoutDashboard },
-		{ name: "Shipments", href: "/dashboard/admin/shipments", icon: Package },
-		{ name: "Routes & pricing", href: "/dashboard/admin/routes", icon: Route },
-		{ name: "Partners", href: "/dashboard/admin/partners", icon: Handshake },
+		{ name: "Overview", href: "/dashboard/admin", icon: LayoutDashboard, tab: true },
+		{ name: "Shipments", href: "/dashboard/admin/shipments", icon: Package, tab: true },
+		{ name: "Drafts", href: "/dashboard/admin/shipments/drafts", icon: FileText },
+		{ name: "Routes & pricing", href: "/dashboard/admin/routes", icon: Route, tab: true },
+		{ name: "Partners", href: "/dashboard/admin/partners", icon: Handshake, tab: true },
 		{ name: "Stores", href: "/dashboard/admin/stores", icon: Store },
 		{ name: "Drivers", href: "/dashboard/admin/drivers", icon: Truck },
 		{ name: "Agents", href: "/dashboard/admin/agents", icon: ShieldCheck },
@@ -169,7 +184,8 @@ export default function DashboardLayout({ children, role }: DashboardLayoutProps
 		</ul>
 	);
 
-	const tabs = items.slice(0, 4);
+	/* Four at most, and the same four as before this flag existed. */
+	const tabs = items.filter((i) => i.tab).slice(0, 4);
 
 	return (
 		<div data-dashboard-shell className="flex min-h-dvh flex-col bg-slate-50">

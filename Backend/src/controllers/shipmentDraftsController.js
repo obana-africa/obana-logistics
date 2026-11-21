@@ -1,5 +1,6 @@
 const db = require('../models/db');
 const utils = require('../../utils');
+const { labelFor } = require('../helpers/draftLabel');
 
 /**
  * Bookings in progress, and the customers a booking can be started from.
@@ -14,16 +15,7 @@ const MAX_DRAFTS = 50;
 /** Only ever this person's own. A draft is private to whoever started it. */
 const ownerOf = (req) => Number(req.user?.id) || 0;
 
-/** "Lagos → Abuja" or whatever of it exists, so a list reads as journeys. */
-const labelFor = (form, given) => {
-    const named = String(given ?? '').trim();
-    if (named) return named.slice(0, 120);
-    const where = (a) => String(a?.city || a?.state || '').trim();
-    const from = where(form?.pickup_address);
-    const to = where(form?.delivery_address);
-    if (from && to) return `${from} → ${to}`;
-    return from || to || 'Untitled draft';
-};
+
 
 const asDraft = (row) => ({
     id: row.id,
