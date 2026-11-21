@@ -193,6 +193,8 @@ export interface RouteForm {
 	rateCurrency: string;
 	/** Cross-border lanes only: the inland leg as an amount, in naira. */
 	lastMile: string;
+	/** The inland leg as a RATE, for lanes where it scales with weight. */
+	lastMilePerKg: string;
 	/** Blank means the server-wide charge. "0" means charge nothing here. */
 	handlingPercent: string;
 	brackets: BracketDraft[];
@@ -267,7 +269,7 @@ export const etaValue = (eta?: string | null) => (eta ?? "").replace(/\s*days?\s
 
 export function formFromRoute(route: RouteTemplate | null): RouteForm {
 	if (!route) {
-		return { origin: emptyPlace, destination: emptyPlace, arrivalCity: "", arrivalState: "", transport_mode: "road", service_level: "Standard", preferred_driver_id: "", ratePerKg: "", rateCurrency: "NGN", lastMile: "", handlingPercent: "", brackets: [newBracket("0")] };
+		return { origin: emptyPlace, destination: emptyPlace, arrivalCity: "", arrivalState: "", transport_mode: "road", service_level: "Standard", preferred_driver_id: "", ratePerKg: "", rateCurrency: "NGN", lastMile: "", lastMilePerKg: "", handlingPercent: "", brackets: [newBracket("0")] };
 	}
 	return {
 		origin: {
@@ -296,6 +298,7 @@ export function formFromRoute(route: RouteTemplate | null): RouteForm {
 		/* A lane still carrying the old per-kilo last mile shows what that
 		   works out to, rather than an empty box that would wipe it on save. */
 		lastMile: str(route.metadata?.last_mile_flat),
+		lastMilePerKg: str(route.metadata?.last_mile_per_kg),
 		handlingPercent: str(route.metadata?.service_charge_percent),
 		brackets: Array.isArray(route.weight_brackets)
 			? route.weight_brackets.map((b) => {
@@ -316,6 +319,7 @@ export interface FormErrors {
 	service_level?: string;
 	ratePerKg?: string;
 	lastMile?: string;
+	lastMilePerKg?: string;
 	handlingPercent?: string;
 	brackets?: string;
 	bracket: BracketErrors[];
@@ -339,6 +343,14 @@ export function validateRoute(form: RouteForm): FormErrors {
 	if (form.ratePerKg.trim() && (!Number.isFinite(rate) || rate <= 0)) errors.ratePerKg = "Must be more than 0";
 	const lastMile = toNumber(form.lastMile);
 	if (form.lastMile.trim() && (!Number.isFinite(lastMile) || lastMile <= 0)) errors.lastMile = "Must be more than 0";
+	const lastMilePerKg = toNumber(form.lastMilePerKg);
+	if (form.lastMilePerKg.trim() && (!Number.isFinite(lastMilePerKg) || lastMilePerKg <= 0))
+		errors.lastMilePerKg = "Must be more than 0";
+	/* Both set is not a harmless duplicate: the server checks the amount
+	   first, so the rate would sit in the form looking applied and never be
+	   used. Say so here rather than let it be discovered from an invoice. */
+	if (form.lastMile.trim() && form.lastMilePerKg.trim())
+		errors.lastMilePerKg = "Clear one — an amount and a rate can't both apply";
 	const handling = toNumber(form.handlingPercent);
 	if (form.handlingPercent.trim() && (!Number.isFinite(handling) || handling < 0 || handling > 100)) errors.handlingPercent = "0 to 100";
 
@@ -379,7 +391,7 @@ export function validateRoute(form: RouteForm): FormErrors {
 	});
 
 	errors.count =
-		[errors.origin, errors.destination, errors.transport_mode, errors.service_level, errors.ratePerKg, errors.lastMile, errors.handlingPercent, errors.brackets].filter(Boolean).length +
+		[errors.origin, errors.destination, errors.transport_mode, errors.service_level, errors.ratePerKg, errors.lastMile, errors.lastMilePerKg, errors.handlingPercent, errors.brackets].filter(Boolean).length +
 		errors.bracket.reduce((n, e) => n + Object.values(e).filter(Boolean).length, 0);
 	return errors;
 }
@@ -419,9 +431,18 @@ export function buildPayload(form: RouteForm) {
 			price_per_kg: form.ratePerKg.trim() ? parseFloat(form.ratePerKg) : null,
 			price_currency: form.ratePerKg.trim() ? form.rateCurrency : null,
 			last_mile_flat: form.lastMile.trim() ? parseFloat(form.lastMile) : null,
-			/* An amount supersedes the old per-kilo last mile: leaving both set
-			   would make which one applies depend on reading the pricing code. */
-			last_mile_per_kg: form.lastMile.trim() ? null : undefined,
+			/* An amount supersedes the rate — the server reads the amount
+			   first — so setting one clears the other. Both are written as
+			   null rather than undefined when empty, because the field is on
+			   the form now: an empty box is a merchant taking the figure OFF,
+			   and undefined would leave it set with nothing on screen saying
+			   so. (It was undefined before precisely because there was no box
+			   to clear.) */
+			last_mile_per_kg: form.lastMile.trim()
+				? null
+				: form.lastMilePerKg.trim()
+					? parseFloat(form.lastMilePerKg)
+					: null,
 			service_charge_percent: form.handlingPercent.trim() ? parseFloat(form.handlingPercent) : null,
 		},
 		preferred_driver_id: form.preferred_driver_id || null,

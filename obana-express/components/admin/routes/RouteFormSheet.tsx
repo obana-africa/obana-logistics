@@ -374,9 +374,47 @@ export function RouteFormSheet({
 									placeholder="585000"
 									value={form.lastMile}
 									error={shown?.lastMile}
-									helperText="An amount, not a rate: the inland run costs the same at 10 kg and at 245 kg. Empty uses your domestic routes."
+									helperText="A fixed amount: the inland run costs the same at 10 kg and at 245 kg. Leave both last-mile boxes empty to use your domestic routes."
 									onChange={(ev) => setForm((prev) => ({ ...prev, lastMile: ev.target.value }))}
 								/>
+							</div>
+						)}
+						{/* The same leg, priced by weight.
+						    
+						    Only an AMOUNT could be entered, so a lane whose
+						    inland run really does scale with weight had to be
+						    faked as a flat figure that is right at exactly one
+						    weight. The server has read a per-kilo last mile all
+						    along — there was simply no box for it, so it could
+						    be cleared from here and never set. */}
+						{form.origin.countryCode && form.destination.countryCode && form.origin.countryCode !== form.destination.countryCode && (
+							<div data-invalid={shown?.lastMilePerKg ? "true" : undefined}>
+								<Input
+									label="Last mile — rate (₦/kg)"
+									type="number"
+									inputMode="decimal"
+									step="any"
+									min="0"
+									placeholder="2387.76"
+									value={form.lastMilePerKg}
+									error={shown?.lastMilePerKg}
+									disabled={Boolean(form.lastMile.trim())}
+									helperText={
+										form.lastMile.trim()
+											? "Not used while a fixed amount is set above — the amount wins."
+											: "Used when the inland run scales with weight. Empty uses your domestic routes."
+									}
+									onChange={(ev) => setForm((prev) => ({ ...prev, lastMilePerKg: ev.target.value }))}
+								/>
+								{/* The same arithmetic the freight rate shows, at
+								    the same reference weight, so the two legs can
+								    be read against each other. */}
+								{form.lastMilePerKg.trim() && !form.lastMile.trim() && (
+									<p className="mt-1 text-xs text-gray-500">
+										₦{form.lastMilePerKg.trim()} × 245 kg ={" "}
+										₦{(parseFloat(form.lastMilePerKg) * 245 || 0).toLocaleString("en-NG", { maximumFractionDigits: 2 })}
+									</p>
+								)}
 							</div>
 						)}
 						<div data-invalid={shown?.handlingPercent ? "true" : undefined}>
