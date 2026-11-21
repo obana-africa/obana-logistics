@@ -1,5 +1,9 @@
 const { currencyForCountry, ngnRate } = require('./fx')
 const { nairaPerUsd } = require('./usdRate')
+const { nairaPerCurrency } = require('./zohoInventory')
+
+/** Past this, a rate from the books is reported as reaching. */
+const STALE_AFTER_DAYS = 30
 
 /**
  * What one unit of a currency is worth in naira.
@@ -29,6 +33,40 @@ const nairaPer = async (currency) => {
     if (code === 'USD') {
         const zoho = await nairaPerUsd()
         if (zoho > 0) return zoho
+    }
+
+    /* The books first, for every currency — not only the dollar.
+     *
+     * This used to try Zoho for USD alone, on the reasoning that "the books
+     * are not kept in euros". True, and beside the point: the org's base is
+     * the dollar, so a euro rate is two of Zoho's own rates crossed through
+     * it. The pair does not have to exist for the answer to come from the
+     * merchant's accounts.
+     *
+     * It matters for the same reason the dollar did. A lane priced in euros
+     * is invoiced in euros and lands in those books; converting at a public
+     * feed's rate while the accounts use another means the two disagree, and
+     * of the two the accounts are the one that has to be right.
+     *
+     * Falls through to the feed when Zoho holds no rate for the currency —
+     * several rows on that screen are blank — so nothing that worked before
+     * stops working. */
+    const fromBooks = await nairaPerCurrency(code).catch((error) => {
+        console.warn(`[fx] no Zoho rate for ${code} (${error.message}) — trying the daily feed`)
+        return null
+    })
+    if (fromBooks?.rate > 0) {
+        /* Said once, loudly, when the books are reaching. A cross rate is
+           only as current as its stalest leg, and a four-month-old leg
+           produces a number that is arithmetically right and economically
+           wrong. Logged rather than refused: a dated rate from the accounts
+           still beats a fresh one that disagrees with them. */
+        if (fromBooks.age_days > STALE_AFTER_DAYS) {
+            console.warn(
+                `[fx] Zoho's ${code}→NGN rate is ${fromBooks.age_days} days old (${fromBooks.effective_date}) — update it in Zoho → Currencies`,
+            )
+        }
+        return fromBooks.rate
     }
 
     /* fx quotes the other way round — units of `code` for one naira — so a
