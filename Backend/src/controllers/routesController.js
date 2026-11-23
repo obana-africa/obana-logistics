@@ -14,7 +14,8 @@ const { parsePhoneNumber } = require('libphonenumber-js');
 const util = require('../utility/utils.js');
 const querystring = require('node:querystring');
 const { cityBand, bandedPrice } = require('../seeds/cityBands');
-const { atLeastCityMinimum } = require('../seeds/pricing2026');
+const { atLeastCityMinimum, atLeastMinimum, tierFor } = require('../seeds/pricing2026');
+const { zoneOf, stateKey } = require('../seeds/repriceNigeria');
 
 
 require('dotenv').config()
@@ -1086,6 +1087,41 @@ const laneOptions = async (routeTemplates, origin_state, origin_country, destina
                 service.service_level,
                 band,
             )
+        }
+
+        /* The floor for a journey that leaves the state.
+         *
+         * MINIMUM_BASE has carried a floor for every tier since it was
+         * written — ₦5,500 Standard for Lagos → Port Harcourt, ₦7,000 for
+         * Lagos → Kano — and only the intra-state one was ever applied,
+         * because atLeastMinimum was reachable solely through
+         * atLeastCityMinimum inside the sameState branch. So a lane whose
+         * brackets were set low, or whose lightest bracket covers a 0.2 kg
+         * parcel, quoted a three-hundred-kilometre run at whatever its table
+         * said and nothing stopped it: the one journey with a real floor in
+         * the price list was the only one not getting it.
+         *
+         * Never over a figure a person typed. A rate agreed with a customer,
+         * a freight amount or a per-kilo price is what was agreed, and a
+         * floor has no more business moving it than a city band does — the
+         * same guard the branch above uses, for the same reason.
+         *
+         * A lane whose states are not both known falls through untouched,
+         * so nothing outside Nigeria and nothing unmappable changes. */
+        if (!sameState && !typedRate && !byKilo && !overrides?.freight) {
+            const tier = tierFor({
+                sameState: false,
+                originZone: zoneOf(stateKey(origin_state)),
+                destinationZone: zoneOf(stateKey(destination_state)),
+            })
+            if (tier !== null) {
+                match.interstate_tier = tier
+                match.base_price = atLeastMinimum(
+                    match.base_price ?? match.price,
+                    service.service_level,
+                    tier,
+                )
+            }
         }
 
         /* The charge follows whichever base and percent ended up in play. */
