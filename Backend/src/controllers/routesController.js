@@ -739,6 +739,16 @@ const matchFromRate = (template, weight) => {
     }
 }
 
+/**
+ * What the fulfilment centre charges to receive goods, in naira.
+ *
+ * Stated alongside the freight rather than in place of it, so a caller can
+ * show the two apart and charge their sum. The shop and sales-partner
+ * checkouts hold the same figure for the orders they price without asking
+ * for a quote at all.
+ */
+const FULFILMENT_CENTRE_HANDLING_FEE = 2000;
+
 const priceTemplate = (template, weight) => {
     const brackets = template.weight_brackets || [];
     if (brackets.length === 0) return null;
@@ -1473,21 +1483,38 @@ const matchTemplate = async (req, res) => {
         if (selectedTemplateMatch) {
             const { template, match, exact } = selectedTemplateMatch
             match.price = Math.ceil(Number(match.price))
-            // Apply N2000 flat rate if it's a domestic Nigerian shipment AND delivery is to Fulfilment Centre
+            /* Delivery INTO the fulfilment centre is a delivery.
+             *
+             * It used to be a flat NGN 2,000: the lane price was computed from
+             * the weight brackets and then thrown away, along with the service
+             * charge, for every domestic order collected at the centre. So Aba
+             * → Lagos with 61.5 kg on it — a 20-50 kg bracket at NGN 33,000,
+             * extrapolated past its top — was sold for two thousand naira, and
+             * a vendor on the next street was sold for the same. The weight
+             * and the distance stopped mattering at exactly the point they
+             * matter most.
+             *
+             * The lane now prices this leg the way it prices every other, and
+             * the handling fee is stated separately rather than substituted:
+             * it is what the centre charges to receive the goods, which is a
+             * different thing from carrying them there, and the two belong on
+             * two lines. Callers add it to the freight and show both — see the
+             * shop checkout, which does exactly that.
+             *
+             * `is_fulfilment_centre_handling_fee` is deliberately no longer
+             * set: it suppressed the lane's other service options, which were
+             * suppressed only because there was no real lane price to offer
+             * them against. */
             if (isDomesticNigeria && isDeliveryToFulfilmentCentre) {
-                match.price = 2000;
-                match.is_fulfilment_centre_handling_fee = true;
-                /* A flat handling fee is the whole of it. The split belonged to
-                   the route price this replaced, and leaving it would show two
-                   parts that do not add up to the two thousand being charged. */
-                match.base_price = 2000;
-                match.service_charge = 0;
-                match.service_charge_percent = 0;
+                match.fulfilment_centre_delivery = true;
+                match.fulfilment_centre_handling_fee = FULFILMENT_CENTRE_HANDLING_FEE;
             }
             match.estimated_delivery = deliveryTimeRange(match.eta)
-            const laneChoices = match.is_fulfilment_centre_handling_fee
-                ? []
-                : await laneOptions(routeTemplates, originState, originCountry, destinationState, destinationCountry, groupWeight, {
+            /* Every service the lane sells. A delivery into the fulfilment
+               centre used to be excluded from this, because its price was a
+               flat fee and there was no real figure to offer the alternatives
+               against. There is one now. */
+            const laneChoices = await laneOptions(routeTemplates, originState, originCountry, destinationState, destinationCountry, groupWeight, {
                     originCountry: group.pickup_address?.country || originCountry,
                     destinationCountry: delivery_address?.country || destinationCountry,
                     destinationCity: delivery_address?.city || delivery_address?.state || '',
