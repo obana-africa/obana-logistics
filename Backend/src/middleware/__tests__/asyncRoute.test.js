@@ -54,3 +54,37 @@ test('wrapAll covers every handler on a controller and leaves the rest', () => {
     assert.equal(typeof wrapped.b, 'function')
     assert.equal(wrapped.NOT_A_HANDLER, 42)
 })
+
+/* A controller module does not only export route handlers.
+ *
+ * userController also exports getUser(email, phone, withAttr, req, res,
+ * user_id), which auth.js calls directly with six arguments. The first
+ * version of this wrapper declared `function (req, res, next)` and so
+ * truncated that call to three — dropping the user_id that the store-key
+ * branch identifies the user BY, since it passes a null email. Every store
+ * key in existence was answered "Invalid or paused store API key", and the
+ * keys were all fine. These pin the two properties that prevent it. */
+
+test('every argument is forwarded, not just the first three', async () => {
+    const seen = []
+    const helper = async (...args) => {
+        seen.push(...args)
+        return 'ok'
+    }
+    const out = await asyncRoute(helper)(null, null, true, 'REQ', 'RES', 42)
+    assert.equal(out, 'ok')
+    assert.deepEqual(seen, [null, null, true, 'REQ', 'RES', 42])
+})
+
+test('a direct call that throws rethrows, instead of being swallowed', async () => {
+    const helper = async () => {
+        throw new Error('not found')
+    }
+    await assert.rejects(() => asyncRoute(helper)('a@b.c', null, true), /not found/)
+})
+
+test('a direct call with a non-function third argument is not middleware', async () => {
+    /* `true` sits where `next` would, and must not be called. */
+    const helper = async (a, b, c) => `${a}|${b}|${c}`
+    assert.equal(await asyncRoute(helper)(null, null, true), 'null|null|true')
+})
