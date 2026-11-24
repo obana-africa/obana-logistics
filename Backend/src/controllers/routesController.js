@@ -749,6 +749,52 @@ const matchFromRate = (template, weight) => {
  */
 const FULFILMENT_CENTRE_HANDLING_FEE = 2000;
 
+/**
+ * When a table may be stretched past its heaviest bracket, and how far.
+ *
+ * Extrapolating pro rata charges the per-kilo the top bracket implies —
+ * `price / max`. On the seeded ladder that is sound arithmetic from a sound
+ * number: Lagos Standard tops out at 20–50 kg for ₦9,000, so ₦180/kg, and
+ * 200 kg across Lagos quotes ₦39,600. That is a price a courier would
+ * recognise, and nothing should stop it.
+ *
+ * What went wrong had nothing to do with the weight. A cart of 195 units was
+ * matched to a lane whose heaviest bracket is ONE KILO, at ₦13,500 — so the
+ * implied rate was ₦13,500/kg, and 195 kg came to ₦2,895,751. The table was
+ * never evidence about heavy freight; it was a parcel price multiplied 195
+ * times.
+ *
+ * So the guard is on the BRACKET, not on the weight:
+ *
+ *   · a table whose heaviest bracket is lighter than MIN_EXTRAPOLATION_KG
+ *     has said nothing about a consignment and may not be stretched at all;
+ *   · a table that HAS a real heavy bracket may be stretched a long way,
+ *     because its implied rate is a real rate — but not indefinitely, since
+ *     at some point a road courier's price list stops being the right
+ *     instrument whatever it says.
+ *
+ * An earlier version of this capped the weight at 5x the top bracket, which
+ * got the cause wrong: it would have refused a legitimate 300 kg Lagos job
+ * (6x, ₦59,401) while still allowing 195 kg on the 1 kg lane (195x — no,
+ * refused, but for the wrong reason, and the lane stayed broken for every
+ * weight under 5 kg).
+ *
+ * Either way the lane falls through to its per-kilo rate if it states one —
+ * a rate IS a claim about any weight — and otherwise answers with no price,
+ * which a checkout can turn into "ask us".
+ */
+const MIN_EXTRAPOLATION_KG = (() => {
+    const raw = process.env.ROUTE_MIN_EXTRAPOLATION_KG;
+    const n = raw === undefined || raw === '' ? NaN : Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 10;
+})();
+
+const OVERWEIGHT_FACTOR_MAX = (() => {
+    const raw = process.env.ROUTE_OVERWEIGHT_FACTOR_MAX;
+    const n = raw === undefined || raw === '' ? NaN : Number(raw);
+    return Number.isFinite(n) && n >= 1 ? n : 20;
+})();
+
 const priceTemplate = (template, weight) => {
     const brackets = template.weight_brackets || [];
     if (brackets.length === 0) return null;
@@ -758,6 +804,25 @@ const priceTemplate = (template, weight) => {
     const isOverweight = !bracket;
     if (!bracket) bracket = sortedByMax[sortedByMax.length - 1];
 
+    /* Said once, with the numbers, because the next person asking "where did
+       2.9 million come from" should find it in the log rather than have to
+       re-derive it from this function. */
+    const heaviest = Number(bracket.max || 0);
+    if (isOverweight && heaviest > 0) {
+        if (heaviest < MIN_EXTRAPOLATION_KG) {
+            console.warn(
+                `[routes] this lane's heaviest bracket is ${heaviest}kg at ₦${Number(bracket.price || 0)} — ₦${Math.round(Number(bracket.price || 0) / heaviest)}/kg, a parcel price. It says nothing about ${weight}kg, so no price from its table; give the lane a per-kilo rate or a heavier bracket`
+            );
+            return null;
+        }
+        if (weight > heaviest * OVERWEIGHT_FACTOR_MAX) {
+            console.warn(
+                `[routes] ${weight}kg is ${(weight / heaviest).toFixed(1)}x this lane's heaviest bracket (${heaviest}kg) — past where a courier price list is the right instrument; no price from its table`
+            );
+            return null;
+        }
+    }
+
     const maxWeight = Number(bracket.max || 0);
     const basePrice = Number(bracket.price || 0);
 
@@ -766,6 +831,18 @@ const priceTemplate = (template, weight) => {
     if (isOverweight && maxWeight > 0) {
         base = basePrice + ((weight - maxWeight) * basePrice) / maxWeight;
         match.is_overweight = true;
+        /* What the number was made of, carried on the quote.
+           A price that looks wrong for the distance is almost always a weight
+           nobody expected, and until these were here the only way to find that
+           out was to re-derive the arithmetic by hand. */
+        match.bracket_max = maxWeight;
+        match.chargeable_weight = weight;
+        match.over_bracket_factor = Math.round((weight / maxWeight) * 10) / 10;
+        /* The rate this lane's own table implies, which is the number that
+           decides whether an extrapolated quote is sane. ₦180/kg is a
+           courier moving a consignment; ₦13,500/kg is a parcel price being
+           multiplied, and it is visible here before anyone pays it. */
+        match.implied_rate_per_kg = Math.round(basePrice / maxWeight);
     }
 
     /* Obana's service charge, as its own figure rather than folded into the
