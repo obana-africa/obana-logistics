@@ -749,6 +749,34 @@ const matchFromRate = (template, weight) => {
  */
 const FULFILMENT_CENTRE_HANDLING_FEE = 2000;
 
+/**
+ * How far past its heaviest bracket a table may be stretched before it stops
+ * being evidence.
+ *
+ * A lane whose table stops at 10 kg has been priced, agreed and sanity-checked
+ * for parcels. Multiplying its top bracket by the ratio of weights is a
+ * reasonable guess at 12 kg and an invention at 1,950 kg — and the invention
+ * is unbounded, so it is always a NUMBER, never an error, and nothing
+ * downstream can tell the two apart.
+ *
+ * It got as far as a customer: a 195-unit cart on a lane across Lagos quoted
+ * over ₦2.9m, because 195 units of 10 kg is 1,950 kg and the arithmetic
+ * below multiplied a city parcel's price by 195.
+ *
+ * Past this factor the table says nothing honest, so it says nothing: the
+ * lane falls through to its per-kilo rate if it states one (a rate IS a claim
+ * about any weight), and otherwise answers with no price, which a checkout
+ * can turn into "ask us" — the true answer for a 2-tonne shipment.
+ *
+ * Five is deliberate rather than tuned: it spans the 10 kg table up to a 50 kg
+ * consignment, which is about where "a parcel" stops being the right word.
+ */
+const OVERWEIGHT_FACTOR_MAX = (() => {
+    const raw = process.env.ROUTE_OVERWEIGHT_FACTOR_MAX;
+    const n = raw === undefined || raw === '' ? NaN : Number(raw);
+    return Number.isFinite(n) && n >= 1 ? n : 5;
+})();
+
 const priceTemplate = (template, weight) => {
     const brackets = template.weight_brackets || [];
     if (brackets.length === 0) return null;
@@ -758,6 +786,17 @@ const priceTemplate = (template, weight) => {
     const isOverweight = !bracket;
     if (!bracket) bracket = sortedByMax[sortedByMax.length - 1];
 
+    /* Too far past the table to be a price anyone agreed. Said once, with the
+       numbers, because the next person asking "where did 2.9 million come
+       from" should find it in the log rather than in this function. */
+    const heaviest = Number(bracket.max || 0);
+    if (isOverweight && heaviest > 0 && weight > heaviest * OVERWEIGHT_FACTOR_MAX) {
+        console.warn(
+            `[routes] ${weight}kg is ${(weight / heaviest).toFixed(1)}x this lane's heaviest bracket (${heaviest}kg) — no price from its table; it needs a per-kilo rate or a human`
+        );
+        return null;
+    }
+
     const maxWeight = Number(bracket.max || 0);
     const basePrice = Number(bracket.price || 0);
 
@@ -766,6 +805,13 @@ const priceTemplate = (template, weight) => {
     if (isOverweight && maxWeight > 0) {
         base = basePrice + ((weight - maxWeight) * basePrice) / maxWeight;
         match.is_overweight = true;
+        /* What the number was made of, carried on the quote.
+           A price that looks wrong for the distance is almost always a weight
+           nobody expected, and until these were here the only way to find that
+           out was to re-derive the arithmetic by hand. */
+        match.bracket_max = maxWeight;
+        match.chargeable_weight = weight;
+        match.over_bracket_factor = Math.round((weight / maxWeight) * 10) / 10;
     }
 
     /* Obana's service charge, as its own figure rather than folded into the

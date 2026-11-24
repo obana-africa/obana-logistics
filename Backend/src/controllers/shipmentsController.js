@@ -96,6 +96,30 @@ const buildTrackingUrl = (reference) => {
 };
 
 /**
+ * Who at Obana is told about every shipment, whoever raised it.
+ *
+ * Comma-separated, so a second person on call is an env change rather than a
+ * deploy. The default is the number operations run from today: a platform
+ * whose team only hears about a shipment when the customer complains is one
+ * nobody is actually running, and leaving it unset by default would have
+ * meant exactly that until somebody remembered.
+ *
+ * Set ADMIN_WHATSAPP_NUMBERS to an empty string to turn it off.
+ */
+const DEFAULT_ADMIN_WHATSAPP = '+2349036724938';
+
+const adminWhatsAppNumbers = () => {
+    const raw = process.env.ADMIN_WHATSAPP_NUMBERS;
+    /* Unset means "nobody has decided yet", which is not the same as "nobody".
+       An explicit empty string IS a decision, and it is honoured. */
+    const value = raw === undefined ? DEFAULT_ADMIN_WHATSAPP : raw;
+    return String(value)
+        .split(',')
+        .map((n) => n.trim())
+        .filter(Boolean);
+};
+
+/**
  * WhatsApp notification config, keyed by shipment event. Each event maps to the env
  * var holding the approved KudiSMS template code, per audience.
  *
@@ -383,6 +407,34 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
                stranger's name where there is not: a greeting that is merely
                generic is better than one that is wrong. */
             recipients.push({ who, phone: String(phone).trim(), key, name: String(name ?? '').trim() || 'Customer' });
+        }
+
+        /* The operations copy.
+         *
+         * Every shipment on this platform, whatever raised it — the logistics
+         * dashboard, the marketplace, a partner store's API key — is somebody's
+         * parcel that somebody at Obana may have to answer for. Until now the
+         * only people told were the two ends of the journey, so the first
+         * anyone here heard of a shipment going wrong was the customer asking.
+         *
+         * Deliberately a copy of the CUSTOMER message rather than a report of
+         * its own: it is the same template, the same fallbacks and the same
+         * three facts, so there is nothing extra to approve at KudiSMS and
+         * nothing that can drift out of step with what the customer was told.
+         *
+         * Dedup keyed on the digits, like every other recipient here, so when
+         * the admin IS the sender or the receiver they get one message, not
+         * two. ADMIN_WHATSAPP_NUMBERS takes a comma-separated list, so a second
+         * person on call is an env change and not a deploy; set it empty to
+         * turn this off. */
+        for (const raw of adminWhatsAppNumbers()) {
+            const key = digitsOf(raw);
+            if (key.length < 7) {
+                console.warn(`[WA] "${raw}" in ADMIN_WHATSAPP_NUMBERS is not a phone number; skipping it`);
+                continue;
+            }
+            if (recipients.some((r) => r.key === key)) continue;
+            recipients.push({ who: 'admin', phone: raw, key, name: 'Obana' });
         }
 
         const currency = shipment.currency || 'NGN';
