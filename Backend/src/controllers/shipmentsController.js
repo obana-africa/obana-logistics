@@ -134,6 +134,27 @@ const WA_EVENTS = {
     delivered:  { customer: 'KUDISMS_WA_DELIVERED_TEMPLATE', salesperson: 'KUDISMS_WA_SALESPERSON_DELIVERED_TEMPLATE' }
 };
 
+/**
+ * Which customer message a raw status corresponds to.
+ *
+ * A dispatcher moves a parcel through picked up, dispatched and in transit;
+ * the customer gets one message for the three, because to them it is one
+ * event. Mapped HERE rather than at the call site so the caller can hand over
+ * the real status and let each audience be told at its own level of detail:
+ * the customer "In Transit", Obana "Dispatched". Before this, the caller
+ * translated first and the real stage never arrived.
+ *
+ * A status that is absent is simply not a customer-facing stage — pending and
+ * confirmed because the customer already had the booking message, failed,
+ * cancelled and returned because what to tell a customer about those is a
+ * decision for whoever is handling it, not an automatic message. Obana is
+ * told about all of them regardless.
+ */
+const CUSTOMER_EVENT = {
+    picked_up: 'in_transit',
+    dispatched: 'in_transit'
+};
+
 /* INTRANSIT or IN_TRANSIT, DELIVERED or FULFILLED — whoever sets these has to
    guess which spelling the code chose, and guessing wrong silences a whole
    event with no error anywhere. Accept the obvious variants instead. */
@@ -144,7 +165,8 @@ const TEMPLATE_ALIASES = {
         'KUDISMS_WA_SALESPERSON_SHIPPED_TEMPLATE'
     ],
     KUDISMS_WA_DELIVERED_TEMPLATE: ['KUDISMS_WA_FULFILLED_TEMPLATE'],
-    KUDISMS_WA_SALESPERSON_DELIVERED_TEMPLATE: ['KUDISMS_WA_SALESPERSON_FULFILLED_TEMPLATE']
+    KUDISMS_WA_SALESPERSON_DELIVERED_TEMPLATE: ['KUDISMS_WA_SALESPERSON_FULFILLED_TEMPLATE'],
+    KUDISMS_WA_ADMIN_TEMPLATE: ['KUDISMS_WA_ADMIN_STATUS_TEMPLATE', 'KUDISMS_WA_ADMIN_STAGE_TEMPLATE']
 };
 
 /** The template code for a variable, trying its known aliases. */
@@ -157,6 +179,137 @@ const templateCodeFor = (name) => {
         }
     }
     return '';
+};
+
+/**
+ * What to call each stage when telling Obana about it.
+ *
+ * Deliberately NOT the customer's three words. displayStatus() folds picked
+ * up, dispatched and in transit into one phrase, which is right for a customer
+ * and useless to whoever has to act: "In Transit" does not say whether a
+ * driver has the parcel yet. Operations get the real stage.
+ *
+ * The three that mean somebody has to do something are shouted, because they
+ * arrive in the same thread as the routine ones and a glance has to separate
+ * them.
+ */
+const ADMIN_STAGE_LABELS = {
+    created: 'Created',
+    pending: 'Created, awaiting confirmation',
+    confirmed: 'Confirmed',
+    picked_up: 'Picked up',
+    dispatched: 'Dispatched',
+    in_transit: 'In transit',
+    delivered: 'Delivered',
+    failed: 'FAILED',
+    cancelled: 'CANCELLED',
+    returned: 'RETURNED'
+};
+
+/**
+ * The stage name for an event, title-casing anything unrecognised.
+ *
+ * The fallback is the point, not politeness: the status list has grown twice
+ * already, and a stage added to the platform next month must still reach
+ * Obana without anyone remembering to add it here. An unknown status sends
+ * "Out For Delivery" rather than nothing at all.
+ */
+const adminStageLabel = (event) => {
+    const key = String(event ?? '').trim().toLowerCase();
+    if (ADMIN_STAGE_LABELS[key]) return ADMIN_STAGE_LABELS[key];
+    return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || 'Updated';
+};
+
+/**
+ * Tell Obana a shipment reached a stage — any stage.
+ *
+ * ── Why this is not the customer's message ──
+ *
+ * The admin copy used to be exactly that: the customer's template, sent to an
+ * extra number. That works only where a customer template exists, and there
+ * are three of those — created, in transit, delivered. A shipment that was
+ * cancelled, returned, or that outright failed told nobody here anything,
+ * because WA_EVENTS has no entry for those and the event was dropped at the
+ * top of notifyShipmentEvent. The stages Obana most needs to see were the
+ * three it could not.
+ *
+ * So this is one template with the stage as a variable, which covers every
+ * stage that exists now and every stage added later. Approve it once at
+ * KudiSMS as KUDISMS_WA_ADMIN_TEMPLATE:
+ *
+ *   {{1}} reference   {{2}} stage   {{3}} customer   {{4}} weight   {{5}} amount
+ *   button URL {{1}} = reference
+ *
+ * Until that code is set, this returns sent: false and the caller falls back
+ * to the old ride-along, so the three stages that work today keep working.
+ * Reusing an approved template instead was considered and rejected: its body
+ * reads "your shipment has been created", and a cancellation worded as a
+ * booking confirmation is worse than silence.
+ *
+ * Never throws, and never blocks the status change that triggered it.
+ */
+const notifyAdminsOfStage = async (shipment, event, deliveryAddress = null) => {
+    try {
+        const numbers = adminWhatsAppNumbers();
+        if (!numbers.length) return { sent: false, result: 'ADMIN_WHATSAPP_NUMBERS is empty; nobody to tell' };
+
+        const templateCode = templateCodeFor('KUDISMS_WA_ADMIN_TEMPLATE');
+        if (!templateCode) {
+            /* Logged once per event rather than per number: it is a thing
+               somebody has to go and do, not a fault in this shipment. */
+            console.warn(`[WA ${event}] KUDISMS_WA_ADMIN_TEMPLATE not set; Obana only hears the stages with a customer template`);
+            return { sent: false, result: 'no template (KUDISMS_WA_ADMIN_TEMPLATE unset)' };
+        }
+
+        let address = deliveryAddress;
+        if (!address && shipment.delivery_address_id) {
+            address = await db.addresses.findByPk(shipment.delivery_address_id);
+        }
+
+        const currency = shipment.currency || 'NGN';
+        const parameters = [
+            shipment.shipment_reference,
+            adminStageLabel(event),
+            address?.name || 'Customer',
+            `${Number(shipment.total_weight || 0)} kg`,
+            `${currency} ${Number(shipment.shipping_fee || 0).toFixed(2)}`
+        ];
+
+        const results = [];
+        let any = false;
+        for (const raw of numbers) {
+            /* A field holding "0" or "n/a" is not a phone number. Named in the
+               warning so whoever typed it into the env can find it. */
+            if (String(raw).replace(/\D/g, '').length < 7) {
+                console.warn(`[WA ${event}] "${raw}" in ADMIN_WHATSAPP_NUMBERS is not a phone number; skipping it`);
+                results.push(`${raw}: not a phone number`);
+                continue;
+            }
+            const sent = await sendWhatsApp({
+                recipient: raw,
+                templateCode,
+                parameters,
+                buttonParameters: [shipment.shipment_reference]
+            });
+            if (sent.success) {
+                any = true;
+                console.log(`[WA ${event}] Obana told: ${raw} for ${shipment.shipment_reference} (${parameters[1]})`);
+            } else {
+                console.error(`[WA ${event}] KudiSMS refused the Obana message to ${raw}:`, sent.error, sent.data ?? '');
+            }
+            results.push(`${raw}: ${sent.success ? 'sent' : `rejected: ${sent.error ?? 'unknown'}`}`);
+        }
+
+        /* sent is "did anybody here actually get it", not "was it configured".
+           The caller uses it to decide whether the old ride-along is still
+           needed, and a template KudiSMS refuses should fall back just as a
+           missing one does — otherwise a bad code silences the three stages
+           that used to work. */
+        return { sent: any, result: results.join('; ') || 'nobody to tell' };
+    } catch (error) {
+        console.error(`[WA ${event}] could not tell Obana:`, error);
+        return { sent: false, result: `error: ${error.message}` };
+    }
 };
 
 /**
@@ -326,16 +479,34 @@ const waAirWaybill = (shipment) => {
 
 const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
     try {
-        const cfg = WA_EVENTS[event];
-        if (!cfg) return { event, skipped: 'no template config for this event' };
+        const cfg = WA_EVENTS[CUSTOMER_EVENT[event] ?? event];
 
         // What happened, per audience — returned so a caller can report it
         // instead of everyone having to read the server log.
-        const outcome = { event, customer: null, salesperson: null };
+        const outcome = { event, customer: null, salesperson: null, admin: null };
 
         let address = deliveryAddress;
         if (!address && shipment.delivery_address_id) {
             address = await db.addresses.findByPk(shipment.delivery_address_id);
+        }
+
+        /* Obana first, and for every stage.
+         *
+         * This used to sit below the WA_EVENTS lookup, which returned early on
+         * any stage without a customer template — so a cancelled, returned or
+         * failed shipment notified nobody here. Those are the stages somebody
+         * has to act on, and they were the silent ones. The lookup now only
+         * decides whether the CUSTOMER hears about this stage. */
+        const admin = await notifyAdminsOfStage(shipment, event, address);
+        outcome.admin = admin.result;
+
+        /* No customer template for this stage is normal, not a failure: a
+           customer does not need to hear that a driver has been assigned.
+           Obana has already been told by this point. */
+        if (!cfg) {
+            outcome.customer = 'not a customer-facing stage';
+            outcome.salesperson = 'not a customer-facing stage';
+            return outcome;
         }
 
         /* Both ends of the shipment, not one.
@@ -409,25 +580,31 @@ const notifyShipmentEvent = async (shipment, event, deliveryAddress = null) => {
             recipients.push({ who, phone: String(phone).trim(), key, name: String(name ?? '').trim() || 'Customer' });
         }
 
-        /* The operations copy.
+        /* The operations copy — now only when the ops alert did not go out.
          *
          * Every shipment on this platform, whatever raised it — the logistics
          * dashboard, the marketplace, a partner store's API key — is somebody's
-         * parcel that somebody at Obana may have to answer for. Until now the
-         * only people told were the two ends of the journey, so the first
-         * anyone here heard of a shipment going wrong was the customer asking.
+         * parcel that somebody at Obana may have to answer for, so somebody
+         * here is told about it either way.
          *
-         * Deliberately a copy of the CUSTOMER message rather than a report of
-         * its own: it is the same template, the same fallbacks and the same
-         * three facts, so there is nothing extra to approve at KudiSMS and
-         * nothing that can drift out of step with what the customer was told.
+         * This was how: a copy of the CUSTOMER message, to an extra number. It
+         * needed nothing approving at KudiSMS, which is why it was built
+         * first, but it can only carry the stages a customer template exists
+         * for — and a cancelled or failed shipment has none, so the stages
+         * most worth hearing about were the ones it could not send.
+         * notifyAdminsOfStage covers every stage and has already run above.
+         *
+         * Kept as the fallback for when that one cannot send: its template is
+         * not set yet, or KudiSMS refused the code. Dropping it instead would
+         * mean one missing env var silenced the three stages that have been
+         * working all along, which is a worse failure than a duplicate.
          *
          * Dedup keyed on the digits, like every other recipient here, so when
          * the admin IS the sender or the receiver they get one message, not
          * two. ADMIN_WHATSAPP_NUMBERS takes a comma-separated list, so a second
          * person on call is an env change and not a deploy; set it empty to
          * turn this off. */
-        for (const raw of adminWhatsAppNumbers()) {
+        for (const raw of admin.sent ? [] : adminWhatsAppNumbers()) {
             const key = digitsOf(raw);
             if (key.length < 7) {
                 console.warn(`[WA] "${raw}" in ADMIN_WHATSAPP_NUMBERS is not a phone number; skipping it`);
@@ -2641,11 +2818,22 @@ const shipmentController = {
                returned. A notification that silently fails is indistinguishable
                from one nobody sent, and that has cost more time here than the
                fraction of a second this adds. notifyShipmentEvent never throws. */
+            /* Every stage, not the three that had a customer template.
+             *
+             * This used to name the statuses it would act on, so cancelled,
+             * returned and failed fell through it in silence — and those are
+             * the ones somebody at Obana has to pick up. The raw status goes
+             * over as-is now: notifyShipmentEvent decides which audience hears
+             * about this stage and what to call it for each of them.
+             *
+             * Only on a real change. Saving 'delivered' over 'delivered' is
+             * not a stage, and re-posting a status is exactly how the same
+             * message arrives twice — the Zoho webhook path guards this for
+             * the same reason. A notification nobody trusts gets muted, and a
+             * muted alert is the same as no alert. */
             let notification = null;
-            if (status === 'delivered') {
-                notification = await notifyShipmentEvent(shipment, 'delivered').catch((err) => ({ error: err.message }));
-            } else if (status === 'in_transit' || status === 'dispatched' || status === 'picked_up') {
-                notification = await notifyShipmentEvent(shipment, 'in_transit').catch((err) => ({ error: err.message }));
+            if (isStatusChanging) {
+                notification = await notifyShipmentEvent(shipment, status).catch((err) => ({ error: err.message }));
             }
 
             return res.status(200).json({
